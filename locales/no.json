@@ -1,0 +1,555 @@
+{
+  "_meta": {
+    "displayName": "Norsk"
+  },
+  "login": {
+    "title": "Logg inn",
+    "username": "Brukernavn",
+    "password": "Passord",
+    "signing_in": "Logger inn...",
+    "button": "Logg inn",
+    "network_error": "Nettverksfeil",
+    "fail": "Innlogging mislyktes",
+    "register": "Opprett konto",
+    "sso_button": "Logg inn med SSO",
+    "or_continue_with": "Eller fortsett med",
+    "forgot_password": "Glemt passord?"
+  },
+  "register": {
+    "title": "Opprett konto",
+    "username": "Brukernavn",
+    "username_help": "Brukernavn må være 3-50 tegn langt og kun inneholde bokstaver, tall, understreker og bindestreker",
+    "email": "E-post",
+    "password": "Passord",
+    "password_help": "Passord må være minst 8 tegn langt",
+    "confirm_password": "Bekreft passord",
+    "button": "Opprett konto",
+    "creating": "Oppretter konto...",
+    "back_to_login": "Tilbake til innlogging",
+    "success_title": "Konto opprettet!",
+    "success_message": "Kontoen din har blitt opprettet. Du kan nå logge inn med dine legitimasjoner.",
+    "login_now": "Fortsett til innlogging",
+    "disabled": "Brukerregistrering er for øyeblikket deaktivert",
+    "disabled_message": "Ny brukerregistrering er for øyeblikket deaktivert. Kontakt en administrator for å opprette en konto.",
+    "missing_fields": "Fyll ut alle påkrevde felt",
+    "password_mismatch": "Passord stemmer ikke overens",
+    "password_too_short": "Passord må være minst 8 tegn langt",
+    "user_exists": "En bruker med dette brukernavnet eller e-posten eksisterer allerede",
+    "network_error": "Nettverksfeil oppstod",
+    "fail": "Kontooppretting mislyktes",
+    "already_have_account": "Har du allerede en konto? Logg inn"
+  },
+  "logout": "Logg ut",
+  "home": {
+    "send_document": "Send Dokument",
+    "url_placeholder": "https://eksempel.com/fil.pdf",
+    "or": "— ELLER —",
+    "selected_file": "Valgt fil:",
+    "remove": "Fjern",
+    "destination_folder": "Destinasjonsmappe",
+    "default": "Standard",
+    "loading": "Laster...",
+    "compress_pdf": "Komprimering",
+    "send": "Send",
+    "pair": "Koble",
+    "sending": "Sender…",
+    "uploading": "Laster opp til Stationmaster",
+    "invalid_file": "Ugyldig fil",
+    "ok": "OK",
+    "job_queued": "Jobb i kø: {{id}}",
+    "pair_with_cloud": "Koble med sky for å laste mapper",
+    "pair_with_remarkable": "Koble med reMarkable sky",
+    "to_upload_documents": " for å laste opp dokumenter.",
+    "settings_config": " Gå til Innstillinger for ytterligere konfigurasjon."
+  },
+  "filedrop": {
+    "instruction": "Klikk for å laste opp eller dra og slipp",
+    "invalid_type": "Velg en PDF-, EPUB-, JPEG- eller PNG-fil."
+  },
+  "theme": {
+    "switch": "Bytt til {{mode}} modus",
+    "auto": "automatisk",
+    "dark": "mørk",
+    "light": "lys"
+  },
+  "language": {
+    "search": "Søk...",
+    "search_fallback": "Søk språk...",
+    "no_results": "Ingen resultater.",
+    "no_results_fallback": "Ingen språk funnet.",
+    "tooltip": "Språk",
+    "tooltip_fallback": "Språk"
+  },
+  "pairing": {
+    "title": "Koble med reMarkable Cloud",
+    "description": "Skriv inn engangs-kode fra {{displayHost}}",
+    "code_label": "Engangs-kode",
+    "code_placeholder": "8 tegns kode",
+    "cancel": "Avbryt",
+    "pair": "Koble",
+    "pairing": "Kobler...",
+    "code_error": "Koden må være 8 tegn lang",
+    "pair_error": "Kobling mislyktes"
+  },
+  "user_delete": {
+    "title": "Slett konto",
+    "current_user_warning": "Er du sikker på at du vil slette kontoen din permanent?",
+    "admin_user_warning": "Er du sikker på at du vil slette brukeren <strong>{{username}}</strong> permanent?",
+    "action_will": "Denne handlingen vil:",
+    "current_user": {
+      "data_deletion": "Slette alle dine data inkludert opplastede dokumenter og API-nøkler",
+      "remove_sessions": "Fjerne alle dine økter og logge deg ut",
+      "remove_history": "Fjerne hele din innloggingshistorikk",
+      "permanent_removal": "Permanent fjerne kontoen din fra systemet"
+    },
+    "admin_user": {
+      "data_deletion": "Slette alle brukerdata inkludert arkiverte dokumenter og API-nøkler",
+      "remove_sessions": "Fjerne alle brukerøkter",
+      "remove_history": "Fjerne hele innloggingshistorikken"
+    },
+    "note_label": "Merk:",
+    "note_current": "Din reMarkable Cloud-konto og enhetsdata vil forbli helt upåvirket.",
+    "note_admin": "Brukerens reMarkable Cloud-konto og enhetsdata vil forbli helt upåvirket.",
+    "cannot_undo_current": "Denne handlingen kan ikke angres og du vil miste tilgang til alle dine data.",
+    "cannot_undo_admin": "Denne handlingen kan ikke angres.",
+    "cancel": "Avbryt",
+    "delete_account": "Slett min konto",
+    "delete_user": "Slett bruker",
+    "deleting": "Sletter..."
+  },
+  "admin": {
+    "title": "Admin Panel",
+    "description": "Administrer brukere, systeminnstillinger og overvåk systemhelse",
+    "status": {
+      "working": "Fungerer",
+      "failed": "Mislyktes",
+      "configured": "Konfigurert",
+      "not_configured": "Ikke konfigurert",
+      "unknown": "Ukjent",
+      "inactive": "Inaktiv",
+      "paired": "Koblet",
+      "unpaired": "Ikke koblet",
+      "active": "aktiv"
+    },
+    "roles": {
+      "admin": "Administrator",
+      "user": "Bruker"
+    },
+    "actions": {
+      "make_admin": "Gjør til administrator",
+      "make_user": "Gjør til bruker",
+      "activate": "Aktiver",
+      "deactivate": "Deaktiver",
+      "reset_password": "Tilbakestill passord",
+      "delete": "Slett",
+      "create_user": "Opprett bruker",
+      "test_smtp": "Test SMTP",
+      "create_backup": "Opprett sikkerhetskopi",
+      "restore_backup": "Gjenopprett fra sikkerhetskopi",
+      "upload_restore": "Last opp gjenoppretting",
+      "cancel": "Avbryt",
+      "restore_database": "Gjenopprett",
+      "modify": "Endre",
+      "details": "Detaljer"
+    },
+    "tabs": {
+      "overview": "Oversikt",
+      "users": "Brukere",
+      "api_keys": "API-nøkler",
+      "settings": "Innstillinger",
+      "system": "System"
+    },
+    "cards": {
+      "total_users": "Totalt brukere",
+      "api_keys": "API-nøkler",
+      "documents": "Dokumenter",
+      "active_sessions": "Aktive økter",
+      "smtp_status": "SMTP-status",
+      "system_mode": "Systemmodus",
+      "create_new_user": "Opprett ny bruker",
+      "user_management": "Brukeradministrasjon",
+      "api_key_settings": "API-nøkkel innstillinger",
+      "backup_restore": "Sikkerhetskopi og gjenoppretting"
+    },
+    "labels": {
+      "username": "Brukernavn",
+      "user_id": "Bruker-ID",
+      "email": "E-post",
+      "password": "Passord",
+      "role": "Rolle",
+      "status": "Status",
+      "created": "Opprettet",
+      "last_login": "Siste innlogging",
+      "actions": "Handlinger",
+      "name": "Navn",
+      "user": "Bruker",
+      "key_preview": "Nøkkel forhåndsvisning",
+      "last_used": "Sist brukt",
+      "expires": "Utløper",
+      "new_password": "Nytt passord",
+      "enable_registration": "Aktiver brukerregistrering",
+      "max_api_keys": "Maksimum API-nøkler per bruker",
+      "users": "Brukere",
+      "api_keys": "API-nøkler",
+      "documents": "Dokumenter"
+    },
+    "placeholders": {
+      "username": "brukernavn",
+      "email": "bruker@eksempel.no",
+      "password": "passord",
+      "new_password": "Skriv inn nytt passord (minimum 8 tegn)"
+    },
+    "descriptions": {
+      "registration_help": "Tillat selvbetjening av nye brukerkontoer",
+      "total_uploaded": "Totalt opplastet",
+      "current_sessions": "Nåværende ikke-utløpte økter",
+      "backup_description": "Oppretter en komplett sikkerhetskopi inkludert database og brukerfiler som .tar.gz arkiv",
+      "restore_description": "Gjenoppretter database og brukerfiler fra sikkerhetskopi arkiv (.tar.gz format)",
+      "upload_restore_description": "Last opp en sikkerhetskopi fil for senere gjenoppretting med bekreftelse",
+      "restore_warning": "Advarsel: Gjenoppretting vil fullstendig overskrive alle nåværende data",
+      "max_api_keys_help": "Angi maksimalt antall API-nøkler hver bruker kan opprette (1-100)"
+    },
+    "badges": {
+      "multi_user": "Flerbruker modus",
+      "dry_run": "Tørrkjøring modus",
+      "oidc_enabled": "OIDC aktivert",
+      "proxy_auth": "Proxy Auth aktivert"
+    },
+    "loading_states": {
+      "creating_backup": "Oppretter sikkerhetskopi...",
+      "analyzing": "Analyserer...",
+      "resetting": "Tilbakestiller...",
+      "restoring": "Gjenoppretter...",
+      "uploading": "Laster opp...",
+      "extracting": "Pakker ut...",
+      "validating": "Validerer...",
+      "loading": "Laster..."
+    },
+    "dialogs": {
+      "reset_password_title": "Tilbakestill passord",
+      "reset_password_description": "Tilbakestill passordet for bruker: ",
+      "confirm_restore_title": "Bekreft data gjenoppretting",
+      "confirm_restore_description": "Du er i ferd med å gjenopprette fra sikkerhetskopi fil: ",
+      "restore_warning_text": "Dette vil permanent overskrive alle nåværende data inkludert:",
+      "restore_warning_items": {
+        "accounts": "Alle brukerkontoer og innstillinger",
+        "api_keys": "Alle API-nøkler og økter",
+        "documents": "Alle brukerdokumenter og filer",
+        "pairing": "All sky-kobling konfigurasjon",
+        "folders": "Alle mappe-cacher",
+        "settings": "Alle systeminnstillinger",
+        "backups": "Alle lagrede sikkerhetskopifiler"
+      },
+      "restore_final_warning": "Denne handlingen kan ikke angres. Sørg for at du har en oppdatert sikkerhetskopi før du fortsetter.",
+      "backup_version": "Backup Versjon",
+      "current_version": "Nåværende Versjon",
+      "version_unknown": "Ukjent",
+      "version_warning": "Advarsel: Denne backupen ble opprettet med en nyere versjon av Stationmaster. Gjenoppretting kan mislykkes eller forårsake uventet oppførsel."
+    },
+    "errors": {
+      "create_user": "Kunne ikke opprette bruker",
+      "delete_user": "Kunne ikke slette bruker",
+      "reset_password": "Kunne ikke tilbakestille passord",
+      "password_length": "Passord må være minst 8 tegn langt",
+      "smtp_test": "SMTP-test mislyktes",
+      "smtp_test_network": "Kunne ikke teste SMTP",
+      "backup_create": "Kunne ikke opprette sikkerhetskopi",
+      "backup_invalid": "Ugyldig sikkerhetskopi fil",
+      "backup_analyze": "Kunne ikke analysere sikkerhetskopi fil: ",
+      "backup_file_type": "Ugyldig filtype. Velg et sikkerhetskopi arkiv (.tar.gz eller .tgz). Valgt fil: ",
+      "restore_failed": "Kunne ikke gjenopprette database",
+      "restore_error": "Kunne ikke gjenopprette database: ",
+      "restore_cancel_failed": "Kunne ikke avbryte gjenoppretting",
+      "restore_delete_failed": "Kunne ikke slette gjenopprettings opplasting",
+      "restore_import_failed": "Kunne ikke importere sikkerhetskopi data",
+      "restore_delete_record_failed": "Kunne ikke slette gjenopprettings post",
+      "parse_form_failed": "Kunne ikke parse opplastings skjema",
+      "create_temp_file_failed": "Kunne ikke opprette midlertidig fil",
+      "save_uploaded_file_failed": "Kunne ikke lagre opplastet fil",
+      "backup_analyze_failed": "Kunne ikke analysere sikkerhetskopi fil",
+      "get_file_info_failed": "Kunne ikke hente fil informasjon",
+      "save_upload_record_failed": "Kunne ikke lagre opplastings post",
+      "invalid_request": "Ugyldig forespørsel",
+      "invalid_upload_id": "Ugyldig opplastings ID",
+      "upload_not_found": "Opplasting ikke funnet",
+      "create_backup_job_failed": "Kunne ikke opprette sikkerhetskopi jobb",
+      "get_backup_jobs_failed": "Kunne ikke hente sikkerhetskopi jobber",
+      "invalid_job_id": "Ugyldig jobb ID",
+      "backup_job_not_found": "Sikkerhetskopi jobb ikke funnet",
+      "delete_backup_job_failed": "Kunne ikke slette sikkerhetskopi jobb",
+      "backup_download": "Kunne ikke laste ned sikkerhetskopi fil",
+      "no_backup_file": "Ingen sikkerhetskopi fil oppgitt",
+      "backup_not_found": "Sikkerhetskopi fil ikke funnet",
+      "backup_not_ready": "Sikkerhetskopi ikke klar for nedlasting",
+      "backup_file_unavailable": "Sikkerhetskopi fil ikke tilgjengelig",
+      "max_api_keys_invalid": "Vennligst angi en verdi mellom 1 og 100"
+    },
+    "success": {
+      "restore_complete": "Database gjenopprettet",
+      "backup_restored": "Sikkerhetskopi gjenopprettet fra {{filename}}"
+    },
+    "backup": {
+      "create_backup": "Opprett sikkerhetskopi",
+      "creating_job": "Oppretter sikkerhetskopi jobb...",
+      "backup": "Sikkerhetskopi",
+      "download": "Last ned",
+      "delete_backup_title": "Slett sikkerhetskopi",
+      "delete_error": "Kunne ikke slette sikkerhetskopi",
+      "background_description": "Oppretter en sikkerhetskopi i bakgrunnen som du kan laste ned når den er ferdig",
+      "status": {
+        "pending": "Venter",
+        "running": "Kjører",
+        "completed": "Ferdig",
+        "failed": "Mislyktes"
+      }
+    },
+    "restore": {
+      "create_restore": "Gjenopprett sikkerhetskopi",
+      "creating_job": "Oppretter gjenopprettings jobb...",
+      "restore": "Gjenopprett",
+      "job_created": "Gjenopprettings jobb opprettet. Gjenopprettingen vil begynne behandling snart.",
+      "delete_error": "Kunne ikke slette gjenoppretting",
+      "background_description": "Laster opp og gjenoppretter en sikkerhetskopi i bakgrunnen med fremdriftsvisning",
+      "status": {
+        "pending": "Venter",
+        "running": "Kjører",
+        "completed": "Ferdig",
+        "failed": "Mislyktes"
+      }
+    },
+    "jobs": {
+      "recent_jobs": "Nylige jobber",
+      "progress": "Fremdrift"
+    },
+    "messages": {
+      "backup_job_created": "Sikkerhetskopi jobb opprettet. Du vil kunne laste den ned når den er ferdig."
+    },
+    "counts": {
+      "users": "Brukere ({{count}})",
+      "all_api_keys": "Alle API-nøkler ({{count}})"
+    },
+    "tooltips": {
+      "oidc_managed": "Administreres via OIDC"
+    },
+    "never": "Aldri"
+  },
+  "settings": {
+    "title": "Brukerinnstillinger",
+    "description": "Administrer profilen din, API-nøkler og kontopreferanser",
+    "tabs": {
+      "profile": "Profil",
+      "account": "Konto",
+      "api_keys": "API-nøkler"
+    },
+    "cards": {
+      "profile_information": "Profilinformasjon",
+      "change_password": "Endre passord",
+      "delete_account": "Slett konto",
+      "create_api_key": "Opprett ny API-nøkkel",
+      "your_api_keys": "Dine API-nøkler"
+    },
+    "labels": {
+      "username": "Brukernavn",
+      "email": "E-post",
+      "rmapi_host": "reMarkable vert (valgfritt)",
+      "default_directory": "Standard katalog",
+      "cover_page": "Forside",
+      "conflict_resolution": "Ved Konflikt",
+      "folder_depth_limit": "Mappedybdegrense",
+      "folder_exclusion_list": "Ekskluderte mapper",
+      "current_password": "Nåværende passord",
+      "new_password": "Nytt passord",
+      "confirm_new_password": "Bekreft nytt passord",
+      "delete_account": "Slett konto",
+      "api_key_name": "Navn",
+      "key_preview": "Nøkkel forhåndsvisning",
+      "status": "Status",
+      "created": "Opprettet",
+      "last_used": "Sist brukt",
+      "expires": "Utløper",
+      "pdf_conversion_device": "Konverteringsmål",
+      "page_resolution": "Sideoppøsning",
+      "page_dpi": "Side DPI"
+    },
+    "actions": {
+      "unpair": "Koble fra",
+      "pair": "Koble",
+      "create_api_key": "Opprett API-nøkkel",
+      "got_it": "Skjønt",
+      "cancel": "Avbryt",
+      "delete_api_key": "Slett API-nøkkel",
+      "details": "Detaljer"
+    },
+    "options": {
+      "cover_current": "Nåværende side",
+      "cover_first": "Første side",
+      "manual": "Manuell",
+      "conflict_abort": "Avbryt",
+      "conflict_overwrite": "Skriv over",
+      "conflict_content_only": "Kun Innhold"
+    },
+    "expiry_options": {
+      "one_week": "1 uke",
+      "one_month": "1 måned",
+      "three_months": "3 måneder",
+      "one_year": "1 år"
+    },
+    "messages": {
+      "pair_to_load_folders": "Koble for å laste mapper",
+      "pair_help": "Koble med reMarkable sky for å velge fra eksisterende mapper",
+      "delete_warning_intro": "Ved å klikke nedenfor vil en bekreftelsesdialog åpnes. Når dette er bekreftet, vil kontoen din bli permanent slettet sammen med alle tilknyttede data. Dette inkluderer:",
+      "remarkable_unaffected": "Din reMarkable Cloud-konto og enhetsdata vil forbli helt upåvirket.",
+      "api_key_created_title": "Ny API-nøkkel opprettet",
+      "api_key_created_message": "Kopier denne nøkkelen nå - den vil ikke vises igjen:",
+      "no_api_keys": "Ingen API-nøkler opprettet ennå",
+      "api_key_limit_reached": "Du har nådd din grense på {{maxKeys}} API-nøkler",
+      "api_keys_remaining": "{{remaining}} av {{maxKeys}} API-nøkler gjenstår"
+    },
+    "help": {
+      "cover_page": "Kontrollerer om første side eller nåværende side brukes som forside ved opplasting av PDF-er",
+      "pdf_conversion_device": "Velg din reMarkable enhetsmodell for optimal bilde-til-PDF konvertering. Denne innstillingen påvirker kun bildefiler (JPEG, PNG) som konverteres til PDF.",
+      "page_resolution": "Sideoppøsning i BREDDExHØYDE format",
+      "page_dpi": "Punkter per tomme",
+      "default_directory": "Velg standardmappen hvor dokumentene dine vil bli lastet opp",
+      "conflict_resolution": "Velg hva som skjer når du laster opp et dokument med samme navn som et eksisterende dokument. Kun Innhold bevarer merknader og fungerer bare for PDF-er og bilder - det vil Avbryte for EPUB-er. Overskriv erstatter dokumenter fullstendig.",
+      "folder_depth_limit": "Maksimal mappedybde å vise (la stå tom for ubegrenset)",
+      "folder_exclusion_list": "Kommaseparert liste over mappenavn å ekskludere, skiller mellom store og små bokstaver"
+    },
+    "status": {
+      "active": "Aktiv",
+      "expired": "Utløpt",
+      "inactive": "Inaktiv"
+    },
+    "delete_warnings": {
+      "documents": "Alle arkiverte dokumenter og filer",
+      "api_keys": "Alle API-nøkler og deres tilgang",
+      "profile": "Din profil og kontoinnstillinger"
+    },
+    "dialogs": {
+      "delete_api_key_title": "Slett API-nøkkel",
+      "delete_api_key_message": "Er du sikker på at du vil slette API-nøkkelen",
+      "delete_api_key_consequences_title": "Denne handlingen vil:",
+      "delete_api_key_consequences": {
+        "revoke": "Permanent tilbakekalle API-nøkkelen",
+        "stop_apps": "Stoppe alle applikasjoner som bruker denne nøkkelen",
+        "remove": "Fjerne nøkkelen fra kontoen din"
+      },
+      "cannot_undo": "Denne handlingen kan ikke angres.",
+      "delete_account_confirmation": "Er du sikker på at du vil slette kontoen din permanent? Denne handlingen kan ikke angres.",
+      "delete_account_type_confirm": "Skriv \"{{confirmText}}\" for å bekrefte",
+      "unpair_confirmation_message": "Er du sikker på at du vil koble fra reMarkable sky? Du må koble til igjen for å laste opp dokumenter."
+    },
+    "placeholders": {
+      "cloud_default": "La stå tom for reMarkable Cloud",
+      "api_key": "Min API-nøkkel",
+      "never_expires": "Utløper aldri",
+      "current_password": "Skriv inn ditt nåværende passord",
+      "old_password": "gammeltpassord",
+      "new_password": "nyttpassord",
+      "delete_confirm": "SLETT MIN KONTO",
+      "page_resolution": "1404x1872",
+      "page_dpi": "226",
+      "folder_depth_limit": "Ubegrenset",
+      "folder_exclusion_list": "f.eks., papirkurv, maler, arkiv"
+    },
+    "loading_states": {
+      "saving": "Lagrer...",
+      "updating": "Oppdaterer...",
+      "deleting": "Sletter...",
+      "loading": "Laster..."
+    },
+    "buttons": {
+      "save_changes": "Lagre endringer",
+      "update_password": "Oppdater passord",
+      "delete_my_account": "Slett min konto"
+    },
+    "never": "Aldri",
+    "tooltips": {
+      "api_key_copied": "Kopiert!"
+    },
+    "errors": {
+      "update_profile": "Kunne ikke oppdatere profil",
+      "unpair": "Kunne ikke koble fra",
+      "passwords_mismatch": "Passord stemmer ikke overens",
+      "update_password": "Kunne ikke oppdatere passord",
+      "create_api_key": "Kunne ikke opprette API-nøkkel",
+      "delete_api_key": "Kunne ikke slette API-nøkkel",
+      "delete_account": "Kunne ikke slette konto"
+    }
+  },
+  "app": {
+    "settings": "Innstillinger",
+    "admin": "Administrasjon"
+  },
+  "password_reset": {
+    "title": "Tilbakestill passord",
+    "new_password_title": "Sett nytt passord",
+    "email_placeholder": "Skriv inn din e-postadresse",
+    "password_placeholder": "Skriv inn nytt passord",
+    "confirm_placeholder": "Bekreft nytt passord",
+    "sending": "Sender...",
+    "send_email": "Send tilbakestillings-e-post",
+    "resetting": "Tilbakestiller...",
+    "reset_button": "Tilbakestill passord",
+    "email_sent": "Hvis e-posten eksisterer, har en passord tilbakestillingslenke blitt sendt",
+    "send_email_error": "Kunne ikke sende tilbakestillings-e-post",
+    "success": "Passordet har blitt tilbakestilt. Du kan nå logge inn med ditt nye passord.",
+    "reset_error": "Kunne ikke tilbakestille passord",
+    "email_instruction": "Skriv inn din e-postadresse så sender vi deg en lenke for å tilbakestille passordet ditt."
+  },
+  "accessibility": {
+    "logo": "Stationmaster logo",
+    "select_language": "Velg språk"
+  },
+  "backend": {
+    "auth": {
+      "too_many_attempts": "For mange mislykkede innloggingsforsøk",
+      "invalid_request": "Ugyldig forespørsel",
+      "not_configured": "Autentisering ikke konfigurert",
+      "invalid_credentials": "Ugyldige legitimasjoner",
+      "account_disabled": "Brukerkontoen er deaktivert",
+      "token_error": "Kunne ikke generere token",
+      "no_token": "Ingen auth token eller API-nøkkel",
+      "invalid_token": "Ugyldig token",
+      "required": "Autentisering påkrevd",
+      "session_error": "Kunne ikke generere økt",
+      "username_required": "Brukernavn er påkrevd",
+      "username_too_short": "Brukernavn må være minst 3 tegn langt",
+      "username_too_long": "Brukernavn kan ikke være lengre enn 50 tegn",
+      "username_invalid_format": "Brukernavn må begynne med en bokstav eller tall og kan bare inneholde bokstaver, tall, understreker og bindestreker"
+    },
+    "status": {
+      "job_not_found": "Jobb ikke funnet",
+      "internal_error": "Intern feil",
+      "done": "Ferdig",
+      "invalid_prefix": "Ugyldig prefiks",
+      "using_uploaded_file": "Bruker opplastet fil",
+      "no_url": "Ingen URL funnet i forespørsel kropp",
+      "downloading": "Laster ned",
+      "download_error": "Nedlastingsfeil",
+      "converting_pdf": "Konverterer til PDF",
+      "conversion_error": "Bilde→PDF konverteringsfeil",
+      "compressing_pdf": "Komprimerer PDF",
+      "compress_error": "Komprimeringsfeil",
+      "rename_error": "Omdøpingsfeil",
+      "uploading": "Laster opp til sky",
+      "upload_success": "Dokumentet ditt er tilgjengelig på din reMarkable på {{path}}",
+      "upload_success_multiple": "Dokumentene dine er tilgjengelige på din reMarkable på:\n{{paths}}",
+      "conflict_entry_exists": "Et dokument med dette navnet eksisterer allerede på din reMarkable. Endre din {{conflict_resolution}} innstilling i {{settings}}, eller gi dokumentet nytt navn."
+    },
+    "errors": {
+      "missing_url": "Manglende URL parameter",
+      "parse_form": "Kunne ikke tolke multipart skjema",
+      "get_file": "Kunne ikke hente fil",
+      "open_file": "Kunne ikke åpne opplastet fil",
+      "create_dir": "Kunne ikke opprette opplastingskatalog",
+      "create_file": "Kunne ikke opprette fil på disk",
+      "save_file": "Kunne ikke lagre fil",
+      "no_form": "Ingen multipart skjema funnet",
+      "no_file_field": "Ingen fil med feltnavn {{field}}",
+      "file_too_large": "Filstørrelsen overskrider maksimal grense",
+      "memory_constrained": "Serverminne utilstrekkelig for filbehandling",
+      "upload_stream_failed": "Kunne ikke behandle stor filopplasting"
+    }
+  }
+}

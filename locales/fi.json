@@ -1,0 +1,555 @@
+{
+  "_meta": {
+    "displayName": "Suomi"
+  },
+  "login": {
+    "title": "Kirjaudu sisään",
+    "username": "Käyttäjänimi",
+    "password": "Salasana",
+    "signing_in": "Kirjaudutaan sisään...",
+    "button": "Kirjaudu sisään",
+    "network_error": "Verkkovirhe",
+    "fail": "Kirjautuminen epäonnistui",
+    "register": "Luo tili",
+    "sso_button": "Kirjaudu SSO:lla",
+    "or_continue_with": "Tai jatka",
+    "forgot_password": "Unohditko salasanan?"
+  },
+  "register": {
+    "title": "Luo tili",
+    "username": "Käyttäjänimi",
+    "username_help": "Käyttäjänimen tulee olla 3-50 merkkiä pitkä ja sisältää vain kirjaimia, numeroita, alaviivoja ja väliviivoja",
+    "email": "Sähköposti",
+    "password": "Salasana",
+    "password_help": "Salasanan tulee olla vähintään 8 merkkiä pitkä",
+    "confirm_password": "Vahvista salasana",
+    "button": "Luo tili",
+    "creating": "Luodaan tiliä...",
+    "back_to_login": "Takaisin kirjautumiseen",
+    "success_title": "Tili luotu!",
+    "success_message": "Tilisi on luotu onnistuneesti. Voit nyt kirjautua sisään tunnuksillasi.",
+    "login_now": "Jatka kirjautumiseen",
+    "disabled": "Käyttäjärekisteröinti on tällä hetkellä poistettu käytöstä",
+    "disabled_message": "Uusien käyttäjien rekisteröinti on tällä hetkellä poistettu käytöstä. Ota yhteyttä ylläpitäjään tilin luomiseksi.",
+    "missing_fields": "Täytä kaikki pakolliset kentät",
+    "password_mismatch": "Salasanat eivät täsmää",
+    "password_too_short": "Salasanan tulee olla vähintään 8 merkkiä pitkä",
+    "user_exists": "Käyttäjä tällä käyttäjänimellä tai sähköpostiosoitteella on jo olemassa",
+    "network_error": "Verkkovirhe tapahtui",
+    "fail": "Tilin luominen epäonnistui",
+    "already_have_account": "Onko sinulla jo tili? Kirjaudu sisään"
+  },
+  "logout": "Kirjaudu ulos",
+  "home": {
+    "send_document": "Lähetä Asiakirja",
+    "url_placeholder": "https://esimerkki.com/tiedosto.pdf",
+    "or": "— TAI —",
+    "selected_file": "Valittu tiedosto:",
+    "remove": "Poista",
+    "destination_folder": "Kohdekansio",
+    "default": "Oletus",
+    "loading": "Ladataan...",
+    "compress_pdf": "Pakkaus",
+    "send": "Lähetä",
+    "pair": "Yhdistä",
+    "sending": "Lähetetään…",
+    "uploading": "Ladataan Stationmasteryn",
+    "invalid_file": "Virheellinen tiedosto",
+    "ok": "OK",
+    "job_queued": "Työ jonossa: {{id}}",
+    "pair_with_cloud": "Yhdistä pilveen kansioiden lataamiseksi",
+    "pair_with_remarkable": "Yhdistä reMarkable-pilveen",
+    "to_upload_documents": " asiakirjojen lataamiseksi.",
+    "settings_config": " Siirry Asetuksiin lisämäärityksiä varten."
+  },
+  "filedrop": {
+    "instruction": "Klikkaa ladataksesi tai raahaa ja pudota",
+    "invalid_type": "Valitse PDF-, EPUB-, JPEG- tai PNG-tiedosto."
+  },
+  "theme": {
+    "switch": "Vaihda {{mode}} tilaan",
+    "auto": "automaattinen",
+    "dark": "tumma",
+    "light": "vaalea"
+  },
+  "language": {
+    "search": "Hae...",
+    "search_fallback": "Hae kieliä...",
+    "no_results": "Ei tuloksia.",
+    "no_results_fallback": "Kieliä ei löytynyt.",
+    "tooltip": "Kieli",
+    "tooltip_fallback": "Kieli"
+  },
+  "pairing": {
+    "title": "Yhdistä reMarkable Cloudiin",
+    "description": "Syötä kertakäyttökoodi osoitteesta {{displayHost}}",
+    "code_label": "Kertakäyttökoodi",
+    "code_placeholder": "8 merkin koodi",
+    "cancel": "Peruuta",
+    "pair": "Yhdistä",
+    "pairing": "Yhdistetään...",
+    "code_error": "Koodin on oltava 8 merkkiä pitkä",
+    "pair_error": "Yhdistäminen epäonnistui"
+  },
+  "user_delete": {
+    "title": "Poista tili",
+    "current_user_warning": "Oletko varma, että haluat poistaa tilisi pysyvästi?",
+    "admin_user_warning": "Oletko varma, että haluat poistaa käyttäjän <strong>{{username}}</strong> pysyvästi?",
+    "action_will": "Tämä toiminto:",
+    "current_user": {
+      "data_deletion": "Poistaa kaikki tietosi mukaan lukien ladatut asiakirjat ja API-avaimet",
+      "remove_sessions": "Poistaa kaikki istuntosi ja kirjaa sinut ulos",
+      "remove_history": "Poistaa koko kirjautumishistoriasi",
+      "permanent_removal": "Poistaa tilisi pysyvästi järjestelmästä"
+    },
+    "admin_user": {
+      "data_deletion": "Poistaa kaikki käyttäjätiedot mukaan lukien arkistoidut asiakirjat ja API-avaimet",
+      "remove_sessions": "Poistaa kaikki käyttäjäistunnot",
+      "remove_history": "Poistaa koko kirjautumishistorian"
+    },
+    "note_label": "Huomaa:",
+    "note_current": "ReMarkable Cloud -tilisi ja laitetiedot pysyvät täysin koskemattomina.",
+    "note_admin": "Käyttäjän reMarkable Cloud -tili ja laitetiedot pysyvät täysin koskemattomina.",
+    "cannot_undo_current": "Tätä toimintoa ei voi perua ja menetät pääsyn kaikkiin tietoihisi.",
+    "cannot_undo_admin": "Tätä toimintoa ei voi perua.",
+    "cancel": "Peru",
+    "delete_account": "Poista tilini",
+    "delete_user": "Poista käyttäjä",
+    "deleting": "Poistetaan..."
+  },
+  "admin": {
+    "title": "Hallintapaneeli",
+    "description": "Hallitse käyttäjiä, järjestelmäasetuksia ja seuraa järjestelmän terveyttä",
+    "status": {
+      "working": "Toimii",
+      "failed": "Epäonnistui",
+      "configured": "Määritetty",
+      "not_configured": "Ei määritetty",
+      "unknown": "Tuntematon",
+      "inactive": "Ei-aktiivinen",
+      "paired": "Yhdistetty",
+      "unpaired": "Ei yhdistetty",
+      "active": "aktiivinen"
+    },
+    "roles": {
+      "admin": "Ylläpitäjä",
+      "user": "Käyttäjä"
+    },
+    "actions": {
+      "make_admin": "Tee ylläpitäjäksi",
+      "make_user": "Tee käyttäjäksi",
+      "activate": "Aktivoi",
+      "deactivate": "Deaktivoi",
+      "reset_password": "Nollaa salasana",
+      "delete": "Poista",
+      "create_user": "Luo käyttäjä",
+      "test_smtp": "Testaa SMTP",
+      "create_backup": "Luo varmuuskopio",
+      "restore_backup": "Palauta varmuuskopiosta",
+      "upload_restore": "Lataa Palautus",
+      "cancel": "Peruuta",
+      "restore_database": "Palauta",
+      "modify": "Muokkaa",
+      "details": "Tiedot"
+    },
+    "tabs": {
+      "overview": "Yleiskatsaus",
+      "users": "Käyttäjät",
+      "api_keys": "API-avaimet",
+      "settings": "Asetukset",
+      "system": "Järjestelmä"
+    },
+    "cards": {
+      "total_users": "Käyttäjiä yhteensä",
+      "api_keys": "API-avaimet",
+      "documents": "Asiakirjat",
+      "active_sessions": "Aktiiviset istunnot",
+      "smtp_status": "SMTP-tila",
+      "system_mode": "Järjestelmätila",
+      "create_new_user": "Luo uusi käyttäjä",
+      "user_management": "Käyttäjähallinta",
+      "api_key_settings": "API-avainten asetukset",
+      "backup_restore": "Varmuuskopiointi ja palautus"
+    },
+    "labels": {
+      "username": "Käyttäjänimi",
+      "user_id": "Käyttäjätunnus",
+      "email": "Sähköposti",
+      "password": "Salasana",
+      "role": "Rooli",
+      "status": "Tila",
+      "created": "Luotu",
+      "last_login": "Viimeisin kirjautuminen",
+      "actions": "Toiminnot",
+      "name": "Nimi",
+      "user": "Käyttäjä",
+      "key_preview": "Avaimen esikatselu",
+      "last_used": "Viimeksi käytetty",
+      "expires": "Vanhenee",
+      "new_password": "Uusi salasana",
+      "enable_registration": "Ota käyttöön käyttäjärekisteröinti",
+      "max_api_keys": "Maksimi API-avaimia per käyttäjä",
+      "users": "Käyttäjät",
+      "api_keys": "API-avaimet",
+      "documents": "Dokumentit"
+    },
+    "placeholders": {
+      "username": "käyttäjänimi",
+      "email": "käyttäjä@esimerkki.fi",
+      "password": "salasana",
+      "new_password": "Syötä uusi salasana (vähintään 8 merkkiä)"
+    },
+    "descriptions": {
+      "registration_help": "Salli itsepalveluna uusien käyttäjätilien luominen",
+      "total_uploaded": "Yhteensä ladattu",
+      "current_sessions": "Nykyiset voimassa olevat istunnot",
+      "backup_description": "Luo täydellinen varmuuskopio mukaan lukien tietokanta ja käyttäjätiedostot .tar.gz-arkistona",
+      "restore_description": "Palauttaa tietokannan ja käyttäjätiedostot varmuuskopioarkistosta (.tar.gz-muoto)",
+      "upload_restore_description": "Lataa varmuuskopiotiedosto myöhempää palautusta varten vahvistuksella",
+      "restore_warning": "Varoitus: Palautus korvaa täysin kaikki nykyiset tiedot",
+      "max_api_keys_help": "Aseta maksimimäärä API-avaimia, jotka kukin käyttäjä voi luoda (1-100)"
+    },
+    "badges": {
+      "multi_user": "Monikäyttäjätila",
+      "dry_run": "Testiajon tila",
+      "oidc_enabled": "OIDC käytössä",
+      "proxy_auth": "Proxy-todennus käytössä"
+    },
+    "loading_states": {
+      "creating_backup": "Luodaan varmuuskopiota...",
+      "analyzing": "Analysoidaan...",
+      "resetting": "Nollataan...",
+      "restoring": "Palautetaan...",
+      "uploading": "Ladataan...",
+      "extracting": "Puretaan...",
+      "validating": "Tarkistetaan...",
+      "loading": "Ladataan..."
+    },
+    "dialogs": {
+      "reset_password_title": "Nollaa salasana",
+      "reset_password_description": "Nollaa salasana käyttäjälle: ",
+      "confirm_restore_title": "Vahvista tietojen palautus",
+      "confirm_restore_description": "Olet palauttamassa varmuuskopiotiedostosta: ",
+      "restore_warning_text": "Tämä korvaa pysyvästi kaikki nykyiset tiedot mukaan lukien:",
+      "restore_warning_items": {
+        "accounts": "Kaikki käyttäjätilit ja asetukset",
+        "api_keys": "Kaikki API-avaimet ja istunnot",
+        "documents": "Kaikki käyttäjäasiakirjat ja -tiedostot",
+        "pairing": "Kaikki pilvikytkentämääritykset",
+        "folders": "Kaikki kansiovälimuistit",
+        "settings": "Kaikki järjestelmäasetukset",
+        "backups": "Kaikki tallennetut varmuuskopiotiedostot"
+      },
+      "restore_final_warning": "Tätä toimintoa ei voi perua. Varmista, että sinulla on ajankohtainen varmuuskopio ennen jatkamista.",
+      "backup_version": "Varmuuskopion Versio",
+      "current_version": "Nykyinen Versio",
+      "version_unknown": "Tuntematon",
+      "version_warning": "Varoitus: Tämä varmuuskopio on luotu uudemmalla Stationmaster-versiolla. Palautus saattaa epäonnistua tai aiheuttaa odottamatonta käyttäytymistä."
+    },
+    "errors": {
+      "create_user": "Käyttäjän luominen epäonnistui",
+      "delete_user": "Käyttäjän poistaminen epäonnistui",
+      "reset_password": "Salasanan nollaus epäonnistui",
+      "password_length": "Salasanan tulee olla vähintään 8 merkkiä pitkä",
+      "smtp_test": "SMTP-testi epäonnistui",
+      "smtp_test_network": "SMTP:n testaus epäonnistui",
+      "backup_create": "Varmuuskopion luominen epäonnistui",
+      "backup_invalid": "Virheellinen varmuuskopiotiedosto",
+      "backup_analyze": "Varmuuskopiotiedoston analysointi epäonnistui: ",
+      "backup_file_type": "Virheellinen tiedostotyyppi. Valitse varmuuskopioarkisto (.tar.gz tai .tgz). Valittu tiedosto: ",
+      "restore_failed": "Tietokannan palautus epäonnistui",
+      "restore_error": "Tietokannan palautus epäonnistui: ",
+      "restore_cancel_failed": "Palautuksen peruuttaminen epäonnistui",
+      "restore_delete_failed": "Palautuslatauksen poistaminen epäonnistui",
+      "restore_import_failed": "Varmuuskopiotietojen tuominen epäonnistui",
+      "restore_delete_record_failed": "Palautustietueen poistaminen epäonnistui",
+      "parse_form_failed": "Latauskaalakkeen jäsentäminen epäonnistui",
+      "create_temp_file_failed": "Väliaikaistiedoston luominen epäonnistui",
+      "save_uploaded_file_failed": "Ladatun tiedoston tallentaminen epäonnistui",
+      "backup_analyze_failed": "Varmuuskopiotiedoston analysointi epäonnistui",
+      "get_file_info_failed": "Tiedostotietojen hakeminen epäonnistui",
+      "save_upload_record_failed": "Lataustietueen tallentaminen epäonnistui",
+      "invalid_request": "Virheellinen pyyntö",
+      "invalid_upload_id": "Virheellinen lataus-ID",
+      "upload_not_found": "Latausta ei löytynyt",
+      "create_backup_job_failed": "Varmuuskopiotyön luominen epäonnistui",
+      "get_backup_jobs_failed": "Varmuuskopiotöiden hakeminen epäonnistui",
+      "invalid_job_id": "Virheellinen työ-ID",
+      "backup_job_not_found": "Varmuuskopiotyötä ei löytynyt",
+      "delete_backup_job_failed": "Varmuuskopiotyön poistaminen epäonnistui",
+      "backup_download": "Varmuuskopiotiedoston lataus epäonnistui",
+      "no_backup_file": "Varmuuskopiotiedostoa ei annettu",
+      "backup_not_found": "Varmuuskopiotiedostoa ei löytynyt",
+      "backup_not_ready": "Varmuuskopio ei ole valmis lataukseen",
+      "backup_file_unavailable": "Varmuuskopiotiedosto ei ole saatavilla",
+      "max_api_keys_invalid": "Syötä arvo väliltä 1-100"
+    },
+    "success": {
+      "restore_complete": "Tietokanta palautettu onnistuneesti",
+      "backup_restored": "Varmuuskopio palautettu onnistuneesti tiedostosta {{filename}}"
+    },
+    "backup": {
+      "create_backup": "Luo Varmuuskopio",
+      "creating_job": "Luodaan varmuuskopiotyötä...",
+      "backup": "Varmuuskopio",
+      "download": "Lataa",
+      "delete_backup_title": "Poista Varmuuskopio",
+      "delete_error": "Varmuuskopion poistaminen epäonnistui",
+      "background_description": "Luo varmuuskopion taustalla, jonka voit ladata kun se on valmis",
+      "status": {
+        "pending": "Odottaa",
+        "running": "Käynnissä",
+        "completed": "Valmis",
+        "failed": "Epäonnistui"
+      }
+    },
+    "restore": {
+      "create_restore": "Palauta Varmuuskopio",
+      "creating_job": "Luodaan palautustyötä...",
+      "restore": "Palauta",
+      "job_created": "Palautustyö luotu onnistuneesti. Palautus alkaa käsitellä pian.",
+      "delete_error": "Palautuksen poistaminen epäonnistui",
+      "background_description": "Lataa ja palauttaa varmuuskopion taustalla edistymisen seurannan kanssa",
+      "status": {
+        "pending": "Odottaa",
+        "running": "Käynnissä",
+        "completed": "Valmis",
+        "failed": "Epäonnistui"
+      }
+    },
+    "jobs": {
+      "recent_jobs": "Viimeaikaiset Työt",
+      "progress": "Edistyminen"
+    },
+    "messages": {
+      "backup_job_created": "Varmuuskopiotuö luotu onnistuneesti. Voit ladata sen kun se on valmis."
+    },
+    "counts": {
+      "users": "Käyttäjät ({{count}})",
+      "all_api_keys": "Kaikki API-avaimet ({{count}})"
+    },
+    "tooltips": {
+      "oidc_managed": "Hallitaan OIDC:n kautta"
+    },
+    "never": "Ei koskaan"
+  },
+  "settings": {
+    "title": "Käyttäjäasetukset",
+    "description": "Hallitse profiiliasi, API-avaimia ja tilin asetuksia",
+    "tabs": {
+      "profile": "Profiili",
+      "account": "Tili",
+      "api_keys": "API-avaimet"
+    },
+    "cards": {
+      "profile_information": "Profiilin tiedot",
+      "change_password": "Vaihda salasana",
+      "delete_account": "Poista tili",
+      "create_api_key": "Luo uusi API-avain",
+      "your_api_keys": "Sinun API-avaimesi"
+    },
+    "labels": {
+      "username": "Käyttäjänimi",
+      "email": "Sähköposti",
+      "rmapi_host": "reMarkable-isäntä (valinnainen)",
+      "default_directory": "Oletuskansio",
+      "cover_page": "Kansilehti",
+      "conflict_resolution": "Konfliktissa",
+      "folder_depth_limit": "Kansion syvyysraja",
+      "folder_exclusion_list": "Poissuljetut kansiot",
+      "current_password": "Nykyinen salasana",
+      "new_password": "Uusi salasana",
+      "confirm_new_password": "Vahvista uusi salasana",
+      "delete_account": "Poista tili",
+      "api_key_name": "Nimi",
+      "key_preview": "Avaimen esikatselu",
+      "status": "Tila",
+      "created": "Luotu",
+      "last_used": "Viimeksi käytetty",
+      "expires": "Vanhenee",
+      "pdf_conversion_device": "Muunnoskohde",
+      "page_resolution": "Sivun resoluutio",
+      "page_dpi": "Sivun DPI"
+    },
+    "actions": {
+      "unpair": "Katkaise yhteys",
+      "pair": "Yhdistä",
+      "create_api_key": "Luo API-avain",
+      "got_it": "Selvä",
+      "cancel": "Peruuta",
+      "delete_api_key": "Poista API-avain",
+      "details": "Tiedot"
+    },
+    "options": {
+      "cover_current": "Nykyinen sivu",
+      "cover_first": "Ensimmäinen sivu",
+      "manual": "Manuaalinen",
+      "conflict_abort": "Keskeytä",
+      "conflict_overwrite": "Korvaa",
+      "conflict_content_only": "Vain sisältö"
+    },
+    "expiry_options": {
+      "one_week": "1 viikko",
+      "one_month": "1 kuukausi",
+      "three_months": "3 kuukautta",
+      "one_year": "1 vuosi"
+    },
+    "messages": {
+      "pair_to_load_folders": "Yhdistä ladataksesi kansiot",
+      "pair_help": "Yhdistä reMarkable-pilveen valitaksesi olemassa olevista kansioista",
+      "delete_warning_intro": "Alla olevaa painikketta klikkaamalla avautuu vahvistusikkuna. Kun vahvistus on annettu, tilisi poistetaan pysyvästi kaikkine siihen liittyvine tietoineen. Tämä sisältää:",
+      "remarkable_unaffected": "ReMarkable Cloud -tilisi ja laitetiedot pysyvät täysin koskemattomina.",
+      "api_key_created_title": "Uusi API-avain luotu",
+      "api_key_created_message": "Kopioi tämä avain nyt - sitä ei näytetä uudelleen:",
+      "no_api_keys": "API-avaimia ei ole vielä luotu",
+      "api_key_limit_reached": "Olet saavuttanut {{maxKeys}} API-avaimen rajasi",
+      "api_keys_remaining": "{{remaining}}/{{maxKeys}} API-avainta jäljellä"
+    },
+    "help": {
+      "cover_page": "Ohjaa käytetäänkö ensimmäistä sivua vai nykyistä sivua kansikuvana PDF-tiedostoja ladattaessa",
+      "pdf_conversion_device": "Valitse reMarkable-laitteesi malli optimaaliseen kuva-PDF-muunnokseen. Tämä asetus vaikuttaa vain kuvatiedostoihin (JPEG, PNG), jotka muunnetaan PDF:ksi.",
+      "page_resolution": "Sivun resoluutio LEVEYSxKORKEUS muodossa",
+      "page_dpi": "Pistettä tuumaa kohti",
+      "default_directory": "Valitse oletuskansio, johon asiakirjasi ladataan",
+      "conflict_resolution": "Valitse mitä tapahtuu kun lataat asiakirjan samalla nimellä kuin olemassa oleva asiakirja. Vain sisältö säilyttää merkinnät ja toimii vain PDF:ille ja kuville - se Keskeytää EPUB:ille. Korvaa korvaa asiakirjat kokonaan.",
+      "folder_depth_limit": "Maksimi kansiosyvyys näytettäväksi (jätä tyhjäksi rajattomaksi)",
+      "folder_exclusion_list": "Pilkuilla erotettu lista poissuljetuista kansionimistä, isojen ja pienten kirjainten erotteleva"
+    },
+    "status": {
+      "active": "Aktiivinen",
+      "expired": "Vanhentunut",
+      "inactive": "Ei-aktiivinen"
+    },
+    "delete_warnings": {
+      "documents": "Kaikki arkistoidut asiakirjat ja tiedostot",
+      "api_keys": "Kaikki API-avaimet ja niiden käyttöoikeudet",
+      "profile": "Profiilisi ja tilin asetukset"
+    },
+    "dialogs": {
+      "delete_api_key_title": "Poista API-avain",
+      "delete_api_key_message": "Oletko varma, että haluat poistaa API-avaimen",
+      "delete_api_key_consequences_title": "Tämä toiminto:",
+      "delete_api_key_consequences": {
+        "revoke": "Peruuttaa API-avaimen pysyvästi",
+        "stop_apps": "Pysäyttää kaikki tätä avainta käyttävät sovellukset",
+        "remove": "Poistaa avaimen tililtäsi"
+      },
+      "cannot_undo": "Tätä toimintoa ei voi perua.",
+      "delete_account_confirmation": "Oletko varma, että haluat poistaa tilisi pysyvästi? Tätä toimintoa ei voi perua.",
+      "delete_account_type_confirm": "Kirjoita \"{{confirmText}}\" vahvistaaksesi",
+      "unpair_confirmation_message": "Oletko varma, että haluat katkaista yhteyden reMarkable-pilveen? Sinun täytyy yhdistää uudelleen ladataksesi asiakirjoja."
+    },
+    "placeholders": {
+      "cloud_default": "Jätä tyhjäksi reMarkable Cloudia varten",
+      "api_key": "Minun API-avaimeni",
+      "never_expires": "Ei vanhene koskaan",
+      "current_password": "Syötä nykyinen salasanasi",
+      "old_password": "vanhaalasalasana",
+      "new_password": "uusisalasana",
+      "delete_confirm": "POISTA TILINI",
+      "page_resolution": "1404x1872",
+      "page_dpi": "226",
+      "folder_depth_limit": "Rajaton",
+      "folder_exclusion_list": "esim., roskakori, mallit, arkisto"
+    },
+    "loading_states": {
+      "saving": "Tallennetaan...",
+      "updating": "Päivitetään...",
+      "deleting": "Poistetaan...",
+      "loading": "Ladataan..."
+    },
+    "buttons": {
+      "save_changes": "Tallenna muutokset",
+      "update_password": "Päivitä salasana",
+      "delete_my_account": "Poista tilini"
+    },
+    "never": "Ei koskaan",
+    "tooltips": {
+      "api_key_copied": "Kopioitu!"
+    },
+    "errors": {
+      "update_profile": "Profiilin päivitys epäonnistui",
+      "unpair": "Yhteyden katkaiseminen epäonnistui",
+      "passwords_mismatch": "Salasanat eivät täsmää",
+      "update_password": "Salasanan päivitys epäonnistui",
+      "create_api_key": "API-avaimen luominen epäonnistui",
+      "delete_api_key": "API-avaimen poistaminen epäonnistui",
+      "delete_account": "Tilin poistaminen epäonnistui"
+    }
+  },
+  "app": {
+    "settings": "Asetukset",
+    "admin": "Hallinta"
+  },
+  "password_reset": {
+    "title": "Nollaa salasana",
+    "new_password_title": "Aseta uusi salasana",
+    "email_placeholder": "Syötä sähköpostiosoitteesi",
+    "password_placeholder": "Syötä uusi salasana",
+    "confirm_placeholder": "Vahvista uusi salasana",
+    "sending": "Lähetetään...",
+    "send_email": "Lähetä nollaussähköposti",
+    "resetting": "Nollataan...",
+    "reset_button": "Nollaa salasana",
+    "email_sent": "Jos sähköposti on olemassa, salasanan nollaustunnuksinen linkki on lähetetty",
+    "send_email_error": "Nollaussähköpostin lähettäminen epäonnistui",
+    "success": "Salasana on nollattu onnistuneesti. Voit nyt kirjautua sisään uudella salasanallasi.",
+    "reset_error": "Salasanan nollaus epäonnistui",
+    "email_instruction": "Syötä sähköpostiosoitteesi ja lähetämme sinulle linkin salasanan nollaamiseksi."
+  },
+  "accessibility": {
+    "logo": "Stationmaster-logo",
+    "select_language": "Valitse kieli"
+  },
+  "backend": {
+    "auth": {
+      "too_many_attempts": "Liian monta epäonnistunutta kirjautumisyritystä",
+      "invalid_request": "Virheellinen pyyntö",
+      "not_configured": "Todennusta ei ole määritetty",
+      "invalid_credentials": "Virheelliset tunnistetiedot",
+      "account_disabled": "Käyttäjätili on poistettu käytöstä",
+      "token_error": "Token-tunnuksen luominen epäonnistui",
+      "no_token": "Ei auth token -tunnusta tai API-avainta",
+      "invalid_token": "Virheellinen token",
+      "required": "Todennus vaaditaan",
+      "session_error": "Istunnon luominen epäonnistui",
+      "username_required": "Käyttäjänimi on pakollinen",
+      "username_too_short": "Käyttäjänimen tulee olla vähintään 3 merkkiä pitkä",
+      "username_too_long": "Käyttäjänimi saa olla enintään 50 merkkiä pitkä",
+      "username_invalid_format": "Käyttäjänimen tulee alkaa kirjaimella tai numerolla ja sisältää vain kirjaimia, numeroita, alaviivoja ja väliviivoja"
+    },
+    "status": {
+      "job_not_found": "Työtä ei löytynyt",
+      "internal_error": "Sisäinen virhe",
+      "done": "Valmis",
+      "invalid_prefix": "Virheellinen etuliite",
+      "using_uploaded_file": "Käytetään ladattua tiedostoa",
+      "no_url": "URL:ää ei löytynyt pyynnön rungosta",
+      "downloading": "Ladataan",
+      "download_error": "Latausvirhe",
+      "converting_pdf": "Muunnetaan PDF:ksi",
+      "conversion_error": "Kuva→PDF muunnosvirhe",
+      "compressing_pdf": "Pakataan PDF:ää",
+      "compress_error": "Pakkausvirhe",
+      "rename_error": "Uudelleennimeämisvirhe",
+      "uploading": "Ladataan pilveen",
+      "upload_success": "Asiakirjasi on saatavilla reMarkablessa polussa {{path}}",
+      "upload_success_multiple": "Asiakirjasi ovat saatavilla reMarkablessa:\n{{paths}}",
+      "conflict_entry_exists": "Asiakirja tällä nimellä on jo olemassa reMarkablessa. Muuta {{conflict_resolution}} asetustasi {{settings}}issa tai nimeä asiakirja uudelleen."
+    },
+    "errors": {
+      "missing_url": "Puuttuva URL-parametri",
+      "parse_form": "Multipart-lomakkeen jäsentäminen epäonnistui",
+      "get_file": "Tiedoston hakeminen epäonnistui",
+      "open_file": "Ladatun tiedoston avaaminen epäonnistui",
+      "create_dir": "Latauskansiota ei voitu luoda",
+      "create_file": "Tiedostoa ei voitu luoda levylle",
+      "save_file": "Tiedoston tallentaminen epäonnistui",
+      "no_form": "Multipart-lomaketta ei löytynyt",
+      "no_file_field": "Ei tiedostoa kentässä {{field}}",
+      "file_too_large": "Tiedosto ylittää maksimikoon",
+      "memory_constrained": "Palvelimen muisti ei riitä tiedoston käsittelyyn",
+      "upload_stream_failed": "Suuren tiedoston latauksen käsittely epäonnistui"
+    }
+  }
+}

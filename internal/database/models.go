@@ -1,0 +1,361 @@
+package database
+
+import (
+	"time"
+
+	"github.com/google/uuid"
+	"gorm.io/gorm"
+)
+
+// User represents a user account in the system
+type User struct {
+	ID        uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
+	Username  string    `gorm:"uniqueIndex;not null" json:"username"`
+	Email     string    `gorm:"uniqueIndex;not null" json:"email"`
+	Password  string    `gorm:"not null" json:"-"` // Never return password in JSON
+	IsAdmin   bool      `gorm:"default:false" json:"is_admin"`
+	IsActive  bool      `gorm:"default:true" json:"is_active"`
+	
+	// Password reset
+	ResetToken        string    `gorm:"index" json:"-"`
+	ResetTokenExpires time.Time `json:"-"`
+	
+	// OIDC integration
+	OidcSubject *string `gorm:"column:oidc_subject;uniqueIndex" json:"oidc_subject,omitempty"`
+	
+	// Timestamps
+	CreatedAt time.Time  `json:"created_at"`
+	UpdatedAt time.Time  `json:"updated_at"`
+	LastLogin *time.Time `json:"last_login,omitempty"`
+	
+	// Associations
+	APIKeys       []APIKey       `gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE" json:"-"`
+	Sessions      []UserSession  `gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE" json:"-"`
+}
+
+// BeforeCreate sets UUID if not already set
+func (u *User) BeforeCreate(tx *gorm.DB) error {
+	if u.ID == uuid.Nil {
+		u.ID = uuid.New()
+	}
+	return nil
+}
+
+// APIKey represents an API key for a user
+type APIKey struct {
+	ID        uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
+	UserID    uuid.UUID `gorm:"type:uuid;not null;index" json:"user_id"`
+	Name      string    `gorm:"not null" json:"name"`
+	KeyHash   string    `gorm:"not null;index" json:"-"` // Never return actual key
+	KeyPrefix string    `gorm:"size:16;not null" json:"key_prefix"` // First 16 chars for display
+	IsActive  bool      `gorm:"default:true" json:"is_active"`
+	LastUsed  *time.Time `json:"last_used,omitempty"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	CreatedAt time.Time  `json:"created_at"`
+	
+	// Association
+	User User `gorm:"foreignKey:UserID" json:"-"`
+}
+
+func (a *APIKey) BeforeCreate(tx *gorm.DB) error {
+	if a.ID == uuid.Nil {
+		a.ID = uuid.New()
+	}
+	return nil
+}
+
+// UserSession represents a user's login session
+type UserSession struct {
+	ID        uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
+	UserID    uuid.UUID `gorm:"type:uuid;not null;index" json:"user_id"`
+	TokenHash string    `gorm:"not null;index" json:"-"`
+	ExpiresAt time.Time `gorm:"not null" json:"expires_at"`
+	CreatedAt time.Time `json:"created_at"`
+	LastUsed  time.Time `gorm:"default:CURRENT_TIMESTAMP" json:"last_used"`
+	UserAgent string    `gorm:"type:text" json:"user_agent,omitempty"`
+	IPAddress string    `gorm:"size:45" json:"ip_address,omitempty"`
+	
+	// Association
+	User User `gorm:"foreignKey:UserID" json:"-"`
+}
+
+func (s *UserSession) BeforeCreate(tx *gorm.DB) error {
+	if s.ID == uuid.Nil {
+		s.ID = uuid.New()
+	}
+	return nil
+}
+
+// SystemSetting represents system-wide configuration
+type SystemSetting struct {
+	Key         string    `gorm:"primaryKey" json:"key"`
+	Value       string    `gorm:"type:text" json:"value"`
+	Description string    `gorm:"type:text" json:"description,omitempty"`
+	UpdatedAt   time.Time `gorm:"default:CURRENT_TIMESTAMP" json:"updated_at"`
+	UpdatedBy   *uuid.UUID `gorm:"type:uuid" json:"updated_by,omitempty"`
+	
+	// Association
+	UpdatedByUser *User `gorm:"foreignKey:UpdatedBy" json:"-"`
+}
+
+// LoginAttempt represents a login attempt for rate limiting
+type LoginAttempt struct {
+	ID          uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
+	IPAddress   string    `gorm:"size:45;not null;index" json:"ip_address"`
+	Username    string    `gorm:"index" json:"username,omitempty"`
+	Success     bool      `gorm:"default:false" json:"success"`
+	AttemptedAt time.Time `gorm:"default:CURRENT_TIMESTAMP;index" json:"attempted_at"`
+	UserAgent   string    `gorm:"type:text" json:"user_agent,omitempty"`
+}
+
+func (l *LoginAttempt) BeforeCreate(tx *gorm.DB) error {
+	if l.ID == uuid.Nil {
+		l.ID = uuid.New()
+	}
+	return nil
+}
+
+// BackupJob represents a background backup operation
+type BackupJob struct {
+	ID            uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
+	AdminUserID   uuid.UUID `gorm:"type:uuid;not null;index" json:"admin_user_id"`
+	Status        string    `gorm:"size:50;not null;default:pending" json:"status"`
+	Progress      int       `gorm:"default:0" json:"progress"`
+	IncludeFiles  bool      `gorm:"default:true" json:"include_files"`
+	IncludeConfigs bool     `gorm:"default:true" json:"include_configs"`
+	UserIDs       string    `gorm:"type:text" json:"user_ids,omitempty"`
+	FilePath      string    `gorm:"size:1000" json:"file_path,omitempty"`
+	Filename      string    `gorm:"size:255" json:"filename,omitempty"`
+	FileSize      int64     `json:"file_size,omitempty"`
+	StatusMessage string    `gorm:"type:text" json:"status_message,omitempty"`
+	ErrorMessage  string    `gorm:"type:text" json:"error_message,omitempty"`
+	StartedAt     *time.Time `json:"started_at,omitempty"`
+	CompletedAt   *time.Time `json:"completed_at,omitempty"`
+	CreatedAt     time.Time  `json:"created_at"`
+	
+	// Association
+	AdminUser User `gorm:"foreignKey:AdminUserID" json:"-"`
+}
+
+func (b *BackupJob) BeforeCreate(tx *gorm.DB) error {
+	if b.ID == uuid.Nil {
+		b.ID = uuid.New()
+	}
+	return nil
+}
+
+// RestoreUpload represents an uploaded restore file waiting for confirmation
+type RestoreUpload struct {
+	ID          uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
+	AdminUserID uuid.UUID `gorm:"type:uuid;not null;index" json:"admin_user_id"`
+	Filename    string    `gorm:"size:255;not null" json:"filename"`
+	FilePath    string    `gorm:"size:1000;not null" json:"file_path"`
+	FileSize    int64     `json:"file_size"`
+	Status      string    `gorm:"size:50;not null;default:uploaded" json:"status"`
+	ExpiresAt   time.Time `gorm:"not null" json:"expires_at"`
+	CreatedAt   time.Time `json:"created_at"`
+	
+	// Association
+	AdminUser User `gorm:"foreignKey:AdminUserID" json:"-"`
+}
+
+func (r *RestoreUpload) BeforeCreate(tx *gorm.DB) error {
+	if r.ID == uuid.Nil {
+		r.ID = uuid.New()
+	}
+	return nil
+}
+
+// RestoreExtractionJob represents a background tar extraction operation for restore
+type RestoreExtractionJob struct {
+	ID              uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
+	AdminUserID     uuid.UUID `gorm:"type:uuid;not null;index" json:"admin_user_id"`
+	RestoreUploadID uuid.UUID `gorm:"type:uuid;not null;index" json:"restore_upload_id"`
+	Status          string    `gorm:"size:50;not null;default:pending" json:"status"`
+	Progress        int       `gorm:"default:0" json:"progress"`
+	StatusMessage   string    `gorm:"type:text" json:"status_message,omitempty"`
+	ErrorMessage    string    `gorm:"type:text" json:"error_message,omitempty"`
+	ExtractedPath   string    `gorm:"size:1000" json:"extracted_path,omitempty"`
+	StartedAt       *time.Time `json:"started_at,omitempty"`
+	CompletedAt     *time.Time `json:"completed_at,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
+	
+	// Associations
+	AdminUser     User          `gorm:"foreignKey:AdminUserID" json:"-"`
+	RestoreUpload RestoreUpload `gorm:"foreignKey:RestoreUploadID;constraint:OnDelete:CASCADE" json:"-"`
+}
+
+func (r *RestoreExtractionJob) BeforeCreate(tx *gorm.DB) error {
+	if r.ID == uuid.Nil {
+		r.ID = uuid.New()
+	}
+	return nil
+}
+
+// Device represents a TRMNL device linked to a user
+type Device struct {
+	ID             uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
+	UserID         uuid.UUID `gorm:"type:uuid;not null;index" json:"user_id"`
+	DeviceID       string    `gorm:"size:255;not null;uniqueIndex" json:"device_id"` // MAC address initially, then friendly ID
+	FriendlyName   string    `gorm:"size:255;not null" json:"friendly_name"`
+	APIKey         string    `gorm:"size:255;not null;index" json:"api_key"`
+	FirmwareVersion string   `gorm:"size:50" json:"firmware_version,omitempty"`
+	BatteryVoltage float64   `json:"battery_voltage,omitempty"`
+	RSSI           int       `json:"rssi,omitempty"`
+	RefreshRate    int       `gorm:"default:1800" json:"refresh_rate"` // seconds
+	LastSeen       *time.Time `json:"last_seen,omitempty"`
+	IsActive       bool      `gorm:"default:true" json:"is_active"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+	
+	// Associations
+	User          User           `gorm:"foreignKey:UserID" json:"-"`
+	Playlists     []Playlist     `gorm:"foreignKey:DeviceID;constraint:OnDelete:CASCADE" json:"-"`
+}
+
+func (d *Device) BeforeCreate(tx *gorm.DB) error {
+	if d.ID == uuid.Nil {
+		d.ID = uuid.New()
+	}
+	return nil
+}
+
+// Plugin represents a system-wide plugin type (managed by admins)
+type Plugin struct {
+	ID           uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
+	Name         string    `gorm:"size:255;not null;uniqueIndex" json:"name"`
+	Type         string    `gorm:"size:100;not null" json:"type"`
+	Description  string    `gorm:"type:text" json:"description"`
+	ConfigSchema string    `gorm:"type:text" json:"config_schema"` // JSON schema for plugin settings
+	Version      string    `gorm:"size:50" json:"version"`
+	Author       string    `gorm:"size:255" json:"author,omitempty"`
+	IsActive     bool      `gorm:"default:true" json:"is_active"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	
+	// Associations
+	UserPlugins []UserPlugin `gorm:"foreignKey:PluginID;constraint:OnDelete:CASCADE" json:"-"`
+}
+
+func (p *Plugin) BeforeCreate(tx *gorm.DB) error {
+	if p.ID == uuid.Nil {
+		p.ID = uuid.New()
+	}
+	return nil
+}
+
+// UserPlugin represents a user's instance of a plugin with specific settings
+type UserPlugin struct {
+	ID       uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
+	UserID   uuid.UUID `gorm:"type:uuid;not null;index" json:"user_id"`
+	PluginID uuid.UUID `gorm:"type:uuid;not null;index" json:"plugin_id"`
+	Name     string    `gorm:"size:255;not null" json:"name"` // User-defined name for this instance
+	Settings string    `gorm:"type:text" json:"settings"`    // JSON settings specific to this instance
+	IsActive bool      `gorm:"default:true" json:"is_active"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	
+	// Associations
+	User          User           `gorm:"foreignKey:UserID" json:"-"`
+	Plugin        Plugin         `gorm:"foreignKey:PluginID" json:"plugin"`
+	PlaylistItems []PlaylistItem `gorm:"foreignKey:UserPluginID;constraint:OnDelete:CASCADE" json:"-"`
+}
+
+func (up *UserPlugin) BeforeCreate(tx *gorm.DB) error {
+	if up.ID == uuid.Nil {
+		up.ID = uuid.New()
+	}
+	return nil
+}
+
+// Playlist represents a collection of plugins for a specific device
+type Playlist struct {
+	ID        uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
+	UserID    uuid.UUID `gorm:"type:uuid;not null;index" json:"user_id"`
+	DeviceID  uuid.UUID `gorm:"type:uuid;not null;index" json:"device_id"`
+	Name      string    `gorm:"size:255;not null" json:"name"`
+	IsDefault bool      `gorm:"default:false" json:"is_default"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	
+	// Associations
+	User          User           `gorm:"foreignKey:UserID" json:"-"`
+	Device        Device         `gorm:"foreignKey:DeviceID" json:"-"`
+	PlaylistItems []PlaylistItem `gorm:"foreignKey:PlaylistID;constraint:OnDelete:CASCADE" json:"-"`
+}
+
+func (pl *Playlist) BeforeCreate(tx *gorm.DB) error {
+	if pl.ID == uuid.Nil {
+		pl.ID = uuid.New()
+	}
+	return nil
+}
+
+// PlaylistItem represents a plugin within a playlist with ordering and visibility
+type PlaylistItem struct {
+	ID             uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
+	PlaylistID     uuid.UUID `gorm:"type:uuid;not null;index" json:"playlist_id"`
+	UserPluginID   uuid.UUID `gorm:"type:uuid;not null;index" json:"user_plugin_id"`
+	OrderIndex     int       `gorm:"not null" json:"order_index"`
+	IsVisible      bool      `gorm:"default:true" json:"is_visible"`
+	Importance     int       `gorm:"default:0" json:"importance"` // 0=normal, 1=important
+	DurationOverride *int    `json:"duration_override,omitempty"` // override default refresh rate
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+	
+	// Associations
+	Playlist   Playlist   `gorm:"foreignKey:PlaylistID" json:"-"`
+	UserPlugin UserPlugin `gorm:"foreignKey:UserPluginID" json:"-"`
+	Schedules  []Schedule `gorm:"foreignKey:PlaylistItemID;constraint:OnDelete:CASCADE" json:"-"`
+}
+
+func (pi *PlaylistItem) BeforeCreate(tx *gorm.DB) error {
+	if pi.ID == uuid.Nil {
+		pi.ID = uuid.New()
+	}
+	return nil
+}
+
+// Schedule represents a time-based schedule for when a playlist item should be active
+type Schedule struct {
+	ID             uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
+	PlaylistItemID uuid.UUID `gorm:"type:uuid;not null;index" json:"playlist_item_id"`
+	Name           string    `gorm:"size:255" json:"name,omitempty"` // User-friendly name for this schedule
+	DayMask        int       `gorm:"not null" json:"day_mask"` // Bitmask: Sunday=1, Monday=2, Tuesday=4, etc.
+	StartTime      string    `gorm:"size:8;not null" json:"start_time"` // HH:MM:SS format
+	EndTime        string    `gorm:"size:8;not null" json:"end_time"`   // HH:MM:SS format
+	Timezone       string    `gorm:"size:50;default:'UTC'" json:"timezone"`
+	IsActive       bool      `gorm:"default:true" json:"is_active"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+	
+	// Associations
+	PlaylistItem PlaylistItem `gorm:"foreignKey:PlaylistItemID" json:"-"`
+}
+
+func (s *Schedule) BeforeCreate(tx *gorm.DB) error {
+	if s.ID == uuid.Nil {
+		s.ID = uuid.New()
+	}
+	return nil
+}
+
+// GetAllModels returns all models for auto-migration
+func GetAllModels() []interface{} {
+	return []interface{}{
+		&User{},
+		&APIKey{},
+		&UserSession{},
+		&SystemSetting{},
+		&LoginAttempt{},
+		&BackupJob{},
+		&RestoreUpload{},
+		&RestoreExtractionJob{},
+		&Device{},
+		&Plugin{},
+		&UserPlugin{},
+		&Playlist{},
+		&PlaylistItem{},
+		&Schedule{},
+	}
+}

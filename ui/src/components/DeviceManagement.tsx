@@ -42,20 +42,28 @@ import {
   Edit,
   Trash2,
   Battery,
+  BatteryFull,
+  BatteryMedium,
+  BatteryLow,
+  BatteryWarning,
   Wifi,
+  WifiOff,
   Calendar,
   AlertTriangle,
   CheckCircle,
   Clock,
   Settings as SettingsIcon,
+  FileText,
 } from "lucide-react";
 
 interface Device {
   id: string;
-  user_id: string;
-  device_id: string;
-  friendly_name: string;
+  user_id?: string;
+  mac_address: string;
+  friendly_id: string;
+  name?: string;
   api_key: string;
+  is_claimed: boolean;
   firmware_version?: string;
   battery_voltage?: number;
   rssi?: number;
@@ -64,6 +72,15 @@ interface Device {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+}
+
+interface DeviceLog {
+  id: string;
+  device_id: string;
+  log_data: string;
+  level: string;
+  timestamp: string;
+  created_at: string;
 }
 
 interface DeviceManagementProps {
@@ -79,20 +96,28 @@ export function DeviceManagement({ isOpen, onClose }: DeviceManagementProps) {
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  // Device creation
-  const [showCreateDialog, setShowCreateDialog] = useState(false);
-  const [createLoading, setCreateLoading] = useState(false);
-  const [deviceId, setDeviceId] = useState("");
-  const [friendlyName, setFriendlyName] = useState("");
+  // Device claiming
+  const [showClaimDialog, setShowClaimDialog] = useState(false);
+  const [claimLoading, setClaimLoading] = useState(false);
+  const [friendlyId, setFriendlyId] = useState("");
+  const [deviceName, setDeviceName] = useState("");
 
   // Device editing
   const [editDevice, setEditDevice] = useState<Device | null>(null);
-  const [editFriendlyName, setEditFriendlyName] = useState("");
+  const [editDeviceName, setEditDeviceName] = useState("");
   const [editRefreshRate, setEditRefreshRate] = useState("");
 
   // Device deletion
   const [deleteDevice, setDeleteDevice] = useState<Device | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
+
+  // Device logs
+  const [logsDevice, setLogsDevice] = useState<Device | null>(null);
+  const [deviceLogs, setDeviceLogs] = useState<DeviceLog[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [totalLogsCount, setTotalLogsCount] = useState(0);
+  const [logsOffset, setLogsOffset] = useState(0);
+  const logsLimit = 50;
 
   useEffect(() => {
     if (isOpen) {
@@ -123,47 +148,47 @@ export function DeviceManagement({ isOpen, onClose }: DeviceManagementProps) {
     }
   };
 
-  const createDevice = async () => {
-    if (!deviceId.trim() || !friendlyName.trim()) {
+  const claimDevice = async () => {
+    if (!friendlyId.trim() || !deviceName.trim()) {
       setError("Please fill in all fields");
       return;
     }
 
     try {
-      setCreateLoading(true);
+      setClaimLoading(true);
       setError(null);
 
-      const response = await fetch("/api/devices", {
+      const response = await fetch("/api/devices/claim", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         credentials: "include",
         body: JSON.stringify({
-          device_id: deviceId.trim(),
-          friendly_name: friendlyName.trim(),
+          friendly_id: friendlyId.trim(),
+          name: deviceName.trim(),
         }),
       });
 
       if (response.ok) {
-        setSuccessMessage("Device linked successfully!");
-        setShowCreateDialog(false);
-        setDeviceId("");
-        setFriendlyName("");
+        setSuccessMessage("Device claimed successfully!");
+        setShowClaimDialog(false);
+        setFriendlyId("");
+        setDeviceName("");
         await fetchDevices();
       } else {
         const errorData = await response.json();
-        setError(errorData.error || "Failed to create device");
+        setError(errorData.error || "Failed to claim device");
       }
     } catch (error) {
       setError("Network error occurred");
     } finally {
-      setCreateLoading(false);
+      setClaimLoading(false);
     }
   };
 
   const updateDevice = async () => {
-    if (!editDevice || !editFriendlyName.trim()) {
+    if (!editDevice || !editDeviceName.trim()) {
       setError("Please fill in all fields");
       return;
     }
@@ -184,7 +209,7 @@ export function DeviceManagement({ isOpen, onClose }: DeviceManagementProps) {
         },
         credentials: "include",
         body: JSON.stringify({
-          friendly_name: editFriendlyName.trim(),
+          name: editDeviceName.trim(),
           refresh_rate: refreshRate,
         }),
       });
@@ -231,8 +256,63 @@ export function DeviceManagement({ isOpen, onClose }: DeviceManagementProps) {
 
   const openEditDialog = (device: Device) => {
     setEditDevice(device);
-    setEditFriendlyName(device.friendly_name);
+    setEditDeviceName(device.name || "");
     setEditRefreshRate(device.refresh_rate.toString());
+  };
+
+  const fetchDeviceLogs = async (device: Device, offset = 0) => {
+    try {
+      setLogsLoading(true);
+      setError(null);
+
+      const response = await fetch(`/api/devices/${device.id}/logs?limit=${logsLimit}&offset=${offset}`, {
+        credentials: "include",
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setDeviceLogs(data.logs || []);
+        setTotalLogsCount(data.total_count || 0);
+        setLogsOffset(offset);
+      } else {
+        const errorData = await response.json();
+        setError(errorData.error || "Failed to fetch device logs");
+      }
+    } catch (error) {
+      setError("Network error occurred");
+    } finally {
+      setLogsLoading(false);
+    }
+  };
+
+  const openLogsDialog = (device: Device) => {
+    setLogsDevice(device);
+    setDeviceLogs([]);
+    setLogsOffset(0);
+    fetchDeviceLogs(device, 0);
+  };
+
+  const formatLogData = (logData: string) => {
+    try {
+      const parsed = JSON.parse(logData);
+      return JSON.stringify(parsed, null, 2);
+    } catch {
+      return logData;
+    }
+  };
+
+  const getLevelBadgeColor = (level: string) => {
+    switch (level.toLowerCase()) {
+      case "error":
+        return "bg-destructive";
+      case "warn":
+      case "warning":
+        return "bg-amber-600";
+      case "debug":
+        return "bg-slate-600";
+      default:
+        return "bg-blue-600";
+    }
   };
 
   const formatDate = (dateString: string) => {
@@ -266,12 +346,32 @@ export function DeviceManagement({ isOpen, onClose }: DeviceManagementProps) {
     return "offline";
   };
 
+  const calculateBatteryPercentage = (voltage: number): number => {
+    // Lithium battery voltage ranges: 2.75V (0%) to 4.2V (100%)
+    if (voltage >= 4.2) return 100;
+    if (voltage <= 2.75) return 0;
+    
+    // Linear interpolation between voltage thresholds
+    if (voltage > 3.95) return Math.round(75 + ((voltage - 3.95) / (4.2 - 3.95)) * 25);
+    if (voltage > 3.55) return Math.round(50 + ((voltage - 3.55) / (3.95 - 3.55)) * 25);
+    if (voltage > 3.15) return Math.round(25 + ((voltage - 3.15) / (3.55 - 3.15)) * 25);
+    return Math.round((voltage - 2.75) / (3.15 - 2.75) * 25);
+  };
+
+  const getSignalQuality = (rssi: number): { quality: string; strength: number; color: string } => {
+    if (rssi > -50) return { quality: "Excellent", strength: 5, color: "text-emerald-600" };
+    if (rssi > -60) return { quality: "Good", strength: 4, color: "text-emerald-600" };
+    if (rssi > -70) return { quality: "Fair", strength: 3, color: "text-amber-600" };
+    if (rssi > -80) return { quality: "Poor", strength: 2, color: "text-amber-600" };
+    return { quality: "Very Poor", strength: 1, color: "text-destructive" };
+  };
+
   const getStatusBadge = (device: Device) => {
     const status = getDeviceStatus(device);
     
     switch (status) {
       case "online":
-        return <Badge variant="default" className="bg-green-500">Online</Badge>;
+        return <Badge variant="default" className="bg-emerald-600">Online</Badge>;
       case "recently_online":
         return <Badge variant="secondary">Recently Online</Badge>;
       case "offline":
@@ -283,25 +383,63 @@ export function DeviceManagement({ isOpen, onClose }: DeviceManagementProps) {
     }
   };
 
-  const getBatteryIcon = (voltage?: number) => {
-    if (!voltage) return <Battery className="h-4 w-4 text-gray-400" />;
+  const getBatteryDisplay = (voltage?: number) => {
+    if (!voltage) {
+      return {
+        icon: <Battery className="h-4 w-4 text-muted-foreground" />,
+        text: "N/A",
+        tooltip: "Battery status unknown"
+      };
+    }
     
-    if (voltage > 3.8) return <Battery className="h-4 w-4 text-green-500" />;
-    if (voltage > 3.4) return <Battery className="h-4 w-4 text-yellow-500" />;
-    return <Battery className="h-4 w-4 text-red-500" />;
+    const percentage = calculateBatteryPercentage(voltage);
+    let icon;
+    let color;
+    
+    if (percentage > 75) {
+      icon = <BatteryFull className="h-4 w-4 text-emerald-600" />;
+      color = "text-emerald-600";
+    } else if (percentage > 50) {
+      icon = <BatteryMedium className="h-4 w-4 text-emerald-600" />;
+      color = "text-emerald-600";
+    } else if (percentage > 25) {
+      icon = <BatteryLow className="h-4 w-4 text-amber-600" />;
+      color = "text-amber-600";
+    } else {
+      icon = <BatteryWarning className="h-4 w-4 text-destructive" />;
+      color = "text-destructive";
+    }
+    
+    return {
+      icon,
+      text: `${percentage}% (${voltage.toFixed(1)}V)`,
+      tooltip: `Battery Level: ${percentage}% (${voltage.toFixed(1)}V)`,
+      color
+    };
   };
 
-  const getRSSIIcon = (rssi?: number) => {
-    if (!rssi) return <Wifi className="h-4 w-4 text-gray-400" />;
+  const getSignalDisplay = (rssi?: number) => {
+    if (!rssi) {
+      return {
+        icon: <WifiOff className="h-4 w-4 text-muted-foreground" />,
+        text: "N/A",
+        tooltip: "Signal strength unknown"
+      };
+    }
     
-    if (rssi > -50) return <Wifi className="h-4 w-4 text-green-500" />;
-    if (rssi > -70) return <Wifi className="h-4 w-4 text-yellow-500" />;
-    return <Wifi className="h-4 w-4 text-red-500" />;
+    const { quality, color } = getSignalQuality(rssi);
+    
+    return {
+      icon: <Wifi className={`h-4 w-4 ${color}`} />,
+      text: quality,
+      tooltip: `Signal Quality: ${quality} (${rssi}dBm)`,
+      color
+    };
   };
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-7xl mobile-dialog-content sm:max-w-7xl overflow-y-auto !top-[0vh] !translate-y-0 sm:!top-[6vh]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Monitor className="h-5 w-5" />
@@ -330,11 +468,11 @@ export function DeviceManagement({ isOpen, onClose }: DeviceManagementProps) {
           <div className="flex justify-between items-center">
             <h3 className="text-lg font-semibold">Your Devices</h3>
             <Button
-              onClick={() => setShowCreateDialog(true)}
+              onClick={() => setShowClaimDialog(true)}
               className="flex items-center gap-2"
             >
               <Plus className="h-4 w-4" />
-              Link Device
+              Claim Device
             </Button>
           </div>
 
@@ -343,14 +481,14 @@ export function DeviceManagement({ isOpen, onClose }: DeviceManagementProps) {
           ) : devices.length === 0 ? (
             <Card>
               <CardContent className="text-center py-8">
-                <Monitor className="h-12 w-12 mx-auto text-gray-400 mb-4" />
-                <h3 className="text-lg font-semibold mb-2">No Devices Linked</h3>
-                <p className="text-gray-600 mb-4">
-                  Link your first TRMNL device to get started.
+                <Monitor className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                <h3 className="text-lg font-semibold mb-2">No Devices Claimed</h3>
+                <p className="text-muted-foreground mb-4">
+                  Claim your first TRMNL device to get started.
                 </p>
-                <Button onClick={() => setShowCreateDialog(true)}>
+                <Button onClick={() => setShowClaimDialog(true)}>
                   <Plus className="h-4 w-4 mr-2" />
-                  Link Device
+                  Claim Device
                 </Button>
               </CardContent>
             </Card>
@@ -375,8 +513,8 @@ export function DeviceManagement({ isOpen, onClose }: DeviceManagementProps) {
                       <TableRow key={device.id}>
                         <TableCell>
                           <div>
-                            <div className="font-medium">{device.friendly_name}</div>
-                            <div className="text-sm text-gray-600">{device.device_id}</div>
+                            <div className="font-medium">{device.name || "Unnamed Device"}</div>
+                            <div className="text-sm text-muted-foreground">ID: {device.friendly_id}</div>
                           </div>
                         </TableCell>
                         <TableCell>{getStatusBadge(device)}</TableCell>
@@ -387,14 +525,21 @@ export function DeviceManagement({ isOpen, onClose }: DeviceManagementProps) {
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <div className="flex items-center gap-1">
-                                {getBatteryIcon(device.battery_voltage)}
-                                <span className="text-sm">
-                                  {device.battery_voltage ? `${device.battery_voltage.toFixed(1)}V` : "N/A"}
-                                </span>
+                                {(() => {
+                                  const battery = getBatteryDisplay(device.battery_voltage);
+                                  return (
+                                    <>
+                                      {battery.icon}
+                                      <span className={`text-sm ${battery.color}`}>
+                                        {battery.text}
+                                      </span>
+                                    </>
+                                  );
+                                })()}
                               </div>
                             </TooltipTrigger>
                             <TooltipContent>
-                              Battery Voltage: {device.battery_voltage ? `${device.battery_voltage}V` : "Unknown"}
+                              {getBatteryDisplay(device.battery_voltage).tooltip}
                             </TooltipContent>
                           </Tooltip>
                         </TableCell>
@@ -402,14 +547,21 @@ export function DeviceManagement({ isOpen, onClose }: DeviceManagementProps) {
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <div className="flex items-center gap-1">
-                                {getRSSIIcon(device.rssi)}
-                                <span className="text-sm">
-                                  {device.rssi ? `${device.rssi}dBm` : "N/A"}
-                                </span>
+                                {(() => {
+                                  const signal = getSignalDisplay(device.rssi);
+                                  return (
+                                    <>
+                                      {signal.icon}
+                                      <span className={`text-sm ${signal.color}`}>
+                                        {signal.text}
+                                      </span>
+                                    </>
+                                  );
+                                })()}
                               </div>
                             </TooltipTrigger>
                             <TooltipContent>
-                              Signal Strength: {device.rssi ? `${device.rssi}dBm` : "Unknown"}
+                              {getSignalDisplay(device.rssi).tooltip}
                             </TooltipContent>
                           </Tooltip>
                         </TableCell>
@@ -439,20 +591,42 @@ export function DeviceManagement({ isOpen, onClose }: DeviceManagementProps) {
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => openEditDialog(device)}
-                            >
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => setDeleteDevice(device)}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => openLogsDialog(device)}
+                                >
+                                  <FileText className="h-4 w-4" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>View Logs</TooltipContent>
+                            </Tooltip>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => openEditDialog(device)}
+                                >
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>Edit Device</TooltipContent>
+                            </Tooltip>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => setDeleteDevice(device)}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>Delete Device</TooltipContent>
+                            </Tooltip>
                           </div>
                         </TableCell>
                       </TableRow>
@@ -465,33 +639,37 @@ export function DeviceManagement({ isOpen, onClose }: DeviceManagementProps) {
         </div>
       </DialogContent>
 
-      {/* Create Device Dialog */}
-      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+      {/* Claim Device Dialog */}
+      <Dialog open={showClaimDialog} onOpenChange={setShowClaimDialog}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Link New Device</DialogTitle>
+            <DialogTitle>Claim Device</DialogTitle>
             <DialogDescription>
-              Enter your TRMNL device information to link it to your account.
+              Enter your TRMNL device's friendly ID to claim it to your account.
             </DialogDescription>
           </DialogHeader>
           
           <div className="space-y-4">
             <div>
-              <Label htmlFor="device-id">Device ID / MAC Address</Label>
+              <Label htmlFor="friendly-id">Device Friendly ID</Label>
               <Input
-                id="device-id"
-                value={deviceId}
-                onChange={(e) => setDeviceId(e.target.value)}
-                placeholder="e.g., AA:BB:CC:DD:EE:FF"
+                id="friendly-id"
+                value={friendlyId}
+                onChange={(e) => setFriendlyId(e.target.value.toUpperCase())}
+                placeholder="e.g., 917F0B"
                 className="mt-2"
+                maxLength={6}
               />
+              <p className="text-sm text-muted-foreground mt-1">
+                Find this 6-character ID on your device's setup screen
+              </p>
             </div>
             <div>
-              <Label htmlFor="friendly-name">Friendly Name</Label>
+              <Label htmlFor="device-name">Device Name</Label>
               <Input
-                id="friendly-name"
-                value={friendlyName}
-                onChange={(e) => setFriendlyName(e.target.value)}
+                id="device-name"
+                value={deviceName}
+                onChange={(e) => setDeviceName(e.target.value)}
                 placeholder="e.g., Kitchen Display"
                 className="mt-2"
               />
@@ -499,14 +677,14 @@ export function DeviceManagement({ isOpen, onClose }: DeviceManagementProps) {
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
+            <Button variant="outline" onClick={() => setShowClaimDialog(false)}>
               Cancel
             </Button>
             <Button
-              onClick={createDevice}
-              disabled={createLoading || !deviceId.trim() || !friendlyName.trim()}
+              onClick={claimDevice}
+              disabled={claimLoading || !friendlyId.trim() || !deviceName.trim()}
             >
-              {createLoading ? "Linking..." : "Link Device"}
+              {claimLoading ? "Claiming..." : "Claim Device"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -524,11 +702,11 @@ export function DeviceManagement({ isOpen, onClose }: DeviceManagementProps) {
           
           <div className="space-y-4">
             <div>
-              <Label htmlFor="edit-friendly-name">Friendly Name</Label>
+              <Label htmlFor="edit-device-name">Device Name</Label>
               <Input
-                id="edit-friendly-name"
-                value={editFriendlyName}
-                onChange={(e) => setEditFriendlyName(e.target.value)}
+                id="edit-device-name"
+                value={editDeviceName}
+                onChange={(e) => setEditDeviceName(e.target.value)}
                 placeholder="e.g., Kitchen Display"
                 className="mt-2"
               />
@@ -544,7 +722,7 @@ export function DeviceManagement({ isOpen, onClose }: DeviceManagementProps) {
                 onChange={(e) => setEditRefreshRate(e.target.value)}
                 className="mt-2"
               />
-              <p className="text-sm text-gray-600 mt-1">
+              <p className="text-sm text-muted-foreground mt-1">
                 How often the device should check for new content (60-86400 seconds)
               </p>
             </div>
@@ -556,7 +734,7 @@ export function DeviceManagement({ isOpen, onClose }: DeviceManagementProps) {
             </Button>
             <Button
               onClick={updateDevice}
-              disabled={!editFriendlyName.trim()}
+              disabled={!editDeviceName.trim()}
             >
               Update Device
             </Button>
@@ -573,7 +751,7 @@ export function DeviceManagement({ isOpen, onClose }: DeviceManagementProps) {
               Delete Device
             </DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete "{deleteDevice?.friendly_name}"? This will remove all associated playlists and settings. This action cannot be undone.
+              Are you sure you want to delete "{deleteDevice?.name || 'this device'}"? This will remove all associated playlists and settings. This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
 
@@ -587,6 +765,143 @@ export function DeviceManagement({ isOpen, onClose }: DeviceManagementProps) {
               disabled={deleteLoading}
             >
               {deleteLoading ? "Deleting..." : "Delete Device"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Device Logs Dialog */}
+      <Dialog open={!!logsDevice} onOpenChange={() => setLogsDevice(null)}>
+        <DialogContent className="max-w-6xl mobile-dialog-content sm:max-w-6xl overflow-y-auto !top-[0vh] !translate-y-0 sm:!top-[6vh]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5" />
+              Device Logs - {logsDevice?.name || "Unnamed Device"}
+            </DialogTitle>
+            <DialogDescription>
+              View logs submitted by your device. Logs are displayed in reverse chronological order.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {logsLoading ? (
+              <div className="text-center py-8">Loading logs...</div>
+            ) : deviceLogs.length === 0 ? (
+              <Card>
+                <CardContent className="text-center py-8">
+                  <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                  <h3 className="text-lg font-semibold mb-2">No Logs Found</h3>
+                  <p className="text-muted-foreground">
+                    This device hasn't submitted any logs yet.
+                  </p>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <p className="text-sm text-muted-foreground">
+                    Showing {logsOffset + 1}-{Math.min(logsOffset + logsLimit, totalLogsCount)} of {totalLogsCount} logs
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => fetchDeviceLogs(logsDevice!, Math.max(0, logsOffset - logsLimit))}
+                      disabled={logsOffset === 0 || logsLoading}
+                    >
+                      Previous
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => fetchDeviceLogs(logsDevice!, logsOffset + logsLimit)}
+                      disabled={logsOffset + logsLimit >= totalLogsCount || logsLoading}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+
+                <Card>
+                  <CardContent className="p-0">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Timestamp</TableHead>
+                          <TableHead>Level</TableHead>
+                          <TableHead>Log Data</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {deviceLogs.map((log) => (
+                          <TableRow key={log.id}>
+                            <TableCell>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="cursor-default">
+                                    {new Date(log.timestamp).toLocaleString()}
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  {formatDate(log.timestamp)}
+                                </TooltipContent>
+                              </Tooltip>
+                            </TableCell>
+                            <TableCell>
+                              <Badge className={getLevelBadgeColor(log.level)}>
+                                {log.level.toUpperCase()}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <div className="max-w-md">
+                                <pre className="text-xs bg-muted p-2 rounded overflow-x-auto whitespace-pre-wrap">
+                                  {formatLogData(log.log_data)}
+                                </pre>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+
+                <div className="flex justify-between items-center">
+                  <p className="text-sm text-muted-foreground">
+                    Showing {logsOffset + 1}-{Math.min(logsOffset + logsLimit, totalLogsCount)} of {totalLogsCount} logs
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => fetchDeviceLogs(logsDevice!, Math.max(0, logsOffset - logsLimit))}
+                      disabled={logsOffset === 0 || logsLoading}
+                    >
+                      Previous
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => fetchDeviceLogs(logsDevice!, logsOffset + logsLimit)}
+                      disabled={logsOffset + logsLimit >= totalLogsCount || logsLoading}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setLogsDevice(null)}>
+              Close
+            </Button>
+            <Button
+              onClick={() => logsDevice && fetchDeviceLogs(logsDevice, logsOffset)}
+              disabled={logsLoading}
+            >
+              {logsLoading ? "Refreshing..." : "Refresh"}
             </Button>
           </DialogFooter>
         </DialogContent>

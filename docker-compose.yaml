@@ -23,6 +23,7 @@ services:
       - OIDC_CLIENT_ID=${OIDC_CLIENT_ID}
       - OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET}
       - OIDC_REDIRECT_URI=${OIDC_REDIRECT_URI}
+      - DEBUG=true
       # SMTP Configuration (optional)
       - SMTP_ENABLED=${SMTP_ENABLED:-false}
       - SMTP_HOST=${SMTP_HOST}

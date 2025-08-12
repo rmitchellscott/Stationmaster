@@ -380,6 +380,34 @@ func initializeDefaultPlugins() error {
 			Author:  "Stationmaster",
 			IsActive: true,
 		},
+		{
+			Name:        "Redirect",
+			Type:        "redirect",
+			Description: "Proxy JSON response from external endpoint (TRMNL BYOS Redirect plugin)",
+			ConfigSchema: `{
+				"type": "object",
+				"properties": {
+					"endpoint_url": {
+						"type": "string",
+						"title": "JSON Endpoint URL",
+						"description": "URL to fetch JSON response from (must return filename, url, refresh_rate fields)",
+						"placeholder": "https://your-server.com/api/plugin-endpoint"
+					},
+					"timeout_seconds": {
+						"type": "integer",
+						"title": "Request Timeout",
+						"description": "Timeout for HTTP requests in seconds (max 10)",
+						"minimum": 1,
+						"maximum": 10,
+						"default": 2
+					}
+				},
+				"required": ["endpoint_url"]
+			}`,
+			Version: "1.0.0",
+			Author:  "TRMNL",
+			IsActive: true,
+		},
 	}
 
 	for _, plugin := range defaultPlugins {

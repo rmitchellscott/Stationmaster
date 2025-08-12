@@ -91,6 +91,7 @@ func main() {
 
 	// TRMNL device endpoints (public - device authentication handled internally)
 	router.GET("/api/setup", trmnl.SetupHandler)
+	router.GET("/api/setup/", trmnl.SetupHandler)
 	router.GET("/api/display", trmnl.DisplayHandler)
 	router.POST("/api/logs", trmnl.LogsHandler)
 	router.GET("/api/trmnl/devices/:deviceId/image", trmnl.DeviceImageHandler)
@@ -187,10 +188,11 @@ func main() {
 	devices := protected.Group("/devices")
 	{
 		devices.GET("", handlers.GetDevicesHandler)                         // GET /api/devices - list user's devices
-		devices.POST("", handlers.CreateDeviceHandler)                      // POST /api/devices - create new device
+		devices.POST("/claim", handlers.ClaimDeviceHandler)                 // POST /api/devices/claim - claim unclaimed device
 		devices.GET("/:id", handlers.GetDeviceHandler)                      // GET /api/devices/:id - get specific device
 		devices.PUT("/:id", handlers.UpdateDeviceHandler)                   // PUT /api/devices/:id - update device
 		devices.DELETE("/:id", handlers.DeleteDeviceHandler)                // DELETE /api/devices/:id - delete device
+		devices.GET("/:id/logs", handlers.GetDeviceLogsHandler)             // GET /api/devices/:id/logs - get device logs
 	}
 
 	// Plugin management endpoints

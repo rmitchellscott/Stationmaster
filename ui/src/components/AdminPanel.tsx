@@ -71,6 +71,19 @@ import {
   Loader2,
   Download,
   Trash2,
+  Monitor,
+  Puzzle,
+  Wifi,
+  WifiOff,
+  Eye,
+  EyeOff,
+  Unlink,
+  Calendar as CalendarIcon,
+  Battery,
+  BatteryFull,
+  BatteryMedium,
+  BatteryLow,
+  BatteryWarning,
 } from "lucide-react";
 
 /**
@@ -151,6 +164,54 @@ interface RestoreUpload {
   created_at: string;
 }
 
+interface Device {
+  id: string;
+  user_id?: string;
+  mac_address: string;
+  friendly_id: string;
+  name?: string;
+  api_key: string;
+  is_claimed: boolean;
+  firmware_version?: string;
+  battery_voltage?: number;
+  rssi?: number;
+  refresh_rate: number;
+  last_seen?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  user?: User;
+}
+
+interface Plugin {
+  id: string;
+  name: string;
+  type: string;
+  description: string;
+  config_schema: string;
+  version: string;
+  author?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+interface DeviceStats {
+  total_devices: number;
+  claimed_devices: number;
+  unclaimed_devices: number;
+  active_devices: number;
+  inactive_devices: number;
+  recent_registrations: number;
+}
+
+interface PluginStats {
+  total_plugins: number;
+  active_plugins: number;
+  total_user_plugins: number;
+  active_user_plugins: number;
+}
+
 interface SystemStatus {
   database: {
     total_users: number;
@@ -197,6 +258,10 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
   const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
   const [backupJobs, setBackupJobs] = useState<BackupJob[]>([]);
   const [restoreUploads, setRestoreUploads] = useState<RestoreUpload[]>([]);
+  const [devices, setDevices] = useState<Device[]>([]);
+  const [deviceStats, setDeviceStats] = useState<DeviceStats | null>(null);
+  const [plugins, setPlugins] = useState<Plugin[]>([]);
+  const [pluginStats, setPluginStats] = useState<PluginStats | null>(null);
   const [loading, setLoading] = useState(false);
   const [creatingBackup, setCreatingBackup] = useState(false);
   const [restoringBackup, setRestoringBackup] = useState(false);
@@ -260,6 +325,26 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
   const [downloadingJobId, setDownloadingJobId] = useState<string | null>(null);
   const [restorePerformed, setRestorePerformed] = useState(false);
 
+  // Device management state
+  const [viewDevice, setViewDevice] = useState<Device | null>(null);
+  const [unlinkingDevice, setUnlinkingDevice] = useState<string | null>(null);
+  
+  // Plugin management state
+  const [viewPlugin, setViewPlugin] = useState<Plugin | null>(null);
+  const [showCreatePluginDialog, setShowCreatePluginDialog] = useState(false);
+  const [editPlugin, setEditPlugin] = useState<Plugin | null>(null);
+  const [deletePlugin, setDeletePlugin] = useState<Plugin | null>(null);
+  const [creatingPlugin, setCreatingPlugin] = useState(false);
+  const [deletingPlugin, setDeletingPlugin] = useState(false);
+  
+  // Plugin form state
+  const [pluginName, setPluginName] = useState("");
+  const [pluginType, setPluginType] = useState("");
+  const [pluginDescription, setPluginDescription] = useState("");
+  const [pluginConfigSchema, setPluginConfigSchema] = useState("");
+  const [pluginVersion, setPluginVersion] = useState("");
+  const [pluginAuthor, setPluginAuthor] = useState("");
+
   useEffect(() => {
     if (isOpen) {
       setRestorePerformed(false);
@@ -269,6 +354,10 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
       fetchBackupJobs();
       fetchRestoreUploads();
       fetchVersionInfo();
+      fetchDevices();
+      fetchDeviceStats();
+      fetchPlugins();
+      fetchPluginStats();
     }
   }, [isOpen]);
 
@@ -441,6 +530,66 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
       }
     } catch (error) {
       console.error("Failed to fetch version info:", error);
+    }
+  };
+
+  const fetchDevices = async () => {
+    try {
+      const response = await fetch("/api/admin/devices", {
+        credentials: "include",
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setDevices(data.devices || []);
+      }
+    } catch (error) {
+      console.error("Failed to fetch devices:", error);
+    }
+  };
+
+  const fetchDeviceStats = async () => {
+    try {
+      const response = await fetch("/api/admin/devices/stats", {
+        credentials: "include",
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setDeviceStats(data);
+      }
+    } catch (error) {
+      console.error("Failed to fetch device stats:", error);
+    }
+  };
+
+  const fetchPlugins = async () => {
+    try {
+      const response = await fetch("/api/plugins", {
+        credentials: "include",
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setPlugins(data.plugins || []);
+      }
+    } catch (error) {
+      console.error("Failed to fetch plugins:", error);
+    }
+  };
+
+  const fetchPluginStats = async () => {
+    try {
+      const response = await fetch("/api/admin/plugins/stats", {
+        credentials: "include",
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setPluginStats(data);
+      }
+    } catch (error) {
+      console.error("Failed to fetch plugin stats:", error);
     }
   };
 
@@ -1000,7 +1149,263 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
     }
   };
 
+  // Device management functions
+  const unlinkDevice = async (deviceId: string) => {
+    try {
+      setUnlinkingDevice(deviceId);
+      setError(null);
 
+      const response = await fetch(`/api/admin/devices/${deviceId}/unlink`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+
+      if (response.ok) {
+        setSuccessMessage("Device unlinked successfully!");
+        await fetchDevices();
+        await fetchDeviceStats();
+      } else {
+        const errorData = await response.json();
+        setError(errorData.error || "Failed to unlink device");
+      }
+    } catch (error) {
+      setError("Network error occurred");
+    } finally {
+      setUnlinkingDevice(null);
+    }
+  };
+
+  // Plugin management functions
+  const createPlugin = async () => {
+    if (!pluginName.trim() || !pluginType.trim()) {
+      setError("Please fill in required fields");
+      return;
+    }
+
+    try {
+      setCreatingPlugin(true);
+      setError(null);
+
+      const response = await fetch("/api/admin/plugins", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+        body: JSON.stringify({
+          name: pluginName.trim(),
+          type: pluginType.trim(),
+          description: pluginDescription.trim(),
+          config_schema: pluginConfigSchema.trim(),
+          version: pluginVersion.trim(),
+          author: pluginAuthor.trim(),
+        }),
+      });
+
+      if (response.ok) {
+        setSuccessMessage("Plugin created successfully!");
+        setShowCreatePluginDialog(false);
+        resetPluginForm();
+        await fetchPlugins();
+        await fetchPluginStats();
+      } else {
+        const errorData = await response.json();
+        setError(errorData.error || "Failed to create plugin");
+      }
+    } catch (error) {
+      setError("Network error occurred");
+    } finally {
+      setCreatingPlugin(false);
+    }
+  };
+
+  const updatePlugin = async () => {
+    if (!editPlugin) return;
+
+    try {
+      setError(null);
+
+      const response = await fetch(`/api/admin/plugins/${editPlugin.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+        body: JSON.stringify({
+          name: pluginName.trim(),
+          type: pluginType.trim(),
+          description: pluginDescription.trim(),
+          config_schema: pluginConfigSchema.trim(),
+          version: pluginVersion.trim(),
+          author: pluginAuthor.trim(),
+          is_active: editPlugin.is_active,
+        }),
+      });
+
+      if (response.ok) {
+        setSuccessMessage("Plugin updated successfully!");
+        setEditPlugin(null);
+        resetPluginForm();
+        await fetchPlugins();
+        await fetchPluginStats();
+      } else {
+        const errorData = await response.json();
+        setError(errorData.error || "Failed to update plugin");
+      }
+    } catch (error) {
+      setError("Network error occurred");
+    }
+  };
+
+  const confirmDeletePlugin = async () => {
+    if (!deletePlugin) return;
+
+    try {
+      setDeletingPlugin(true);
+      setError(null);
+
+      const response = await fetch(`/api/admin/plugins/${deletePlugin.id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+
+      if (response.ok) {
+        setSuccessMessage("Plugin deleted successfully!");
+        setDeletePlugin(null);
+        await fetchPlugins();
+        await fetchPluginStats();
+      } else {
+        const errorData = await response.json();
+        setError(errorData.error || "Failed to delete plugin");
+      }
+    } catch (error) {
+      setError("Network error occurred");
+    } finally {
+      setDeletingPlugin(false);
+    }
+  };
+
+  const togglePluginStatus = async (plugin: Plugin) => {
+    try {
+      setError(null);
+
+      const response = await fetch(`/api/admin/plugins/${plugin.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+        body: JSON.stringify({
+          ...plugin,
+          is_active: !plugin.is_active,
+        }),
+      });
+
+      if (response.ok) {
+        await fetchPlugins();
+        await fetchPluginStats();
+      } else {
+        const errorData = await response.json();
+        setError(errorData.error || "Failed to update plugin status");
+      }
+    } catch (error) {
+      setError("Network error occurred");
+    }
+  };
+
+  const openEditPluginDialog = (plugin: Plugin) => {
+    setEditPlugin(plugin);
+    setPluginName(plugin.name);
+    setPluginType(plugin.type);
+    setPluginDescription(plugin.description);
+    setPluginConfigSchema(plugin.config_schema);
+    setPluginVersion(plugin.version);
+    setPluginAuthor(plugin.author || "");
+  };
+
+  const resetPluginForm = () => {
+    setPluginName("");
+    setPluginType("");
+    setPluginDescription("");
+    setPluginConfigSchema("");
+    setPluginVersion("");
+    setPluginAuthor("");
+  };
+
+  // Device utility functions
+  const calculateBatteryPercentage = (voltage: number): number => {
+    // Lithium battery voltage ranges: 2.75V (0%) to 4.2V (100%)
+    if (voltage >= 4.2) return 100;
+    if (voltage <= 2.75) return 0;
+    
+    // Linear interpolation between voltage thresholds
+    if (voltage > 3.95) return Math.round(75 + ((voltage - 3.95) / (4.2 - 3.95)) * 25);
+    if (voltage > 3.55) return Math.round(50 + ((voltage - 3.55) / (3.95 - 3.55)) * 25);
+    if (voltage > 3.15) return Math.round(25 + ((voltage - 3.15) / (3.55 - 3.15)) * 25);
+    return Math.round((voltage - 2.75) / (3.15 - 2.75) * 25);
+  };
+
+  const getSignalQuality = (rssi: number): { quality: string; strength: number; color: string } => {
+    if (rssi > -50) return { quality: "Excellent", strength: 5, color: "text-emerald-600" };
+    if (rssi > -60) return { quality: "Good", strength: 4, color: "text-emerald-600" };
+    if (rssi > -70) return { quality: "Fair", strength: 3, color: "text-amber-600" };
+    if (rssi > -80) return { quality: "Poor", strength: 2, color: "text-amber-600" };
+    return { quality: "Very Poor", strength: 1, color: "text-destructive" };
+  };
+
+  const getBatteryDisplay = (voltage?: number) => {
+    if (!voltage) {
+      return {
+        icon: <Battery className="h-4 w-4 text-muted-foreground" />,
+        text: "N/A",
+        tooltip: "Battery status unknown"
+      };
+    }
+    
+    const percentage = calculateBatteryPercentage(voltage);
+    let icon;
+    let color;
+    
+    if (percentage > 75) {
+      icon = <BatteryFull className="h-4 w-4 text-emerald-600" />;
+      color = "text-emerald-600";
+    } else if (percentage > 50) {
+      icon = <BatteryMedium className="h-4 w-4 text-emerald-600" />;
+      color = "text-emerald-600";
+    } else if (percentage > 25) {
+      icon = <BatteryLow className="h-4 w-4 text-amber-600" />;
+      color = "text-amber-600";
+    } else {
+      icon = <BatteryWarning className="h-4 w-4 text-destructive" />;
+      color = "text-destructive";
+    }
+    
+    return {
+      icon,
+      text: `${percentage}% (${voltage.toFixed(1)}V)`,
+      tooltip: `Battery Level: ${percentage}% (${voltage.toFixed(1)}V)`,
+      color
+    };
+  };
+
+  const getSignalDisplay = (rssi?: number) => {
+    if (!rssi) {
+      return {
+        icon: <WifiOff className="h-4 w-4 text-muted-foreground" />,
+        text: "N/A",
+        tooltip: "Signal strength unknown"
+      };
+    }
+    
+    const { quality, color } = getSignalQuality(rssi);
+    
+    return {
+      icon: <Wifi className={`h-4 w-4 ${color}`} />,
+      text: quality,
+      tooltip: `Signal Quality: ${quality} (${rssi}dBm)`,
+      color
+    };
+  };
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleString();
@@ -1206,6 +1611,14 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
             <TabsTrigger value="api-keys">
               <Key className="h-4 w-4" />
               <span className="hidden sm:inline ml-1.5">{t("admin.tabs.api_keys")}</span>
+            </TabsTrigger>
+            <TabsTrigger value="devices">
+              <Monitor className="h-4 w-4" />
+              <span className="hidden sm:inline ml-1.5">Devices</span>
+            </TabsTrigger>
+            <TabsTrigger value="plugins">
+              <Puzzle className="h-4 w-4" />
+              <span className="hidden sm:inline ml-1.5">Plugins</span>
             </TabsTrigger>
             <TabsTrigger value="settings">
               <SettingsIcon className="h-4 w-4" />
@@ -1897,6 +2310,327 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
               )}
             </div>
           </TabsContent>
+
+          <TabsContent value="devices">
+            <div className="space-y-4">
+              {/* Device Statistics Cards */}
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium">Total Devices</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">
+                      {deviceStats?.total_devices || 0}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium">Claimed</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold text-emerald-600">
+                      {deviceStats?.claimed_devices || 0}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium">Unclaimed</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold text-amber-600">
+                      {deviceStats?.unclaimed_devices || 0}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium">Active</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold text-blue-600">
+                      {deviceStats?.active_devices || 0}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium">Recent</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">
+                      {deviceStats?.recent_registrations || 0}
+                    </div>
+                    <p className="text-xs text-muted-foreground">Last 7 days</p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Device List */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>All Devices ({devices.length})</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Friendly ID</TableHead>
+                        <TableHead>Name</TableHead>
+                        <TableHead className="hidden md:table-cell">Owner</TableHead>
+                        <TableHead className="hidden lg:table-cell">MAC Address</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="hidden lg:table-cell">Last Seen</TableHead>
+                        <TableHead>Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {devices.map((device) => (
+                        <TableRow key={device.id}>
+                          <TableCell className="font-medium">
+                            <code className="text-sm">{device.friendly_id}</code>
+                          </TableCell>
+                          <TableCell>
+                            {device.name || <span className="text-muted-foreground">Unnamed</span>}
+                          </TableCell>
+                          <TableCell className="hidden md:table-cell">
+                            {device.user_id ? (
+                              <span className="text-sm">
+                                {users.find(u => u.id === device.user_id)?.username || "Unknown User"}
+                              </span>
+                            ) : (
+                              <span className="text-muted-foreground">Unclaimed</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="hidden lg:table-cell">
+                            <code className="text-xs">{device.mac_address}</code>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              {device.is_claimed ? (
+                                <Badge variant="default" className="flex items-center gap-1">
+                                  <Wifi className="h-3 w-3" />
+                                  Claimed
+                                </Badge>
+                              ) : (
+                                <Badge variant="secondary" className="flex items-center gap-1">
+                                  <WifiOff className="h-3 w-3" />
+                                  Unclaimed
+                                </Badge>
+                              )}
+                              {device.is_active ? (
+                                <Badge variant="outline" className="flex items-center gap-1">
+                                  <Eye className="h-3 w-3" />
+                                  Active
+                                </Badge>
+                              ) : (
+                                <Badge variant="secondary" className="flex items-center gap-1">
+                                  <EyeOff className="h-3 w-3" />
+                                  Inactive
+                                </Badge>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="hidden lg:table-cell">
+                            {device.last_seen ? (
+                              formatDate(device.last_seen)
+                            ) : (
+                              <span className="text-muted-foreground">Never</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setViewDevice(device)}
+                              >
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                              {device.is_claimed && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => unlinkDevice(device.id)}
+                                  disabled={unlinkingDevice === device.id}
+                                >
+                                  {unlinkingDevice === device.id ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <Unlink className="h-4 w-4" />
+                                  )}
+                                </Button>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="plugins">
+            <div className="space-y-4">
+              {/* Plugin Statistics Cards */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium">System Plugins</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">
+                      {pluginStats?.total_plugins || 0}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {pluginStats?.active_plugins || 0} active
+                    </p>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium">User Instances</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">
+                      {pluginStats?.total_user_plugins || 0}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {pluginStats?.active_user_plugins || 0} active
+                    </p>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium">Avg per User</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">
+                      {systemStatus ? Math.round((pluginStats?.total_user_plugins || 0) / Math.max(systemStatus.database.total_users, 1) * 10) / 10 : 0}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium">Most Popular</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-sm font-bold">
+                      {plugins.find(p => p.name)?.name || "N/A"}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Create Plugin Button */}
+              <div className="flex justify-end">
+                <Button
+                  onClick={() => setShowCreatePluginDialog(true)}
+                  className="flex items-center gap-2"
+                >
+                  <Plus className="h-4 w-4" />
+                  Create Plugin
+                </Button>
+              </div>
+
+              {/* Plugin List */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>System Plugins ({plugins.length})</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Name</TableHead>
+                        <TableHead>Type</TableHead>
+                        <TableHead className="hidden md:table-cell">Version</TableHead>
+                        <TableHead className="hidden lg:table-cell">Author</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="hidden lg:table-cell">Created</TableHead>
+                        <TableHead>Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {plugins.map((plugin) => (
+                        <TableRow key={plugin.id}>
+                          <TableCell className="font-medium">{plugin.name}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline">{plugin.type}</Badge>
+                          </TableCell>
+                          <TableCell className="hidden md:table-cell">
+                            {plugin.version || <span className="text-muted-foreground">N/A</span>}
+                          </TableCell>
+                          <TableCell className="hidden lg:table-cell">
+                            {plugin.author || <span className="text-muted-foreground">Unknown</span>}
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => togglePluginStatus(plugin)}
+                              className="p-0 h-auto"
+                            >
+                              {plugin.is_active ? (
+                                <Badge variant="default" className="flex items-center gap-1">
+                                  <CheckCircle className="h-3 w-3" />
+                                  Active
+                                </Badge>
+                              ) : (
+                                <Badge variant="secondary" className="flex items-center gap-1">
+                                  <XCircle className="h-3 w-3" />
+                                  Inactive
+                                </Badge>
+                              )}
+                            </Button>
+                          </TableCell>
+                          <TableCell className="hidden lg:table-cell">
+                            {formatDate(plugin.created_at)}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setViewPlugin(plugin)}
+                              >
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => openEditPluginDialog(plugin)}
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setDeletePlugin(plugin)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
         </Tabs>
       </DialogContent>
 
@@ -2229,6 +2963,329 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
               variant="destructive"
             >
               {deleting ? t("admin.loading_states.deleting") : t("admin.actions.delete")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Device Details Dialog */}
+      <Dialog open={!!viewDevice} onOpenChange={() => setViewDevice(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Device Details</DialogTitle>
+          </DialogHeader>
+          {viewDevice && (
+            <div className="space-y-2 text-sm">
+              <p>
+                <strong>Friendly ID:</strong> <code>{viewDevice.friendly_id}</code>
+              </p>
+              <p>
+                <strong>Name:</strong> {viewDevice.name || "Unnamed"}
+              </p>
+              <p>
+                <strong>MAC Address:</strong> <code>{viewDevice.mac_address}</code>
+              </p>
+              <p>
+                <strong>Owner:</strong>{" "}
+                {viewDevice.user_id ? 
+                  users.find(u => u.id === viewDevice.user_id)?.username || "Unknown User" : 
+                  "Unclaimed"
+                }
+              </p>
+              <p>
+                <strong>Status:</strong>{" "}
+                <span className={viewDevice.is_claimed ? "text-emerald-600" : "text-amber-600"}>
+                  {viewDevice.is_claimed ? "Claimed" : "Unclaimed"}
+                </span>
+              </p>
+              <p>
+                <strong>Active:</strong> {viewDevice.is_active ? "Yes" : "No"}
+              </p>
+              <p>
+                <strong>Firmware:</strong> {viewDevice.firmware_version || "Unknown"}
+              </p>
+              <p className="flex items-center gap-2">
+                <strong>Battery:</strong>
+                {(() => {
+                  const battery = getBatteryDisplay(viewDevice.battery_voltage);
+                  return (
+                    <span className="flex items-center gap-1">
+                      {battery.icon}
+                      <span className={battery.color}>{battery.text}</span>
+                    </span>
+                  );
+                })()}
+              </p>
+              <p className="flex items-center gap-2">
+                <strong>Signal:</strong>
+                {(() => {
+                  const signal = getSignalDisplay(viewDevice.rssi);
+                  return (
+                    <span className="flex items-center gap-1">
+                      {signal.icon}
+                      <span className={signal.color}>{signal.text}</span>
+                    </span>
+                  );
+                })()}
+              </p>
+              <p>
+                <strong>Refresh Rate:</strong> {viewDevice.refresh_rate}s
+              </p>
+              <p>
+                <strong>Last Seen:</strong>{" "}
+                {viewDevice.last_seen ? formatDate(viewDevice.last_seen) : "Never"}
+              </p>
+              <p>
+                <strong>Created:</strong> {formatDate(viewDevice.created_at)}
+              </p>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Plugin Details Dialog */}
+      <Dialog open={!!viewPlugin} onOpenChange={() => setViewPlugin(null)}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{viewPlugin?.name}</DialogTitle>
+          </DialogHeader>
+          {viewPlugin && (
+            <div className="space-y-2 text-sm">
+              <p>
+                <strong>Type:</strong> <Badge variant="outline">{viewPlugin.type}</Badge>
+              </p>
+              <p>
+                <strong>Description:</strong> {viewPlugin.description || "No description"}
+              </p>
+              <p>
+                <strong>Version:</strong> {viewPlugin.version || "N/A"}
+              </p>
+              <p>
+                <strong>Author:</strong> {viewPlugin.author || "Unknown"}
+              </p>
+              <p>
+                <strong>Status:</strong>{" "}
+                <span className={viewPlugin.is_active ? "text-green-600" : "text-gray-600"}>
+                  {viewPlugin.is_active ? "Active" : "Inactive"}
+                </span>
+              </p>
+              <p>
+                <strong>Created:</strong> {formatDate(viewPlugin.created_at)}
+              </p>
+              {viewPlugin.config_schema && (
+                <div>
+                  <strong>Config Schema:</strong>
+                  <pre className="text-xs bg-gray-100 p-2 rounded mt-1 overflow-auto max-h-32">
+                    {JSON.stringify(JSON.parse(viewPlugin.config_schema || "{}"), null, 2)}
+                  </pre>
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Plugin Dialog */}
+      <Dialog open={showCreatePluginDialog} onOpenChange={setShowCreatePluginDialog}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Create System Plugin</DialogTitle>
+            <DialogDescription>
+              Create a new system plugin that users can instantiate.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="plugin-name">Name *</Label>
+              <Input
+                id="plugin-name"
+                value={pluginName}
+                onChange={(e) => setPluginName(e.target.value)}
+                placeholder="e.g., Weather Display"
+                className="mt-2"
+              />
+            </div>
+            <div>
+              <Label htmlFor="plugin-type">Type *</Label>
+              <Input
+                id="plugin-type"
+                value={pluginType}
+                onChange={(e) => setPluginType(e.target.value)}
+                placeholder="e.g., widget, data-source, utility"
+                className="mt-2"
+              />
+            </div>
+            <div>
+              <Label htmlFor="plugin-description">Description</Label>
+              <Input
+                id="plugin-description"
+                value={pluginDescription}
+                onChange={(e) => setPluginDescription(e.target.value)}
+                placeholder="Brief description of the plugin"
+                className="mt-2"
+              />
+            </div>
+            <div>
+              <Label htmlFor="plugin-version">Version</Label>
+              <Input
+                id="plugin-version"
+                value={pluginVersion}
+                onChange={(e) => setPluginVersion(e.target.value)}
+                placeholder="e.g., 1.0.0"
+                className="mt-2"
+              />
+            </div>
+            <div>
+              <Label htmlFor="plugin-author">Author</Label>
+              <Input
+                id="plugin-author"
+                value={pluginAuthor}
+                onChange={(e) => setPluginAuthor(e.target.value)}
+                placeholder="Plugin author name"
+                className="mt-2"
+              />
+            </div>
+            <div>
+              <Label htmlFor="plugin-config-schema">Config Schema (JSON)</Label>
+              <textarea
+                id="plugin-config-schema"
+                value={pluginConfigSchema}
+                onChange={(e) => setPluginConfigSchema(e.target.value)}
+                placeholder='{"api_key": {"type": "string", "required": true}}'
+                className="mt-2 w-full p-2 border rounded text-sm font-mono"
+                rows={4}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCreatePluginDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={createPlugin}
+              disabled={creatingPlugin || !pluginName.trim() || !pluginType.trim()}
+            >
+              {creatingPlugin ? "Creating..." : "Create Plugin"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Plugin Dialog */}
+      <Dialog open={!!editPlugin} onOpenChange={() => setEditPlugin(null)}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Edit Plugin</DialogTitle>
+            <DialogDescription>
+              Update plugin information and configuration.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="edit-plugin-name">Name *</Label>
+              <Input
+                id="edit-plugin-name"
+                value={pluginName}
+                onChange={(e) => setPluginName(e.target.value)}
+                placeholder="e.g., Weather Display"
+                className="mt-2"
+              />
+            </div>
+            <div>
+              <Label htmlFor="edit-plugin-type">Type *</Label>
+              <Input
+                id="edit-plugin-type"
+                value={pluginType}
+                onChange={(e) => setPluginType(e.target.value)}
+                placeholder="e.g., widget, data-source, utility"
+                className="mt-2"
+              />
+            </div>
+            <div>
+              <Label htmlFor="edit-plugin-description">Description</Label>
+              <Input
+                id="edit-plugin-description"
+                value={pluginDescription}
+                onChange={(e) => setPluginDescription(e.target.value)}
+                placeholder="Brief description of the plugin"
+                className="mt-2"
+              />
+            </div>
+            <div>
+              <Label htmlFor="edit-plugin-version">Version</Label>
+              <Input
+                id="edit-plugin-version"
+                value={pluginVersion}
+                onChange={(e) => setPluginVersion(e.target.value)}
+                placeholder="e.g., 1.0.0"
+                className="mt-2"
+              />
+            </div>
+            <div>
+              <Label htmlFor="edit-plugin-author">Author</Label>
+              <Input
+                id="edit-plugin-author"
+                value={pluginAuthor}
+                onChange={(e) => setPluginAuthor(e.target.value)}
+                placeholder="Plugin author name"
+                className="mt-2"
+              />
+            </div>
+            <div>
+              <Label htmlFor="edit-plugin-config-schema">Config Schema (JSON)</Label>
+              <textarea
+                id="edit-plugin-config-schema"
+                value={pluginConfigSchema}
+                onChange={(e) => setPluginConfigSchema(e.target.value)}
+                placeholder='{"api_key": {"type": "string", "required": true}}'
+                className="mt-2 w-full p-2 border rounded text-sm font-mono"
+                rows={4}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditPlugin(null)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={updatePlugin}
+              disabled={!pluginName.trim() || !pluginType.trim()}
+            >
+              Update Plugin
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Plugin Confirmation Dialog */}
+      <AlertDialog
+        open={!!deletePlugin}
+        onOpenChange={() => setDeletePlugin(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-destructive" />
+              Delete Plugin
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{deletePlugin?.name}"? This will also deactivate all user instances of this plugin. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletingPlugin}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDeletePlugin}
+              disabled={deletingPlugin}
+              variant="destructive"
+            >
+              {deletingPlugin ? "Deleting..." : "Delete Plugin"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

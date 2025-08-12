@@ -3,6 +3,8 @@ package database
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -19,42 +21,72 @@ func NewDeviceService(db *gorm.DB) *DeviceService {
 	return &DeviceService{db: db}
 }
 
-// CreateDevice creates a new device for a user
-func (ds *DeviceService) CreateDevice(userID uuid.UUID, deviceID, friendlyName string) (*Device, error) {
+// CreateUnclaimedDevice creates a new unclaimed device from a MAC address
+func (ds *DeviceService) CreateUnclaimedDevice(macAddress string) (*Device, error) {
 	apiKey, err := generateAPIKey()
 	if err != nil {
 		return nil, err
 	}
 
+	friendlyID, err := ds.generateFriendlyID()
+	if err != nil {
+		return nil, err
+	}
+
 	device := &Device{
-		UserID:       userID,
-		DeviceID:     deviceID,
-		FriendlyName: friendlyName,
-		APIKey:       apiKey,
-		RefreshRate:  1800, // 30 minutes default
-		IsActive:     true,
+		MacAddress:  macAddress,
+		FriendlyID:  friendlyID,
+		APIKey:      apiKey,
+		RefreshRate: 1800, // 30 minutes default
+		IsActive:    true,
+		IsClaimed:   false,
 	}
 
 	if err := ds.db.Create(device).Error; err != nil {
 		return nil, err
 	}
 
-	// Create default playlist for the device
-	playlistService := NewPlaylistService(ds.db)
-	_, err = playlistService.CreatePlaylist(userID, device.ID, "Default", true)
+	return device, nil
+}
+
+// ClaimDevice claims an unclaimed device for a user
+func (ds *DeviceService) ClaimDevice(userID uuid.UUID, friendlyID, name string) (*Device, error) {
+	device, err := ds.GetDeviceByFriendlyID(friendlyID)
 	if err != nil {
-		// Rollback device creation if playlist creation fails
-		ds.db.Delete(device)
 		return nil, err
 	}
+
+	if device.IsClaimed {
+		return nil, fmt.Errorf("device already claimed")
+	}
+
+	device.UserID = &userID
+	device.Name = name
+	device.IsClaimed = true
+
+	if err := ds.db.Save(device).Error; err != nil {
+		return nil, err
+	}
+
+	// TODO: Create default playlist for the device after fixing circular constraint
+	// playlistService := NewPlaylistService(ds.db)
+	// _, err = playlistService.CreatePlaylist(userID, device.ID, "Default", true)
+	// if err != nil {
+	// 	// Rollback device claim if playlist creation fails
+	// 	device.UserID = nil
+	// 	device.Name = ""
+	// 	device.IsClaimed = false
+	// 	ds.db.Save(device)
+	// 	return nil, err
+	// }
 
 	return device, nil
 }
 
-// GetDevicesByUserID returns all devices for a specific user
+// GetDevicesByUserID returns all claimed devices for a specific user
 func (ds *DeviceService) GetDevicesByUserID(userID uuid.UUID) ([]Device, error) {
 	var devices []Device
-	err := ds.db.Where("user_id = ?", userID).Order("created_at DESC").Find(&devices).Error
+	err := ds.db.Where("user_id = ? AND is_claimed = ?", userID, true).Order("created_at DESC").Find(&devices).Error
 	return devices, err
 }
 
@@ -68,10 +100,20 @@ func (ds *DeviceService) GetDeviceByID(deviceID uuid.UUID) (*Device, error) {
 	return &device, nil
 }
 
-// GetDeviceByDeviceID returns a device by its device_id (MAC/friendly ID)
-func (ds *DeviceService) GetDeviceByDeviceID(deviceID string) (*Device, error) {
+// GetDeviceByMacAddress returns a device by its MAC address
+func (ds *DeviceService) GetDeviceByMacAddress(macAddress string) (*Device, error) {
 	var device Device
-	err := ds.db.First(&device, "device_id = ?", deviceID).Error
+	err := ds.db.First(&device, "mac_address = ?", macAddress).Error
+	if err != nil {
+		return nil, err
+	}
+	return &device, nil
+}
+
+// GetDeviceByFriendlyID returns a device by its friendly ID
+func (ds *DeviceService) GetDeviceByFriendlyID(friendlyID string) (*Device, error) {
+	var device Device
+	err := ds.db.First(&device, "friendly_id = ?", friendlyID).Error
 	if err != nil {
 		return nil, err
 	}
@@ -93,15 +135,41 @@ func (ds *DeviceService) UpdateDevice(device *Device) error {
 	return ds.db.Save(device).Error
 }
 
+// UpdateRefreshRate updates only the refresh rate for a device (GORM-safe)
+func (ds *DeviceService) UpdateRefreshRate(deviceID uuid.UUID, refreshRate int) error {
+	return ds.db.Model(&Device{}).Where("id = ?", deviceID).Update("refresh_rate", refreshRate).Error
+}
+
 // UpdateDeviceStatus updates device status information from TRMNL requests
-func (ds *DeviceService) UpdateDeviceStatus(deviceID string, firmwareVersion string, batteryVoltage float64, rssi int) error {
+func (ds *DeviceService) UpdateDeviceStatus(macAddress string, firmwareVersion string, batteryVoltage float64, rssi int) error {
 	now := time.Now()
-	return ds.db.Model(&Device{}).Where("device_id = ?", deviceID).Updates(map[string]interface{}{
-		"firmware_version": firmwareVersion,
-		"battery_voltage":  batteryVoltage,
-		"rssi":            rssi,
-		"last_seen":       &now,
-	}).Error
+	
+	// Use explicit transaction to ensure commit
+	return ds.db.Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&Device{}).Where("mac_address = ?", macAddress).Updates(map[string]interface{}{
+			"firmware_version": firmwareVersion,
+			"battery_voltage":  batteryVoltage,
+			"rssi":            rssi,
+			"last_seen":       &now,
+		})
+		
+		if result.Error != nil {
+			return result.Error
+		}
+		
+		if result.RowsAffected == 0 {
+			return fmt.Errorf("no rows affected - device not found")
+		}
+		
+		return nil
+	})
+}
+
+// GetUnclaimedDevices returns all unclaimed devices (optional, for admin use)
+func (ds *DeviceService) GetUnclaimedDevices() ([]Device, error) {
+	var devices []Device
+	err := ds.db.Where("is_claimed = ?", false).Order("created_at DESC").Find(&devices).Error
+	return devices, err
 }
 
 // DeleteDevice deletes a device and all associated data
@@ -161,4 +229,92 @@ func generateAPIKey() (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(bytes), nil
+}
+
+// generateFriendlyID generates a unique 6-character friendly ID for a device
+func (ds *DeviceService) generateFriendlyID() (string, error) {
+	for attempts := 0; attempts < 100; attempts++ {
+		// Generate 3 random bytes for a 6-character hex string
+		bytes := make([]byte, 3)
+		if _, err := rand.Read(bytes); err != nil {
+			return "", err
+		}
+		
+		friendlyID := hex.EncodeToString(bytes)
+		friendlyID = friendlyID[:6] // Ensure exactly 6 characters
+		friendlyID = strings.ToUpper(friendlyID) // Convert to uppercase like "917F0B"
+		
+		// Check if this ID already exists
+		var existingDevice Device
+		err := ds.db.Where("friendly_id = ?", friendlyID).First(&existingDevice).Error
+		if err != nil {
+			if err.Error() == "record not found" {
+				// ID is unique, we can use it
+				return friendlyID, nil
+			}
+			// Some other database error
+			return "", err
+		}
+		// ID already exists, try again
+	}
+	
+	return "", fmt.Errorf("failed to generate unique friendly ID after 100 attempts")
+}
+
+// CreateDeviceLog stores a new log entry for a device
+func (ds *DeviceService) CreateDeviceLog(deviceID uuid.UUID, logData string, level string) (*DeviceLog, error) {
+	if level == "" {
+		level = "info"
+	}
+	
+	deviceLog := &DeviceLog{
+		DeviceID: deviceID,
+		LogData:  logData,
+		Level:    level,
+	}
+	
+	if err := ds.db.Create(deviceLog).Error; err != nil {
+		return nil, err
+	}
+	
+	return deviceLog, nil
+}
+
+// GetDeviceLogsByDeviceID retrieves logs for a specific device with pagination
+func (ds *DeviceService) GetDeviceLogsByDeviceID(deviceID uuid.UUID, limit int, offset int) ([]DeviceLog, error) {
+	var logs []DeviceLog
+	
+	if limit <= 0 {
+		limit = 50 // Default limit
+	}
+	if limit > 1000 {
+		limit = 1000 // Max limit
+	}
+	
+	err := ds.db.Where("device_id = ?", deviceID).
+		Order("timestamp DESC").
+		Limit(limit).
+		Offset(offset).
+		Find(&logs).Error
+	
+	return logs, err
+}
+
+// GetDeviceLogsCount returns the total count of logs for a device
+func (ds *DeviceService) GetDeviceLogsCount(deviceID uuid.UUID) (int64, error) {
+	var count int64
+	err := ds.db.Model(&DeviceLog{}).Where("device_id = ?", deviceID).Count(&count).Error
+	return count, err
+}
+
+// CleanupOldDeviceLogs removes logs older than the specified duration
+func (ds *DeviceService) CleanupOldDeviceLogs(olderThan time.Duration) (int64, error) {
+	cutoffTime := time.Now().Add(-olderThan)
+	
+	result := ds.db.Where("timestamp < ?", cutoffTime).Delete(&DeviceLog{})
+	if result.Error != nil {
+		return 0, result.Error
+	}
+	
+	return result.RowsAffected, nil
 }

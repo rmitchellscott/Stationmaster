@@ -59,7 +59,7 @@ func CreatePlaylistHandler(c *gin.Context) {
 		return
 	}
 
-	if device.UserID != userUUID {
+	if device.UserID == nil || *device.UserID != userUUID {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
 		return
 	}

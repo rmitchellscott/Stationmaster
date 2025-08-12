@@ -192,25 +192,27 @@ func (r *RestoreExtractionJob) BeforeCreate(tx *gorm.DB) error {
 	return nil
 }
 
-// Device represents a TRMNL device linked to a user
+// Device represents a TRMNL device that can be claimed by users
 type Device struct {
-	ID             uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
-	UserID         uuid.UUID `gorm:"type:uuid;not null;index" json:"user_id"`
-	DeviceID       string    `gorm:"size:255;not null;uniqueIndex" json:"device_id"` // MAC address initially, then friendly ID
-	FriendlyName   string    `gorm:"size:255;not null" json:"friendly_name"`
-	APIKey         string    `gorm:"size:255;not null;index" json:"api_key"`
-	FirmwareVersion string   `gorm:"size:50" json:"firmware_version,omitempty"`
-	BatteryVoltage float64   `json:"battery_voltage,omitempty"`
-	RSSI           int       `json:"rssi,omitempty"`
-	RefreshRate    int       `gorm:"default:1800" json:"refresh_rate"` // seconds
+	ID             uuid.UUID  `gorm:"type:uuid;primaryKey" json:"id"`
+	UserID         *uuid.UUID `gorm:"type:uuid;index" json:"user_id,omitempty"` // Nullable for unclaimed devices
+	MacAddress     string     `gorm:"size:255;not null;uniqueIndex" json:"mac_address"` // Original MAC address from device
+	FriendlyID     string     `gorm:"size:10;not null;uniqueIndex" json:"friendly_id"` // Generated short ID like "917F0B"
+	Name           string     `gorm:"size:255" json:"name,omitempty"` // User-defined name, empty until claimed
+	APIKey         string     `gorm:"size:255;not null;index" json:"api_key"`
+	IsClaimed      bool       `gorm:"default:false" json:"is_claimed"`
+	FirmwareVersion string    `gorm:"size:50" json:"firmware_version,omitempty"`
+	BatteryVoltage float64    `json:"battery_voltage,omitempty"`
+	RSSI           int        `json:"rssi,omitempty"`
+	RefreshRate    int        `gorm:"default:1800" json:"refresh_rate"` // seconds
 	LastSeen       *time.Time `json:"last_seen,omitempty"`
-	IsActive       bool      `gorm:"default:true" json:"is_active"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	IsActive       bool       `gorm:"default:true" json:"is_active"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
 	
 	// Associations
-	User          User           `gorm:"foreignKey:UserID" json:"-"`
-	Playlists     []Playlist     `gorm:"foreignKey:DeviceID;constraint:OnDelete:CASCADE" json:"-"`
+	User          *User          `gorm:"foreignKey:UserID" json:"-"`
+	// Playlists relationship defined in Playlist model to avoid circular constraints
 }
 
 func (d *Device) BeforeCreate(tx *gorm.DB) error {
@@ -279,8 +281,8 @@ type Playlist struct {
 	UpdatedAt time.Time `json:"updated_at"`
 	
 	// Associations
-	User          User           `gorm:"foreignKey:UserID" json:"-"`
-	Device        Device         `gorm:"foreignKey:DeviceID" json:"-"`
+	User          User           `gorm:"foreignKey:UserID;references:ID" json:"-"`
+	Device        Device         `gorm:"-:migration" json:"-"` // Skip constraint creation to avoid circular reference
 	PlaylistItems []PlaylistItem `gorm:"foreignKey:PlaylistID;constraint:OnDelete:CASCADE" json:"-"`
 }
 
@@ -305,7 +307,7 @@ type PlaylistItem struct {
 	
 	// Associations
 	Playlist   Playlist   `gorm:"foreignKey:PlaylistID" json:"-"`
-	UserPlugin UserPlugin `gorm:"foreignKey:UserPluginID" json:"-"`
+	UserPlugin UserPlugin `gorm:"foreignKey:UserPluginID" json:"user_plugin"`
 	Schedules  []Schedule `gorm:"foreignKey:PlaylistItemID;constraint:OnDelete:CASCADE" json:"-"`
 }
 
@@ -340,6 +342,29 @@ func (s *Schedule) BeforeCreate(tx *gorm.DB) error {
 	return nil
 }
 
+// DeviceLog represents a log entry from a device
+type DeviceLog struct {
+	ID        uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
+	DeviceID  uuid.UUID `gorm:"type:uuid;not null;index" json:"device_id"`
+	LogData   string    `gorm:"type:text;not null" json:"log_data"` // JSON log content
+	Level     string    `gorm:"size:20;default:'info'" json:"level"` // info, warn, error, debug
+	Timestamp time.Time `gorm:"not null;index" json:"timestamp"`
+	CreatedAt time.Time `json:"created_at"`
+	
+	// Associations
+	Device Device `gorm:"foreignKey:DeviceID" json:"-"`
+}
+
+func (dl *DeviceLog) BeforeCreate(tx *gorm.DB) error {
+	if dl.ID == uuid.Nil {
+		dl.ID = uuid.New()
+	}
+	if dl.Timestamp.IsZero() {
+		dl.Timestamp = time.Now()
+	}
+	return nil
+}
+
 // GetAllModels returns all models for auto-migration
 func GetAllModels() []interface{} {
 	return []interface{}{
@@ -357,5 +382,6 @@ func GetAllModels() []interface{} {
 		&Playlist{},
 		&PlaylistItem{},
 		&Schedule{},
+		&DeviceLog{},
 	}
 }

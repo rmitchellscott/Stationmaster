@@ -513,7 +513,7 @@ export function PluginManagement({ isOpen, onClose }: PluginManagementProps) {
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-7xl mobile-dialog-content sm:max-w-7xl overflow-y-auto !top-[0vh] !translate-y-0 sm:!top-[6vh]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Puzzle className="h-5 w-5" />
@@ -663,23 +663,27 @@ export function PluginManagement({ isOpen, onClose }: PluginManagementProps) {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {plugins.map((plugin) => (
-                  <Card key={plugin.id}>
-                    <CardHeader>
-                      <CardTitle className="flex items-center justify-between">
-                        <div>
-                          <div className="text-lg">{plugin.name}</div>
-                          <div className="text-sm font-normal text-gray-600">
+                  <Card key={plugin.id} className="h-full flex flex-col">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="text-lg font-semibold truncate">{plugin.name}</div>
+                          <div className="text-sm font-normal text-muted-foreground">
                             v{plugin.version} by {plugin.author}
                           </div>
                         </div>
-                        <Badge variant="outline">{plugin.type}</Badge>
+                        <Badge variant="outline" className="flex-shrink-0">{plugin.type}</Badge>
                       </CardTitle>
                     </CardHeader>
-                    <CardContent>
-                      <p className="text-gray-600 mb-4">{plugin.description}</p>
+                    <CardContent className="flex flex-col flex-grow pt-0">
+                      <div className="flex-grow mb-4">
+                        <p className="text-sm text-muted-foreground line-clamp-3 min-h-[4.5rem]">
+                          {plugin.description}
+                        </p>
+                      </div>
                       <Button
                         onClick={() => openCreateDialog(plugin)}
-                        className="w-full"
+                        className="w-full mt-auto"
                       >
                         <Plus className="h-4 w-4 mr-2" />
                         Create Instance

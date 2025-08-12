@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  stationmaster:
+    build: .
+    container_name: stationmaster
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/data
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-/data/stationmaster.db}
+      - PUBLIC_REGISTRATION_ENABLED=${PUBLIC_REGISTRATION_ENABLED:-false}
+      - JWT_SECRET=${JWT_SECRET:-change-this-in-production}
+      - ADMIN_USERNAME=mitchell
+      - ADMIN_PASSWORD=password
+      - ADMIN_EMAIL=mitchell@example.com
+      - PORT=8000
+      # OIDC Configuration (optional)
+      - OIDC_ENABLED=${OIDC_ENABLED:-false}
+      - OIDC_ISSUER=${OIDC_ISSUER}
+      - OIDC_CLIENT_ID=${OIDC_CLIENT_ID}
+      - OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET}
+      - OIDC_REDIRECT_URI=${OIDC_REDIRECT_URI}
+      # SMTP Configuration (optional)
+      - SMTP_ENABLED=${SMTP_ENABLED:-false}
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT}
+      - SMTP_USERNAME=${SMTP_USERNAME}
+      - SMTP_PASSWORD=${SMTP_PASSWORD}
+      - SMTP_FROM=${SMTP_FROM}
+      # Proxy Auth (optional)
+      - PROXY_AUTH_ENABLED=${PROXY_AUTH_ENABLED:-false}
+      - PROXY_AUTH_HEADER=${PROXY_AUTH_HEADER:-X-Remote-User}
+      - PROXY_AUTH_AUTO_CREATE=${PROXY_AUTH_AUTO_CREATE:-false}
+
+#   # Optional PostgreSQL database for production use
+#   postgres:
+#     image: postgres:16-alpine
+#     container_name: stationmaster-db
+#     restart: unless-stopped
+#     volumes:
+#       - postgres_data:/var/lib/postgresql/data
+#     environment:
+#       - POSTGRES_DB=${POSTGRES_DB:-stationmaster}
+#       - POSTGRES_USER=${POSTGRES_USER:-stationmaster}
+#       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+#     profiles:
+#       - postgres
+
+# volumes:
+#   postgres_data:

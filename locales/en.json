@@ -1,0 +1,555 @@
+{
+  "_meta": {
+    "displayName": "English"
+  },
+  "login": {
+    "title": "Login",
+    "username": "Username",
+    "password": "Password",
+    "signing_in": "Signing in...",
+    "button": "Login",
+    "network_error": "Network error",
+    "fail": "Login failed",
+    "register": "Create Account",
+    "sso_button": "Sign in with SSO",
+    "or_continue_with": "Or continue with",
+    "forgot_password": "Forgot Password?"
+  },
+  "register": {
+    "title": "Create Account",
+    "username": "Username",
+    "username_help": "Username must start with a letter or number and be 3-50 characters long (letters, numbers, underscores, hyphens)",
+    "email": "Email",
+    "password": "Password",
+    "password_help": "Password must be at least 8 characters long",
+    "confirm_password": "Confirm Password",
+    "button": "Create Account",
+    "creating": "Creating account...",
+    "back_to_login": "Back to Login",
+    "success_title": "Account Created!",
+    "success_message": "Your account has been created successfully. You can now log in with your credentials.",
+    "login_now": "Continue to Login",
+    "disabled": "User registration is currently disabled",
+    "disabled_message": "New user registration is currently disabled. Please contact an administrator to create an account.",
+    "missing_fields": "Please fill in all required fields",
+    "password_mismatch": "Passwords do not match",
+    "password_too_short": "Password must be at least 8 characters long",
+    "user_exists": "A user with this username or email already exists",
+    "network_error": "Network error occurred",
+    "fail": "Account creation failed",
+    "already_have_account": "Already have an account? Sign in"
+  },
+  "logout": "Logout",
+  "home": {
+    "send_document": "Send Document",
+    "url_placeholder": "https://example.com/file.pdf",
+    "or": "— OR —",
+    "selected_file": "Selected file:",
+    "remove": "Remove",
+    "destination_folder": "Destination Folder",
+    "default": "Default",
+    "loading": "Loading...",
+    "compress_pdf": "Compression",
+    "send": "Send",
+    "pair": "Pair",
+    "sending": "Sending…",
+    "uploading": "Uploading to Stationmaster",
+    "invalid_file": "Invalid File",
+    "ok": "OK",
+    "job_queued": "Job queued: {{id}}",
+    "pair_with_cloud": "Pair with cloud to load folders",
+    "pair_with_remarkable": "Pair with reMarkable cloud",
+    "to_upload_documents": " to upload documents.",
+    "settings_config": " Go to Settings for additional configuration."
+  },
+  "filedrop": {
+    "instruction": "Click to upload or drag and drop",
+    "invalid_type": "Please select a PDF, EPUB, JPEG, or a PNG file."
+  },
+  "theme": {
+    "switch": "Switch to {{mode}} mode",
+    "auto": "auto",
+    "dark": "dark",
+    "light": "light"
+  },
+  "language": {
+    "search": "Search...",
+    "search_fallback": "Search languages...",
+    "no_results": "No results.",
+    "no_results_fallback": "No languages found.",
+    "tooltip": "Language",
+    "tooltip_fallback": "Language"
+  },
+  "pairing": {
+    "title": "Pair with reMarkable Cloud",
+    "description": "Enter one-time code from {{displayHost}}",
+    "code_label": "One-time Code",
+    "code_placeholder": "8 character code",
+    "cancel": "Cancel",
+    "pair": "Pair",
+    "pairing": "Pairing...",
+    "code_error": "Code must be 8 characters long",
+    "pair_error": "Failed to pair"
+  },
+  "user_delete": {
+    "title": "Delete Account",
+    "current_user_warning": "Are you sure you want to permanently delete your account?",
+    "admin_user_warning": "Are you sure you want to permanently delete user <strong>{{username}}</strong>?",
+    "action_will": "This action will:",
+    "current_user": {
+      "data_deletion": "Delete all your data including uploaded documents and API keys",
+      "remove_sessions": "Remove all your sessions and log you out",
+      "remove_history": "Remove all your login history",
+      "permanent_removal": "Permanently remove your account from the system"
+    },
+    "admin_user": {
+      "data_deletion": "Delete all user data including archived documents and API keys",
+      "remove_sessions": "Remove all user sessions",
+      "remove_history": "Remove all login history"
+    },
+    "note_label": "Note:",
+    "note_current": "Your reMarkable Cloud account and device data will remain completely unaffected.",
+    "note_admin": "The user's reMarkable Cloud account and device data will remain completely unaffected.",
+    "cannot_undo_current": "This action cannot be undone and you will lose access to all your data.",
+    "cannot_undo_admin": "This action cannot be undone.",
+    "cancel": "Cancel",
+    "delete_account": "Delete My Account",
+    "delete_user": "Delete User",
+    "deleting": "Deleting..."
+  },
+  "admin": {
+    "title": "Admin Panel",
+    "description": "Manage users, system settings, and monitor system health",
+    "status": {
+      "working": "Working",
+      "failed": "Failed",
+      "configured": "Configured",
+      "not_configured": "Not configured",
+      "unknown": "Unknown",
+      "inactive": "Inactive",
+      "paired": "Paired",
+      "unpaired": "Unpaired",
+      "active": "active"
+    },
+    "roles": {
+      "admin": "Admin",
+      "user": "User"
+    },
+    "actions": {
+      "make_admin": "Make Admin",
+      "make_user": "Make User",
+      "activate": "Activate",
+      "deactivate": "Deactivate",
+      "reset_password": "Reset Password",
+      "delete": "Delete",
+      "create_user": "Create User",
+      "test_smtp": "Test SMTP",
+      "create_backup": "Create Backup",
+      "restore_backup": "Restore Backup", 
+      "upload_restore": "Upload Restore",
+      "cancel": "Cancel",
+      "restore_database": "Restore",
+      "modify": "Modify",
+      "details": "Details"
+    },
+    "tabs": {
+      "overview": "Overview",
+      "users": "Users",
+      "api_keys": "API Keys",
+      "settings": "Settings",
+      "system": "System"
+    },
+    "cards": {
+      "total_users": "Total Users",
+      "api_keys": "API Keys",
+      "documents": "Documents",
+      "active_sessions": "Active Sessions",
+      "smtp_status": "SMTP Status",
+      "system_mode": "System Mode",
+      "create_new_user": "Create New User",
+      "user_management": "User Management",
+      "api_key_settings": "API Key Settings",
+      "backup_restore": "Backup & Restore"
+    },
+    "labels": {
+      "username": "Username",
+      "user_id": "User ID",
+      "email": "Email",
+      "password": "Password",
+      "role": "Role",
+      "status": "Status",
+      "created": "Created",
+      "last_login": "Last Login",
+      "actions": "Actions",
+      "name": "Name",
+      "user": "User",
+      "key_preview": "Key Preview",
+      "last_used": "Last Used",
+      "expires": "Expires",
+      "new_password": "New Password",
+      "enable_registration": "Enable User Registration",
+      "max_api_keys": "Maximum API Keys per User",
+      "users": "Users",
+      "api_keys": "API Keys",
+      "documents": "Documents"
+    },
+    "placeholders": {
+      "username": "username",
+      "email": "user@example.com",
+      "password": "password",
+      "new_password": "Enter new password (minimum 8 characters)"
+    },
+    "descriptions": {
+      "registration_help": "Allow self-service creation of new user accounts",
+      "total_uploaded": "Total uploaded",
+      "current_sessions": "Current unexpired sessions",
+      "backup_description": "Creates a complete backup including database and user files as a .tar.gz archive",
+      "restore_description": "Restores database and user files from backup archive (.tar.gz format)",
+      "upload_restore_description": "Upload a backup file to restore later with confirmation",
+      "restore_warning": "Warning: Restoring will completely overwrite all current data",
+      "max_api_keys_help": "Set the maximum number of API keys each user can create (1-100)"
+    },
+    "badges": {
+      "multi_user": "Multi-user Mode",
+      "dry_run": "Dry Run Mode",
+      "oidc_enabled": "OIDC Enabled",
+      "proxy_auth": "Proxy Auth Enabled"
+    },
+    "loading_states": {
+      "creating_backup": "Creating Backup...",
+      "analyzing": "Analyzing...",
+      "resetting": "Resetting...",
+      "restoring": "Restoring...",
+      "uploading": "Uploading...",
+      "extracting": "Extracting...",
+      "validating": "Validating...",
+      "loading": "Loading..."
+    },
+    "dialogs": {
+      "reset_password_title": "Reset Password",
+      "reset_password_description": "Reset the password for user: ",
+      "confirm_restore_title": "Confirm Data Restore",
+      "confirm_restore_description": "You are about to restore from backup file: ",
+      "restore_warning_text": "This will permanently overwrite all current data including:",
+      "restore_warning_items": {
+        "accounts": "All user accounts and settings",
+        "api_keys": "All API keys and sessions", 
+        "documents": "All user documents and files",
+        "pairing": "All cloud pairing configuration",
+        "folders": "All folder caches",
+        "settings": "All system settings",
+        "backups": "All stored backup files"
+      },
+      "restore_final_warning": "This action cannot be undone. Make sure you have a current backup before proceeding.",
+      "backup_version": "Backup Version",
+      "current_version": "Current Version",
+      "version_unknown": "Unknown",
+      "version_warning": "Warning: This backup was created with a newer version of Stationmaster. Restoring may fail or cause unexpected behavior."
+    },
+    "errors": {
+      "create_user": "Failed to create user",
+      "delete_user": "Failed to delete user",
+      "reset_password": "Failed to reset password",
+      "password_length": "Password must be at least 8 characters long",
+      "smtp_test": "SMTP test failed",
+      "smtp_test_network": "Failed to test SMTP",
+      "backup_create": "Failed to create backup",
+      "backup_invalid": "Invalid backup file",
+      "backup_analyze": "Failed to analyze backup file: ",
+      "backup_file_type": "Invalid file type. Please select a backup archive (.tar.gz or .tgz). Selected file: ",
+      "restore_failed": "Failed to restore database",
+      "restore_error": "Failed to restore database: ",
+      "restore_cancel_failed": "Failed to cancel restore",
+      "restore_delete_failed": "Failed to delete restore upload",
+      "restore_import_failed": "Failed to import backup data",
+      "restore_delete_record_failed": "Failed to delete restore record",
+      "backup_download": "Failed to download backup file",
+      "no_backup_file": "No backup file provided",
+      "backup_not_found": "Backup file not found",
+      "backup_not_ready": "Backup not ready for download",
+      "backup_file_unavailable": "Backup file not available",
+      "parse_form_failed": "Failed to parse upload form",
+      "create_temp_file_failed": "Failed to create temporary file",
+      "save_uploaded_file_failed": "Failed to save uploaded file",
+      "backup_analyze_failed": "Failed to analyze backup file",
+      "get_file_info_failed": "Failed to get file information",
+      "save_upload_record_failed": "Failed to save upload record",
+      "invalid_request": "Invalid request",
+      "invalid_upload_id": "Invalid upload ID",
+      "upload_not_found": "Upload not found or expired",
+      "create_backup_job_failed": "Failed to create backup job",
+      "get_backup_jobs_failed": "Failed to get backup jobs",
+      "invalid_job_id": "Invalid job ID",
+      "backup_job_not_found": "Backup job not found",
+      "delete_backup_job_failed": "Failed to delete backup job",
+      "max_api_keys_invalid": "Please enter a value between 1 and 100"
+    },
+    "success": {
+      "restore_complete": "Database restored successfully",
+      "backup_restored": "Backup restored successfully from {{filename}}"
+    },
+    "backup": {
+      "create_backup": "Create Backup",
+      "creating_job": "Creating backup job...",
+      "backup": "Backup",
+      "download": "Download",
+      "delete_backup_title": "Delete Backup",
+      "delete_error": "Failed to delete backup",
+      "background_description": "Creates a backup in the background that you can download once complete",
+      "status": {
+        "pending": "Pending",
+        "running": "Running", 
+        "completed": "Done",
+        "failed": "Failed"
+      }
+    },
+    "restore": {
+      "create_restore": "Restore Backup",
+      "creating_job": "Creating restore job...",
+      "restore": "Restore", 
+      "job_created": "Restore job created successfully. The restore will begin processing shortly.",
+      "delete_error": "Failed to delete restore",
+      "background_description": "Uploads and restores a backup in the background with progress tracking",
+      "status": {
+        "pending": "Pending",
+        "running": "Running",
+        "completed": "Done", 
+        "failed": "Failed"
+      }
+    },
+    "jobs": {
+      "recent_jobs": "Recent Backups",
+      "progress": "Progress"
+    },
+    "messages": {
+      "backup_job_created": "Backup job created successfully. You will be able to download it once complete."
+    },
+    "counts": {
+      "users": "Users ({{count}})",
+      "all_api_keys": "All API Keys ({{count}})"
+    },
+    "tooltips": {
+      "oidc_managed": "Managed via OIDC"
+    },
+    "never": "Never"
+  },
+  "settings": {
+    "title": "User Settings",
+    "description": "Manage your profile, API keys, and account preferences",
+    "tabs": {
+      "profile": "Profile",
+      "account": "Account",
+      "api_keys": "API Keys"
+    },
+    "cards": {
+      "profile_information": "Profile Information",
+      "change_password": "Change Password",
+      "delete_account": "Delete Account",
+      "create_api_key": "Create New API Key",
+      "your_api_keys": "Your API Keys"
+    },
+    "labels": {
+      "username": "Username",
+      "email": "Email",
+      "rmapi_host": "reMarkable Host (optional)",
+      "default_directory": "Default Directory",
+      "cover_page": "Cover Page",
+      "conflict_resolution": "On Conflict",
+      "folder_depth_limit": "Folder Depth Limit",
+      "folder_exclusion_list": "Excluded Folders",
+      "current_password": "Current Password",
+      "new_password": "New Password",
+      "confirm_new_password": "Confirm New Password",
+      "delete_account": "Delete Account",
+      "api_key_name": "Name",
+      "key_preview": "Key Preview",
+      "status": "Status",
+      "created": "Created",
+      "last_used": "Last Used",
+      "expires": "Expires",
+      "pdf_conversion_device": "Conversion Target",
+      "page_resolution": "Page Resolution",
+      "page_dpi": "Page DPI"
+    },
+    "actions": {
+      "unpair": "Unpair",
+      "pair": "Pair",
+      "create_api_key": "Create API Key",
+      "got_it": "Got it",
+      "cancel": "Cancel",
+      "delete_api_key": "Delete API Key",
+      "details": "Details"
+    },
+    "options": {
+      "cover_current": "Current page",
+      "cover_first": "First page",
+      "manual": "Manual",
+      "conflict_abort": "Abort",
+      "conflict_overwrite": "Overwrite",
+      "conflict_content_only": "Content Only"
+    },
+    "expiry_options": {
+      "one_week": "1 week",
+      "one_month": "1 month",
+      "three_months": "3 months",
+      "one_year": "1 year"
+    },
+    "messages": {
+      "pair_to_load_folders": "Pair to load folders",
+      "pair_help": "Pair with reMarkable cloud to select from existing folders",
+      "delete_warning_intro": "Clicking below will open a confirmation dialog. Once confirmed, your account will be permanently deleted along with all associated data. This includes:",
+      "remarkable_unaffected": "Your reMarkable Cloud account and device data will remain completely unaffected.",
+      "api_key_created_title": "New API Key Created",
+      "api_key_created_message": "Copy this key now - it won't be shown again:",
+      "no_api_keys": "No API keys created yet",
+      "api_key_limit_reached": "You've reached your limit of {{maxKeys}} API keys",
+      "api_keys_remaining": "{{remaining}} of {{maxKeys}} API keys remaining"
+    },
+    "help": {
+      "cover_page": "Controls whether the first page or current page is used as the cover for uploaded documents",
+      "conflict_resolution": "Choose what happens when uploading a document with the same name as an existing document. Content Only preserves annotations and only works for PDFs and images - it will Abort for EPUBs. Overwrite completely replaces documents.",
+      "folder_depth_limit": "Maximum folder depth to display (leave empty for unlimited)",
+      "folder_exclusion_list": "Comma-separated list of folder names to exclude, case-sensitive",
+      "pdf_conversion_device": "Choose your reMarkable device model for optimal image to PDF conversion. This setting only affects image files (JPEG, PNG) that are converted to PDF.",
+      "page_resolution": "Page resolution in WIDTHxHEIGHT format",
+      "page_dpi": "Dots per inch",
+      "default_directory": "Choose the default folder on your reMarkable where your documents will be uploaded"
+    },
+    "status": {
+      "active": "Active",
+      "expired": "Expired",
+      "inactive": "Inactive"
+    },
+    "delete_warnings": {
+      "documents": "All archived documents and files",
+      "api_keys": "All API keys and their access",
+      "profile": "Your profile and account settings"
+    },
+    "dialogs": {
+      "delete_api_key_title": "Delete API Key",
+      "delete_api_key_message": "Are you sure you want to delete the API key",
+      "delete_api_key_consequences_title": "This action will:",
+      "delete_api_key_consequences": {
+        "revoke": "Permanently revoke the API key",
+        "stop_apps": "Stop all applications using this key from working",
+        "remove": "Remove the key from your account"
+      },
+      "cannot_undo": "This action cannot be undone.",
+      "delete_account_confirmation": "Are you sure you want to permanently delete your account? This action cannot be undone.",
+      "delete_account_type_confirm": "Type \"{{confirmText}}\" to confirm",
+      "unpair_confirmation_message": "Are you sure you want to unpair from reMarkable cloud? You'll need to pair again to upload documents."
+    },
+    "placeholders": {
+      "cloud_default": "Leave empty for reMarkable Cloud",
+      "api_key": "My API Key",
+      "never_expires": "Never expires",
+      "current_password": "Enter your current password",
+      "old_password": "oldpassword",
+      "new_password": "newpassword",
+      "delete_confirm": "DELETE MY ACCOUNT",
+      "folder_depth_limit": "Unlimited",
+      "folder_exclusion_list": "e.g., trash, templates, archive",
+      "page_resolution": "1404x1872",
+      "page_dpi": "226"
+    },
+    "loading_states": {
+      "saving": "Saving...",
+      "updating": "Updating...",
+      "deleting": "Deleting...",
+      "loading": "Loading..."
+    },
+    "buttons": {
+      "save_changes": "Save Changes",
+      "update_password": "Update Password",
+      "delete_my_account": "Delete My Account"
+    },
+    "never": "Never",
+    "tooltips": {
+      "api_key_copied": "Copied!"
+    },
+    "errors": {
+      "update_profile": "Failed to update profile",
+      "unpair": "Failed to unpair",
+      "passwords_mismatch": "Passwords do not match",
+      "update_password": "Failed to update password",
+      "create_api_key": "Failed to create API key",
+      "delete_api_key": "Failed to delete API key",
+      "delete_account": "Failed to delete account"
+    }
+  },
+  "app": {
+    "settings": "Settings",
+    "admin": "Admin"
+  },
+  "password_reset": {
+    "title": "Reset Password",
+    "new_password_title": "Set New Password",
+    "email_placeholder": "Enter your email address",
+    "password_placeholder": "Enter new password",
+    "confirm_placeholder": "Confirm new password",
+    "sending": "Sending...",
+    "send_email": "Send Reset Email",
+    "resetting": "Resetting...",
+    "reset_button": "Reset Password",
+    "email_sent": "If an account exists, a password reset link has been sent to your email",
+    "send_email_error": "Failed to send reset email",
+    "success": "Password has been reset successfully. You can now log in with your new password.",
+    "reset_error": "Failed to reset password",
+    "email_instruction": "Enter your email address and we'll send you a link to reset your password."
+  },
+  "accessibility": {
+    "logo": "Stationmaster logo",
+    "select_language": "Select language"
+  },
+  "backend": {
+    "auth": {
+      "too_many_attempts": "Too many failed login attempts",
+      "invalid_request": "Invalid request",
+      "not_configured": "Authentication not configured",
+      "invalid_credentials": "Invalid credentials",
+      "account_disabled": "User account is deactivated",
+      "token_error": "Could not generate token",
+      "no_token": "No auth token or API key",
+      "invalid_token": "Invalid token",
+      "required": "Authentication required",
+      "session_error": "Could not generate session",
+      "username_required": "Username is required",
+      "username_too_short": "Username must be at least 3 characters long",
+      "username_too_long": "Username must be no more than 50 characters long",
+      "username_invalid_format": "Username must start with a letter or number and contain only letters, numbers, underscores, and hyphens"
+    },
+    "status": {
+      "job_not_found": "Job not found",
+      "internal_error": "Internal error",
+      "done": "Done",
+      "invalid_prefix": "Invalid prefix",
+      "using_uploaded_file": "Using uploaded file",
+      "no_url": "No URL found in request body",
+      "downloading": "Downloading",
+      "download_error": "Download error",
+      "converting_pdf": "Converting to PDF",
+      "conversion_error": "Image→PDF conversion error",
+      "compressing_pdf": "Compressing PDF",
+      "compress_error": "Compress error",
+      "rename_error": "Rename error",
+      "uploading": "Uploading to cloud",
+      "upload_success": "Your document is available on your reMarkable at {{path}}",
+      "upload_success_multiple": "Your documents are available on your reMarkable at:\n{{paths}}",
+      "conflict_entry_exists": "A document with this name already exists on your reMarkable. Change your {{conflict_resolution}} setting in {{settings}}, or rename the document."
+    },
+    "errors": {
+      "missing_url": "Missing URL parameter",
+      "parse_form": "Could not parse multipart form",
+      "get_file": "Could not get file",
+      "open_file": "Could not open uploaded file",
+      "create_dir": "Could not create upload directory",
+      "create_file": "Could not create file on disk",
+      "save_file": "Could not save file",
+      "no_form": "No multipart form found",
+      "no_file_field": "No file with field name {{field}}",
+      "file_too_large": "File size exceeds maximum limit",
+      "memory_constrained": "Server memory insufficient for file processing",
+      "upload_stream_failed": "Failed to process large file upload"
+    }
+  }
+}

@@ -1,0 +1,555 @@
+{
+  "_meta": {
+    "displayName": "Français"
+  },
+  "login": {
+    "title": "Se connecter",
+    "username": "Nom d'utilisateur",
+    "password": "Mot de passe",
+    "signing_in": "Connexion en cours...",
+    "button": "Se connecter",
+    "network_error": "Erreur réseau",
+    "fail": "Échec de la connexion",
+    "register": "Créer un compte",
+    "sso_button": "Se connecter avec SSO",
+    "or_continue_with": "Ou continuer avec",
+    "forgot_password": "Mot de passe oublié ?"
+  },
+  "register": {
+    "title": "Créer un compte",
+    "username": "Nom d'utilisateur",
+    "username_help": "Le nom d'utilisateur doit contenir entre 3 et 50 caractères et ne peut contenir que des lettres, des chiffres, des traits de soulignement et des tirets",
+    "email": "E-mail",
+    "password": "Mot de passe",
+    "password_help": "Le mot de passe doit contenir au moins 8 caractères",
+    "confirm_password": "Confirmer le mot de passe",
+    "button": "Créer un compte",
+    "creating": "Création du compte...",
+    "back_to_login": "Retour à la connexion",
+    "success_title": "Compte créé !",
+    "success_message": "Votre compte a été créé avec succès. Vous pouvez maintenant vous connecter avec vos identifiants.",
+    "login_now": "Continuer vers la connexion",
+    "disabled": "L'inscription utilisateur est actuellement désactivée",
+    "disabled_message": "La création de nouveaux comptes utilisateur est actuellement désactivée. Veuillez contacter un administrateur pour créer un compte.",
+    "missing_fields": "Veuillez remplir tous les champs obligatoires",
+    "password_mismatch": "Les mots de passe ne correspondent pas",
+    "password_too_short": "Le mot de passe doit contenir au moins 8 caractères",
+    "user_exists": "Un utilisateur avec ce nom d'utilisateur ou cette adresse email existe déjà",
+    "network_error": "Erreur réseau",
+    "fail": "Échec de la création du compte",
+    "already_have_account": "Vous avez déjà un compte ? Connectez-vous"
+  },
+  "logout": "Se déconnecter",
+  "home": {
+    "send_document": "Envoyer un Document",
+    "url_placeholder": "https://exemple.com/fichier.pdf",
+    "or": "— OU —",
+    "selected_file": "Fichier sélectionné :",
+    "remove": "Supprimer",
+    "destination_folder": "Dossier de destination",
+    "default": "Par défaut",
+    "loading": "Chargement...",
+    "compress_pdf": "Compression",
+    "send": "Envoyer",
+    "pair": "Coupler",
+    "sending": "Envoi en cours…",
+    "uploading": "Téléchargement vers Stationmaster",
+    "invalid_file": "Fichier invalide",
+    "ok": "OK",
+    "job_queued": "Tâche en file d'attente: {{id}}",
+    "pair_with_cloud": "Coupler avec le cloud pour charger les dossiers",
+    "pair_with_remarkable": "Coupler avec reMarkable cloud",
+    "to_upload_documents": " pour télécharger des documents.",
+    "settings_config": " Allez dans Paramètres pour une configuration supplémentaire."
+  },
+  "filedrop": {
+    "instruction": "Cliquez pour télécharger ou glissez-déposez",
+    "invalid_type": "Veuillez sélectionner un fichier PDF, EPUB, JPEG ou PNG."
+  },
+  "theme": {
+    "switch": "Passer en mode {{mode}}",
+    "auto": "automatique",
+    "dark": "sombre",
+    "light": "clair"
+  },
+  "language": {
+    "search": "Rechercher...",
+    "search_fallback": "Rechercher les langues...",
+    "no_results": "Aucun résultat.",
+    "no_results_fallback": "Aucune langue trouvée.",
+    "tooltip": "Langue",
+    "tooltip_fallback": "Langue"
+  },
+  "pairing": {
+    "title": "Coupler avec reMarkable Cloud",
+    "description": "Saisissez le code à usage unique de {{displayHost}}",
+    "code_label": "Code à usage unique",
+    "code_placeholder": "Code à 8 caractères",
+    "cancel": "Annuler",
+    "pair": "Coupler",
+    "pairing": "Couplage...",
+    "code_error": "Le code doit contenir 8 caractères",
+    "pair_error": "Échec du couplage"
+  },
+  "user_delete": {
+    "title": "Supprimer le compte",
+    "current_user_warning": "Êtes-vous sûr de vouloir supprimer définitivement votre compte ?",
+    "admin_user_warning": "Êtes-vous sûr de vouloir supprimer définitivement l'utilisateur <strong>{{username}}</strong> ?",
+    "action_will": "Cette action va :",
+    "current_user": {
+      "data_deletion": "Supprimer toutes vos données, y compris les documents téléchargés et les clés API",
+      "remove_sessions": "Supprimer toutes vos sessions et vous déconnecter",
+      "remove_history": "Supprimer tout votre historique de connexion",
+      "permanent_removal": "Supprimer définitivement votre compte du système"
+    },
+    "admin_user": {
+      "data_deletion": "Supprimer toutes les données utilisateur, y compris les documents archivés et les clés API",
+      "remove_sessions": "Supprimer toutes les sessions utilisateur",
+      "remove_history": "Supprimer tout l'historique de connexion"
+    },
+    "note_label": "Note :",
+    "note_current": "Votre compte reMarkable Cloud et les données de l'appareil resteront complètement intacts.",
+    "note_admin": "Le compte reMarkable Cloud de l'utilisateur et les données de l'appareil resteront complètement intacts.",
+    "cannot_undo_current": "Cette action ne peut pas être annulée et vous perdrez l'accès à toutes vos données.",
+    "cannot_undo_admin": "Cette action ne peut pas être annulée.",
+    "cancel": "Annuler",
+    "delete_account": "Supprimer mon compte",
+    "delete_user": "Supprimer l'utilisateur",
+    "deleting": "Suppression..."
+  },
+  "admin": {
+    "title": "Panneau d'administration",
+    "description": "Gérer les utilisateurs, les paramètres système et surveiller l'état du système",
+    "status": {
+      "working": "Fonctionnel",
+      "failed": "Échoué",
+      "configured": "Configuré",
+      "not_configured": "Non configuré",
+      "unknown": "Inconnu",
+      "inactive": "Inactif",
+      "paired": "Couplé",
+      "unpaired": "Découplé",
+      "active": "actif"
+    },
+    "roles": {
+      "admin": "Administrateur",
+      "user": "Utilisateur"
+    },
+    "actions": {
+      "make_admin": "Promouvoir administrateur",
+      "make_user": "Rétrograder utilisateur",
+      "activate": "Activer",
+      "deactivate": "Désactiver",
+      "reset_password": "Réinitialiser le mot de passe",
+      "delete": "Supprimer",
+      "create_user": "Créer un utilisateur",
+      "test_smtp": "Tester SMTP",
+      "create_backup": "Créer une sauvegarde",
+      "restore_backup": "Restaurer à partir d'une sauvegarde",
+      "upload_restore": "Télécharger la Restauration",
+      "cancel": "Annuler",
+      "restore_database": "Restaurer",
+      "modify": "Modifier",
+      "details": "Détails"
+    },
+    "tabs": {
+      "overview": "Aperçu",
+      "users": "Utilisateurs",
+      "api_keys": "Clés API",
+      "settings": "Paramètres",
+      "system": "Système"
+    },
+    "cards": {
+      "total_users": "Total des utilisateurs",
+      "api_keys": "Clés API",
+      "documents": "Documents",
+      "active_sessions": "Sessions actives",
+      "smtp_status": "Statut SMTP",
+      "system_mode": "Mode système",
+      "create_new_user": "Créer un nouvel utilisateur",
+      "user_management": "Gestion des utilisateurs",
+      "api_key_settings": "Paramètres des clés API",
+      "backup_restore": "Sauvegarde et restauration"
+    },
+    "labels": {
+      "username": "Nom d'utilisateur",
+      "user_id": "ID de l'utilisateur",
+      "email": "E-mail",
+      "password": "Mot de passe",
+      "role": "Rôle",
+      "status": "Statut",
+      "created": "Créé",
+      "last_login": "Dernière connexion",
+      "actions": "Actions",
+      "name": "Nom",
+      "user": "Utilisateur",
+      "key_preview": "Aperçu de la clé",
+      "last_used": "Dernière utilisation",
+      "expires": "Expire",
+      "new_password": "Nouveau mot de passe",
+      "enable_registration": "Activer l'inscription des utilisateurs",
+      "max_api_keys": "Maximum de clés API par utilisateur",
+      "users": "Utilisateurs",
+      "api_keys": "Clés API",
+      "documents": "Documents"
+    },
+    "placeholders": {
+      "username": "nom_utilisateur",
+      "email": "utilisateur@exemple.com",
+      "password": "mot_de_passe",
+      "new_password": "Entrez un nouveau mot de passe (minimum 8 caractères)"
+    },
+    "descriptions": {
+      "registration_help": "Permettre la création de comptes utilisateur en libre-service",
+      "total_uploaded": "Total téléchargé",
+      "current_sessions": "Sessions actuelles non expirées",
+      "backup_description": "Crée une sauvegarde complète incluant la base de données et les fichiers utilisateur sous forme d'archive .tar.gz",
+      "restore_description": "Restaure la base de données et les fichiers utilisateur à partir d'une archive de sauvegarde (format .tar.gz)",
+      "upload_restore_description": "Téléchargez un fichier de sauvegarde pour une restauration ultérieure avec confirmation",
+      "restore_warning": "Attention : La restauration écrasera complètement toutes les données actuelles",
+      "max_api_keys_help": "Définissez le nombre maximum de clés API que chaque utilisateur peut créer (1-100)"
+    },
+    "badges": {
+      "multi_user": "Mode multi-utilisateur",
+      "dry_run": "Mode test",
+      "oidc_enabled": "OIDC activé",
+      "proxy_auth": "Auth proxy activée"
+    },
+    "loading_states": {
+      "creating_backup": "Création de la sauvegarde...",
+      "analyzing": "Analyse...",
+      "resetting": "Réinitialisation...",
+      "restoring": "Restauration...",
+      "uploading": "Téléchargement...",
+      "extracting": "Extraction...",
+      "validating": "Validation...",
+      "loading": "Chargement..."
+    },
+    "dialogs": {
+      "reset_password_title": "Réinitialiser le mot de passe",
+      "reset_password_description": "Réinitialiser le mot de passe pour l'utilisateur : ",
+      "confirm_restore_title": "Confirmer la restauration des données",
+      "confirm_restore_description": "Vous êtes sur le point de restaurer à partir du fichier de sauvegarde : ",
+      "restore_warning_text": "Cela écrasera définitivement toutes les données actuelles, y compris :",
+      "restore_warning_items": {
+        "accounts": "Tous les comptes utilisateur et paramètres",
+        "api_keys": "Toutes les clés API et sessions",
+        "documents": "Tous les documents utilisateur et fichiers",
+        "pairing": "Toute la configuration de couplage cloud",
+        "folders": "Tous les caches de dossiers",
+        "settings": "Tous les paramètres système",
+        "backups": "Tous les fichiers de sauvegarde stockés"
+      },
+      "restore_final_warning": "Cette action ne peut pas être annulée. Assurez-vous d'avoir une sauvegarde actuelle avant de continuer.",
+      "backup_version": "Version de Sauvegarde",
+      "current_version": "Version Actuelle",
+      "version_unknown": "Inconnue",
+      "version_warning": "Attention : Cette sauvegarde a été créée avec une version plus récente d'Stationmaster. La restauration peut échouer ou causer un comportement inattendu."
+    },
+    "errors": {
+      "create_user": "Échec de la création de l'utilisateur",
+      "delete_user": "Échec de la suppression de l'utilisateur",
+      "reset_password": "Échec de la réinitialisation du mot de passe",
+      "password_length": "Le mot de passe doit contenir au moins 8 caractères",
+      "smtp_test": "Échec du test SMTP",
+      "smtp_test_network": "Échec du test SMTP",
+      "backup_create": "Échec de la création de la sauvegarde",
+      "backup_invalid": "Fichier de sauvegarde invalide",
+      "backup_analyze": "Échec de l'analyse du fichier de sauvegarde : ",
+      "backup_file_type": "Type de fichier invalide. Veuillez sélectionner une archive de sauvegarde (.tar.gz ou .tgz). Fichier sélectionné : ",
+      "restore_failed": "Échec de la restauration de la base de données",
+      "restore_error": "Échec de la restauration de la base de données : ",
+      "restore_cancel_failed": "Échec de l'annulation de la restauration",
+      "restore_delete_failed": "Échec de la suppression du téléchargement de restauration",
+      "restore_import_failed": "Échec de l'importation des données de sauvegarde",
+      "restore_delete_record_failed": "Échec de la suppression de l'enregistrement de restauration",
+      "parse_form_failed": "Échec de l'analyse du formulaire de téléchargement",
+      "create_temp_file_failed": "Échec de la création du fichier temporaire",
+      "save_uploaded_file_failed": "Échec de la sauvegarde du fichier téléchargé",
+      "backup_analyze_failed": "Échec de l'analyse du fichier de sauvegarde",
+      "get_file_info_failed": "Échec de l'obtention des informations du fichier",
+      "save_upload_record_failed": "Échec de la sauvegarde de l'enregistrement de téléchargement",
+      "invalid_request": "Requête invalide",
+      "invalid_upload_id": "ID de téléchargement invalide",
+      "upload_not_found": "Téléchargement introuvable",
+      "create_backup_job_failed": "Échec de la création du travail de sauvegarde",
+      "get_backup_jobs_failed": "Échec de l'obtention des travaux de sauvegarde",
+      "invalid_job_id": "ID de travail invalide",
+      "backup_job_not_found": "Travail de sauvegarde introuvable",
+      "delete_backup_job_failed": "Échec de la suppression du travail de sauvegarde",
+      "backup_download": "Échec du téléchargement du fichier de sauvegarde",
+      "no_backup_file": "Aucun fichier de sauvegarde fourni",
+      "backup_not_found": "Fichier de sauvegarde introuvable",
+      "backup_not_ready": "Sauvegarde non prête pour le téléchargement",
+      "backup_file_unavailable": "Fichier de sauvegarde indisponible",
+      "max_api_keys_invalid": "Veuillez entrer une valeur entre 1 et 100"
+    },
+    "success": {
+      "restore_complete": "Base de données restaurée avec succès",
+      "backup_restored": "Sauvegarde restaurée avec succès depuis {{filename}}"
+    },
+    "backup": {
+      "create_backup": "Créer une Sauvegarde",
+      "creating_job": "Création du travail de sauvegarde...",
+      "backup": "Sauvegarde",
+      "download": "Télécharger",
+      "delete_backup_title": "Supprimer la Sauvegarde",
+      "delete_error": "Échec de la suppression de la sauvegarde",
+      "background_description": "Crée une sauvegarde en arrière-plan que vous pouvez télécharger une fois terminée",
+      "status": {
+        "pending": "En attente",
+        "running": "En cours",
+        "completed": "Terminé",
+        "failed": "Échoué"
+      }
+    },
+    "restore": {
+      "create_restore": "Restaurer la Sauvegarde",
+      "creating_job": "Création du travail de restauration...",
+      "restore": "Restaurer",
+      "job_created": "Travail de restauration créé avec succès. La restauration va commencer sous peu.",
+      "delete_error": "Échec de la suppression de la restauration",
+      "background_description": "Télécharge et restaure une sauvegarde en arrière-plan avec suivi des progrès",
+      "status": {
+        "pending": "En attente",
+        "running": "En cours",
+        "completed": "Terminé",
+        "failed": "Échoué"
+      }
+    },
+    "jobs": {
+      "recent_jobs": "Travaux Récents",
+      "progress": "Progrès"
+    },
+    "messages": {
+      "backup_job_created": "Travail de sauvegarde créé avec succès. Vous pourrez le télécharger une fois terminé."
+    },
+    "counts": {
+      "users": "Utilisateurs ({{count}})",
+      "all_api_keys": "Toutes les clés API ({{count}})"
+    },
+    "tooltips": {
+      "oidc_managed": "Géré via OIDC"
+    },
+    "never": "Jamais"
+  },
+  "app": {
+    "settings": "Paramètres",
+    "admin": "Administration"
+  },
+  "password_reset": {
+    "title": "Réinitialiser le mot de passe",
+    "new_password_title": "Définir un nouveau mot de passe",
+    "email_placeholder": "Entrez votre adresse email",
+    "password_placeholder": "Entrez un nouveau mot de passe",
+    "confirm_placeholder": "Confirmez le nouveau mot de passe",
+    "sending": "Envoi...",
+    "send_email": "Envoyer l'email de réinitialisation",
+    "resetting": "Réinitialisation...",
+    "reset_button": "Réinitialiser le mot de passe",
+    "email_sent": "Si l'email existe, un lien de réinitialisation du mot de passe a été envoyé",
+    "send_email_error": "Échec de l'envoi de l'email de réinitialisation",
+    "success": "Le mot de passe a été réinitialisé avec succès. Vous pouvez maintenant vous connecter avec votre nouveau mot de passe.",
+    "reset_error": "Échec de la réinitialisation du mot de passe",
+    "email_instruction": "Entrez votre adresse email et nous vous enverrons un lien pour réinitialiser votre mot de passe."
+  },
+  "accessibility": {
+    "logo": "Logo Stationmaster",
+    "select_language": "Sélectionner la langue"
+  },
+  "backend": {
+    "auth": {
+      "too_many_attempts": "Trop de tentatives de connexion échouées",
+      "invalid_request": "Requête invalide",
+      "not_configured": "Authentification non configurée",
+      "invalid_credentials": "Identifiants invalides",
+      "account_disabled": "Le compte utilisateur est désactivé",
+      "token_error": "Impossible de générer le token",
+      "no_token": "Aucun token d'authentification ou clé API",
+      "invalid_token": "Token invalide",
+      "required": "Authentification requise",
+      "session_error": "Impossible de générer la session",
+      "username_required": "Le nom d'utilisateur est requis",
+      "username_too_short": "Le nom d'utilisateur doit contenir au moins 3 caractères",
+      "username_too_long": "Le nom d'utilisateur ne peut pas dépasser 50 caractères",
+      "username_invalid_format": "Le nom d'utilisateur doit commencer par une lettre ou un chiffre et ne peut contenir que des lettres, des chiffres, des traits de soulignement et des tirets"
+    },
+    "status": {
+      "job_not_found": "Tâche non trouvée",
+      "internal_error": "Erreur interne",
+      "done": "Terminé",
+      "invalid_prefix": "Préfixe invalide",
+      "using_uploaded_file": "Utilisation du fichier téléchargé",
+      "no_url": "Aucune URL trouvée dans le corps de la requête",
+      "downloading": "Téléchargement",
+      "download_error": "Erreur de téléchargement",
+      "converting_pdf": "Conversion vers PDF",
+      "conversion_error": "Erreur de conversion Image→PDF",
+      "compressing_pdf": "Compression PDF",
+      "compress_error": "Erreur de compression",
+      "rename_error": "Erreur de renommage",
+      "uploading": "Téléchargement vers le serveur",
+      "upload_success": "Votre document est disponible sur votre reMarkable à {{path}}",
+      "upload_success_multiple": "Vos documents sont disponibles sur votre reMarkable à :\n{{paths}}",
+      "conflict_entry_exists": "Un document avec ce nom existe déjà sur votre reMarkable. Changez votre paramètre {{conflict_resolution}} dans {{settings}}, ou renommez le document."
+    },
+    "errors": {
+      "missing_url": "Paramètre URL manquant",
+      "parse_form": "Impossible d'analyser le formulaire multipart",
+      "get_file": "Impossible de récupérer le fichier",
+      "open_file": "Impossible d'ouvrir le fichier téléchargé",
+      "create_dir": "Impossible de créer le répertoire de téléchargement",
+      "create_file": "Impossible de créer le fichier sur le disque",
+      "save_file": "Impossible de sauvegarder le fichier",
+      "no_form": "Aucun formulaire multipart trouvé",
+      "no_file_field": "Aucun fichier avec le nom de champ {{field}}",
+      "file_too_large": "La taille du fichier dépasse la limite maximale",
+      "memory_constrained": "Mémoire du serveur insuffisante pour le traitement du fichier",
+      "upload_stream_failed": "Échec du traitement du téléchargement de fichier volumineux"
+    }
+  },
+  "settings": {
+    "title": "Paramètres utilisateur",
+    "description": "Gérez votre profil, clés API et préférences de compte",
+    "tabs": {
+      "profile": "Profil",
+      "account": "Compte",
+      "api_keys": "Clés API"
+    },
+    "cards": {
+      "profile_information": "Informations du profil",
+      "change_password": "Changer le mot de passe",
+      "delete_account": "Supprimer le compte",
+      "create_api_key": "Créer une nouvelle clé API",
+      "your_api_keys": "Vos clés API"
+    },
+    "labels": {
+      "username": "Nom d'utilisateur",
+      "email": "E-mail",
+      "rmapi_host": "Hôte reMarkable (optionnel)",
+      "default_directory": "Répertoire par défaut",
+      "cover_page": "Page de couverture",
+      "conflict_resolution": "En Conflit",
+      "folder_depth_limit": "Limite de profondeur des dossiers",
+      "folder_exclusion_list": "Dossiers exclus",
+      "current_password": "Mot de passe actuel",
+      "new_password": "Nouveau mot de passe",
+      "confirm_new_password": "Confirmer le nouveau mot de passe",
+      "delete_account": "Supprimer le compte",
+      "api_key_name": "Nom",
+      "key_preview": "Aperçu de la clé",
+      "status": "Statut",
+      "created": "Créé",
+      "last_used": "Dernière utilisation",
+      "expires": "Expire",
+      "pdf_conversion_device": "Cible de conversion",
+      "page_resolution": "Résolution de page",
+      "page_dpi": "DPI de page"
+    },
+    "actions": {
+      "unpair": "Découpler",
+      "pair": "Coupler",
+      "create_api_key": "Créer une clé API",
+      "got_it": "Compris",
+      "cancel": "Annuler",
+      "delete_api_key": "Supprimer la clé API",
+      "details": "Détails"
+    },
+    "options": {
+      "cover_current": "Page actuelle",
+      "cover_first": "Première page",
+      "manual": "Manuel",
+      "conflict_abort": "Abandonner",
+      "conflict_overwrite": "Écraser",
+      "conflict_content_only": "Contenu seulement"
+    },
+    "expiry_options": {
+      "one_week": "1 semaine",
+      "one_month": "1 mois",
+      "three_months": "3 mois",
+      "one_year": "1 an"
+    },
+    "messages": {
+      "pair_to_load_folders": "Couplez pour charger les dossiers",
+      "pair_help": "Couplez avec le cloud reMarkable pour sélectionner parmi les dossiers existants",
+      "delete_warning_intro": "En cliquant ci-dessous, une boîte de dialogue de confirmation s'ouvrira. Une fois confirmé, votre compte sera définitivement supprimé avec toutes les données associées. Cela inclut :",
+      "remarkable_unaffected": "Votre compte reMarkable Cloud et les données de l'appareil resteront complètement intacts.",
+      "api_key_created_title": "Nouvelle clé API créée",
+      "api_key_created_message": "Copiez cette clé maintenant - elle ne sera plus affichée :",
+      "no_api_keys": "Aucune clé API créée pour le moment",
+      "api_key_limit_reached": "Vous avez atteint votre limite de {{maxKeys}} clés API",
+      "api_keys_remaining": "{{remaining}} sur {{maxKeys}} clés API restantes"
+    },
+    "help": {
+      "cover_page": "Contrôle si la première page ou la page actuelle est utilisée comme couverture lors du téléchargement de PDF",
+      "pdf_conversion_device": "Choisissez le modèle de votre appareil reMarkable pour une conversion optimale d'image vers PDF. Ce paramètre n'affecte que les fichiers image (JPEG, PNG) convertis en PDF.",
+      "page_resolution": "Résolution de page au format LARGEURxHAUTEUR",
+      "page_dpi": "Points par pouce",
+      "default_directory": "Choisissez le dossier par défaut où vos documents seront téléchargés",
+      "conflict_resolution": "Choisissez ce qui se passe lors du téléchargement d'un document avec le même nom qu'un document existant. Contenu seulement préserve les annotations et ne fonctionne que pour les PDFs et images - cela Abandonnera pour les EPUBs. Écraser remplace complètement les documents.",
+      "folder_depth_limit": "Profondeur maximale des dossiers à afficher (laisser vide pour illimité)",
+      "folder_exclusion_list": "Liste séparée par des virgules des noms de dossiers à exclure, sensible à la casse"
+    },
+    "status": {
+      "active": "Actif",
+      "expired": "Expiré",
+      "inactive": "Inactif"
+    },
+    "delete_warnings": {
+      "documents": "Tous les documents et fichiers archivés",
+      "api_keys": "Toutes les clés API et leur accès",
+      "profile": "Votre profil et paramètres de compte"
+    },
+    "dialogs": {
+      "delete_api_key_title": "Supprimer la clé API",
+      "delete_api_key_message": "Êtes-vous sûr de vouloir supprimer la clé API",
+      "delete_api_key_consequences_title": "Cette action va :",
+      "delete_api_key_consequences": {
+        "revoke": "Révoquer définitivement la clé API",
+        "stop_apps": "Arrêter toutes les applications utilisant cette clé",
+        "remove": "Supprimer la clé de votre compte"
+      },
+      "cannot_undo": "Cette action ne peut pas être annulée.",
+      "delete_account_confirmation": "Êtes-vous sûr de vouloir supprimer définitivement votre compte ? Cette action ne peut pas être annulée.",
+      "delete_account_type_confirm": "Tapez \"{{confirmText}}\" pour confirmer",
+      "unpair_confirmation_message": "Êtes-vous sûr de vouloir vous découpler du cloud reMarkable ? Vous devrez vous coupler à nouveau pour télécharger des documents."
+    },
+    "placeholders": {
+      "cloud_default": "Laisser vide pour reMarkable Cloud",
+      "api_key": "Ma clé API",
+      "never_expires": "N'expire jamais",
+      "current_password": "Entrez votre mot de passe actuel",
+      "old_password": "ancienmdp",
+      "new_password": "nouveaumdp",
+      "delete_confirm": "SUPPRIMER MON COMPTE",
+      "page_resolution": "1404x1872",
+      "page_dpi": "226",
+      "folder_depth_limit": "Illimité",
+      "folder_exclusion_list": "ex., corbeille, modèles, archive"
+    },
+    "loading_states": {
+      "saving": "Enregistrement...",
+      "updating": "Mise à jour...",
+      "deleting": "Suppression...",
+      "loading": "Chargement..."
+    },
+    "buttons": {
+      "save_changes": "Enregistrer les modifications",
+      "update_password": "Mettre à jour le mot de passe",
+      "delete_my_account": "Supprimer mon compte"
+    },
+    "never": "Jamais",
+    "tooltips": {
+      "api_key_copied": "Copié!"
+    },
+    "errors": {
+      "update_profile": "Échec de la mise à jour du profil",
+      "unpair": "Échec du découplage",
+      "passwords_mismatch": "Les mots de passe ne correspondent pas",
+      "update_password": "Échec de la mise à jour du mot de passe",
+      "create_api_key": "Échec de la création de la clé API",
+      "delete_api_key": "Échec de la suppression de la clé API",
+      "delete_account": "Échec de la suppression du compte"
+    }
+  }
+}

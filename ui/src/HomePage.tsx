@@ -1,22 +1,224 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { LoginForm } from "@/components/LoginForm";
-import { DeviceManagement } from "@/components/DeviceManagement";
 import { PluginManagement } from "@/components/PluginManagement";
 import { PlaylistManagement } from "@/components/PlaylistManagement";
-import { Button } from "@/components/ui/button";
+import { DeviceSelector } from "@/components/DeviceSelector";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Monitor, Puzzle, PlayCircle } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Device } from "@/utils/deviceHelpers";
+import { Puzzle, PlayCircle } from "lucide-react";
 import { useTranslation } from "react-i18next";
+
+const SELECTED_DEVICE_KEY = "stationmaster_selected_device";
+
+const getStoredDeviceId = (): string | null => {
+  try {
+    return localStorage.getItem(SELECTED_DEVICE_KEY);
+  } catch {
+    return null;
+  }
+};
+
+const storeDeviceId = (deviceId: string | null) => {
+  try {
+    if (deviceId) {
+      localStorage.setItem(SELECTED_DEVICE_KEY, deviceId);
+    } else {
+      localStorage.removeItem(SELECTED_DEVICE_KEY);
+    }
+  } catch (error) {
+    console.warn("Failed to store device ID:", error);
+  }
+};
 
 export default function HomePage() {
   const { isAuthenticated, isLoading, login, authConfigured } = useAuth();
   const { t } = useTranslation();
   
-  // Dialog states
-  const [showDeviceManagement, setShowDeviceManagement] = useState(false);
-  const [showPluginManagement, setShowPluginManagement] = useState(false);
-  const [showPlaylistManagement, setShowPlaylistManagement] = useState(false);
+  // State
+  const [devices, setDevices] = useState<Device[]>([]);
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [userPlugins, setUserPlugins] = useState([]);
+  const [userPluginsLoading, setUserPluginsLoading] = useState(false);
+  const [playlistItems, setPlaylistItems] = useState([]);
+  const [playlistItemsLoading, setPlaylistItemsLoading] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(true);
+
+  // Fetch devices
+  const fetchDevices = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch("/api/devices", {
+        credentials: "include",
+      });
+      if (response.ok) {
+        const data = await response.json();
+        const fetchedDevices = data.devices || [];
+        setDevices(fetchedDevices);
+        
+        // Handle device selection persistence
+        const storedDeviceId = getStoredDeviceId();
+        const storedDeviceExists = fetchedDevices.some((d: Device) => d.id === storedDeviceId);
+        
+        if (storedDeviceId && storedDeviceExists) {
+          // Use stored device if it still exists
+          setSelectedDeviceId(storedDeviceId);
+        } else if (!selectedDeviceId && fetchedDevices.length > 0) {
+          // Auto-select first device if none selected and no valid stored device
+          const firstDeviceId = fetchedDevices[0].id;
+          setSelectedDeviceId(firstDeviceId);
+          storeDeviceId(firstDeviceId);
+        } else if (storedDeviceId && !storedDeviceExists) {
+          // Clear stored device if it no longer exists
+          storeDeviceId(null);
+          if (fetchedDevices.length > 0) {
+            const firstDeviceId = fetchedDevices[0].id;
+            setSelectedDeviceId(firstDeviceId);
+            storeDeviceId(firstDeviceId);
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Failed to fetch devices:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Fetch user plugins
+  const fetchUserPlugins = async () => {
+    try {
+      setUserPluginsLoading(true);
+      const response = await fetch("/api/user-plugins", {
+        credentials: "include",
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setUserPlugins(data.user_plugins || []);
+      }
+    } catch (error) {
+      console.error("Failed to fetch user plugins:", error);
+    } finally {
+      setUserPluginsLoading(false);
+    }
+  };
+
+  // Fetch playlist items for selected device
+  const fetchPlaylistItems = async () => {
+    if (!selectedDeviceId) {
+      setPlaylistItems([]);
+      setPlaylistItemsLoading(false);
+      return;
+    }
+    
+    try {
+      setPlaylistItemsLoading(true);
+      // Get the default playlist for this device
+      const playlistsResponse = await fetch(`/api/playlists?device_id=${selectedDeviceId}`, {
+        credentials: "include",
+      });
+      
+      if (playlistsResponse.ok) {
+        const playlistsText = await playlistsResponse.text();
+        try {
+          const playlistsData = JSON.parse(playlistsText);
+          const defaultPlaylist = playlistsData.playlists?.find((p: any) => p.is_default);
+          
+          if (defaultPlaylist) {
+            const playlistDetailsResponse = await fetch(`/api/playlists/${defaultPlaylist.id}`, {
+              credentials: "include",
+            });
+            if (playlistDetailsResponse.ok) {
+              const playlistDetailsText = await playlistDetailsResponse.text();
+              try {
+                const playlistDetailsData = JSON.parse(playlistDetailsText);
+                setPlaylistItems(playlistDetailsData.items || []);
+              } catch (parseError) {
+                console.error("Failed to parse playlist details JSON:", parseError);
+                console.error("Response text:", playlistDetailsText);
+                setPlaylistItems([]);
+              }
+            } else {
+              const errorText = await playlistDetailsResponse.text();
+              console.error("Failed to fetch playlist details - HTTP", playlistDetailsResponse.status);
+              console.error("Error response:", errorText);
+              
+              // Check if it's an authentication issue
+              if (playlistDetailsResponse.status === 401) {
+                console.error("Authentication error - user may need to log in again");
+              } else if (playlistDetailsResponse.status === 403) {
+                console.error("Permission denied - user may not have access to this playlist");
+              } else if (errorText.includes("DOCTYPE")) {
+                console.error("Server returned HTML instead of JSON - possible routing or middleware issue");
+              }
+              
+              setPlaylistItems([]);
+            }
+          } else {
+            console.log("No default playlist found for device, setting empty playlist items");
+            setPlaylistItems([]);
+          }
+        } catch (parseError) {
+          console.error("Failed to parse playlists JSON:", parseError);
+          console.error("Response text:", playlistsText);
+          setPlaylistItems([]);
+        }
+      } else {
+        const errorText = await playlistsResponse.text();
+        console.error("Failed to fetch playlists - HTTP", playlistsResponse.status);
+        console.error("Error response:", errorText);
+        
+        // Check if it's an authentication issue
+        if (playlistsResponse.status === 401) {
+          console.error("Authentication error - user may need to log in again");
+        } else if (playlistsResponse.status === 403) {
+          console.error("Permission denied - user may not have access to this device");
+        } else if (errorText.includes("DOCTYPE")) {
+          console.error("Server returned HTML instead of JSON - possible routing or middleware issue");
+        }
+        
+        setPlaylistItems([]);
+      }
+    } catch (error) {
+      console.error("Failed to fetch playlist items:", error);
+      setPlaylistItems([]);
+    } finally {
+      setPlaylistItemsLoading(false);
+    }
+  };
+
+  // Check if user has completed onboarding
+  const checkOnboardingStatus = () => {
+    // Only check after ALL loading is complete and we have attempted to fetch data
+    if (loading || userPluginsLoading || playlistItemsLoading) return;
+    
+    const hasDevices = devices.length > 0;
+    const hasPlugins = userPlugins.length > 0;
+    const hasPlaylistItems = playlistItems.length > 0;
+    
+    setShowOnboarding(!(hasDevices && hasPlugins && hasPlaylistItems));
+  };
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchDevices();
+      fetchUserPlugins();
+    }
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (selectedDeviceId) {
+      fetchPlaylistItems();
+    } else {
+      setPlaylistItems([]);
+    }
+  }, [selectedDeviceId]);
+
+  useEffect(() => {
+    checkOnboardingStatus();
+  }, [devices, userPlugins, playlistItems, loading, userPluginsLoading, playlistItemsLoading]);
 
   if (isLoading) {
     return null;
@@ -28,91 +230,75 @@ export default function HomePage() {
 
   return (
     <div className="bg-background pt-0 pb-8 px-8">
-      <div className="max-w-4xl mx-auto space-y-6">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-2xl">Welcome to Stationmaster</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-muted-foreground mb-6">
-              Your self-hosted solution for managing TRMNL devices.
-            </p>
-            
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => setShowDeviceManagement(true)}>
-                <CardContent className="p-6 text-center">
-                  <Monitor className="h-12 w-12 mx-auto mb-4 text-primary" />
-                  <h3 className="font-semibold mb-2">Devices</h3>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    Link and manage your TRMNL devices
-                  </p>
-                  <Button variant="outline" className="w-full">
-                    Manage Devices
-                  </Button>
-                </CardContent>
-              </Card>
-
-              <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => setShowPluginManagement(true)}>
-                <CardContent className="p-6 text-center">
-                  <Puzzle className="h-12 w-12 mx-auto mb-4 text-primary" />
-                  <h3 className="font-semibold mb-2">Plugins</h3>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    Configure content plugins and instances
-                  </p>
-                  <Button variant="outline" className="w-full">
-                    Manage Plugins
-                  </Button>
-                </CardContent>
-              </Card>
-
-              <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => setShowPlaylistManagement(true)}>
-                <CardContent className="p-6 text-center">
-                  <PlayCircle className="h-12 w-12 mx-auto mb-4 text-primary" />
-                  <h3 className="font-semibold mb-2">Playlists</h3>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    Create and schedule content playlists
-                  </p>
-                  <Button variant="outline" className="w-full">
-                    Manage Playlists
-                  </Button>
-                </CardContent>
-              </Card>
-            </div>
-          </CardContent>
-        </Card>
+      <div className="max-w-6xl mx-auto space-y-6">
+        {showOnboarding && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Welcome to Stationmaster</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-muted-foreground mb-4">
+                Your self-hosted solution for managing TRMNL devices.
+              </p>
+              <div className="bg-muted/50 rounded-lg p-4">
+                <h4 className="font-medium mb-2">Quick Start Guide</h4>
+                <ol className="list-decimal list-inside space-y-1 text-sm text-muted-foreground">
+                  <li>Add a device in Settings → Devices</li>
+                  <li>Create plugin instances in the Plugins tab</li>
+                  <li>Add playlist items in the Playlist Items tab</li>
+                </ol>
+              </div>
+            </CardContent>
+          </Card>
+        )}
         
         <Card>
           <CardHeader>
-            <CardTitle>Quick Start Guide</CardTitle>
+            <CardTitle className="text-2xl">Dashboard</CardTitle>
           </CardHeader>
-          <CardContent>
-            <ol className="list-decimal list-inside space-y-2 text-sm">
-              <li>Link your TRMNL device using the device management interface</li>
-              <li>Create plugin instances with your desired settings</li>
-              <li>Build playlists to organize your content</li>
-              <li>Schedule when different content should be displayed</li>
-            </ol>
+          <CardContent className="space-y-6">
+            <DeviceSelector
+              devices={devices}
+              selectedDeviceId={selectedDeviceId}
+              onDeviceChange={(deviceId) => {
+                setSelectedDeviceId(deviceId);
+                storeDeviceId(deviceId);
+              }}
+              loading={loading}
+            />
+            
+            {selectedDeviceId && (
+              <Tabs defaultValue="plugins" className="w-full">
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="plugins">
+                    <Puzzle className="h-4 w-4 mr-2" />
+                    Plugins
+                  </TabsTrigger>
+                  <TabsTrigger value="playlist">
+                    <PlayCircle className="h-4 w-4 mr-2" />
+                    Playlist
+                  </TabsTrigger>
+                </TabsList>
+                
+                <TabsContent value="plugins" className="mt-6">
+                  <PluginManagement 
+                    selectedDeviceId={selectedDeviceId}
+                    onUpdate={fetchUserPlugins}
+                  />
+                </TabsContent>
+                
+                <TabsContent value="playlist" className="mt-6">
+                  <PlaylistManagement 
+                    selectedDeviceId={selectedDeviceId}
+                    devices={devices}
+                    onUpdate={fetchPlaylistItems}
+                  />
+                </TabsContent>
+              </Tabs>
+            )}
           </CardContent>
         </Card>
       </div>
-
-      {/* Device Management Dialog */}
-      <DeviceManagement
-        isOpen={showDeviceManagement}
-        onClose={() => setShowDeviceManagement(false)}
-      />
-
-      {/* Plugin Management Dialog */}
-      <PluginManagement
-        isOpen={showPluginManagement}
-        onClose={() => setShowPluginManagement(false)}
-      />
-
-      {/* Playlist Management Dialog */}
-      <PlaylistManagement
-        isOpen={showPlaylistManagement}
-        onClose={() => setShowPlaylistManagement(false)}
-      />
     </div>
   );
 }

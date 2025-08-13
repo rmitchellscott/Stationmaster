@@ -143,7 +143,7 @@ func initSQLite(config *DatabaseConfig) (*gorm.DB, error) {
 // runMigrations runs GORM auto-migration for all models
 func runMigrations(logPrefix string) error {
 	logging.Logf("[%s] Running GORM auto-migrations...", logPrefix)
-	
+
 	models := GetAllModels()
 
 	// Force migration of all models
@@ -256,8 +256,8 @@ func initializeDefaultPlugins() error {
 				},
 				"required": ["text"]
 			}`,
-			Version: "1.0.0",
-			Author:  "Stationmaster",
+			Version:  "1.0.0",
+			Author:   "Stationmaster",
 			IsActive: true,
 		},
 		{
@@ -288,8 +288,8 @@ func initializeDefaultPlugins() error {
 					}
 				}
 			}`,
-			Version: "1.0.0",
-			Author:  "Stationmaster",
+			Version:  "1.0.0",
+			Author:   "Stationmaster",
 			IsActive: true,
 		},
 		{
@@ -321,8 +321,8 @@ func initializeDefaultPlugins() error {
 				},
 				"required": ["location", "api_key"]
 			}`,
-			Version: "1.0.0",
-			Author:  "Stationmaster",
+			Version:  "1.0.0",
+			Author:   "Stationmaster",
 			IsActive: true,
 		},
 		{
@@ -349,8 +349,8 @@ func initializeDefaultPlugins() error {
 				},
 				"required": ["feed_url"]
 			}`,
-			Version: "1.0.0",
-			Author:  "Stationmaster",
+			Version:  "1.0.0",
+			Author:   "Stationmaster",
 			IsActive: true,
 		},
 		{
@@ -376,8 +376,8 @@ func initializeDefaultPlugins() error {
 				},
 				"required": ["image_url"]
 			}`,
-			Version: "1.0.0",
-			Author:  "Stationmaster",
+			Version:  "1.0.0",
+			Author:   "Stationmaster",
 			IsActive: true,
 		},
 		{
@@ -404,8 +404,28 @@ func initializeDefaultPlugins() error {
 				},
 				"required": ["endpoint_url"]
 			}`,
-			Version: "1.0.0",
-			Author:  "TRMNL",
+			Version:  "1.0.0",
+			Author:   "Stationmaster",
+			IsActive: true,
+		},
+		{
+			Name:        "Alias",
+			Type:        "alias",
+			Description: "Pass a custom image URL directly to your device",
+			ConfigSchema: `{
+				"type": "object",
+				"properties": {
+					"image_url": {
+						"type": "string",
+						"title": "Image URL",
+						"description": "Direct URL to the image (must be 800x480 1-bit BMP or up to 2-bit PNG)",
+						"placeholder": "https://your-server.com/image.bmp"
+					}
+				},
+				"required": ["image_url"]
+			}`,
+			Version:  "1.0.0",
+			Author:   "Stationmaster",
 			IsActive: true,
 		},
 	}

@@ -398,11 +398,25 @@ func processActivePlugins(device *database.Device, activeItems []database.Playli
 		return nil, fmt.Errorf("no active playlist items")
 	}
 
-	// Get the first active item (in a full implementation, you might cycle through items)
-	item := activeItems[0]
+	// Calculate next item index for rotation
+	nextIndex := 0
+	if len(activeItems) > 1 {
+		// Use modulo to wrap around when reaching the end
+		nextIndex = (device.LastPlaylistIndex + 1) % len(activeItems)
+	}
+	
+	// Get the next item in rotation
+	item := activeItems[nextIndex]
+	
+	// Update device's last playlist index for next rotation
+	db := database.GetDB()
+	deviceService := database.NewDeviceService(db)
+	if err := deviceService.UpdateLastPlaylistIndex(device.ID, nextIndex); err != nil {
+		// Log error but don't fail the request
+		// The rotation will still work, just might repeat an item next time
+	}
 	
 	// Get the user plugin details
-	db := database.GetDB()
 	pluginService := database.NewPluginService(db)
 	
 	userPlugin, err := pluginService.GetUserPluginByID(item.UserPluginID)
@@ -414,6 +428,8 @@ func processActivePlugins(device *database.Device, activeItems []database.Playli
 	switch userPlugin.Plugin.Type {
 	case "redirect":
 		return processRedirectPlugin(userPlugin)
+	case "alias":
+		return processAliasPlugin(userPlugin)
 	default:
 		// For other plugin types, return default response
 		return gin.H{
@@ -491,6 +507,31 @@ func processRedirectPlugin(userPlugin *database.UserPlugin) (gin.H, error) {
 	// Copy refresh_rate if provided
 	if refreshRate, ok := pluginResponse["refresh_rate"]; ok {
 		response["refresh_rate"] = fmt.Sprintf("%v", refreshRate)
+	}
+
+	return response, nil
+}
+
+// processAliasPlugin handles alias plugin type by returning the configured image URL directly
+func processAliasPlugin(userPlugin *database.UserPlugin) (gin.H, error) {
+	// Parse plugin settings
+	var settings map[string]interface{}
+	if userPlugin.Settings != "" {
+		if err := json.Unmarshal([]byte(userPlugin.Settings), &settings); err != nil {
+			return nil, fmt.Errorf("failed to parse plugin settings: %w", err)
+		}
+	}
+
+	// Get image URL from settings
+	imageURL, ok := settings["image_url"].(string)
+	if !ok || imageURL == "" {
+		return nil, fmt.Errorf("image_url not configured in plugin settings")
+	}
+
+	// Return response with the image URL
+	response := gin.H{
+		"image_url": imageURL,
+		"filename":  time.Now().Format("2006-01-02T15:04:05"),
 	}
 
 	return response, nil

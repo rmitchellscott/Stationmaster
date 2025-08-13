@@ -32,11 +32,6 @@ import {
   TooltipContent,
 } from "@/components/ui/tooltip";
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import {
   Monitor,
   Plus,
   Edit,
@@ -48,11 +43,8 @@ import {
   BatteryWarning,
   Wifi,
   WifiOff,
-  Calendar,
   AlertTriangle,
   CheckCircle,
-  Clock,
-  Settings as SettingsIcon,
   FileText,
 } from "lucide-react";
 
@@ -83,12 +75,7 @@ interface DeviceLog {
   created_at: string;
 }
 
-interface DeviceManagementProps {
-  isOpen: boolean;
-  onClose: () => void;
-}
-
-export function DeviceManagement({ isOpen, onClose }: DeviceManagementProps) {
+export function DeviceManagementContent() {
   const { t } = useTranslation();
   const { user } = useAuth();
   const [devices, setDevices] = useState<Device[]>([]);
@@ -120,10 +107,8 @@ export function DeviceManagement({ isOpen, onClose }: DeviceManagementProps) {
   const logsLimit = 50;
 
   useEffect(() => {
-    if (isOpen) {
-      fetchDevices();
-    }
-  }, [isOpen]);
+    fetchDevices();
+  }, []);
 
   const fetchDevices = async () => {
     try {
@@ -347,12 +332,9 @@ export function DeviceManagement({ isOpen, onClose }: DeviceManagementProps) {
   };
 
   const calculateBatteryPercentage = (voltage: number): number => {
-    // Lithium battery voltage ranges: 2.75V (0%) to 4.2V (100%)
-    // Updated to match official TRMNL curve: 4.0V = 90%
     if (voltage >= 4.2) return 100;
     if (voltage <= 2.75) return 0;
     
-    // Improved curve matching official TRMNL behavior
     if (voltage >= 4.0) return Math.round(90 + ((voltage - 4.0) / (4.2 - 4.0)) * 10);
     if (voltage >= 3.7) return Math.round(75 + ((voltage - 3.7) / (4.0 - 3.7)) * 15);
     if (voltage >= 3.4) return Math.round(50 + ((voltage - 3.4) / (3.7 - 3.4)) * 25);
@@ -440,206 +422,194 @@ export function DeviceManagement({ isOpen, onClose }: DeviceManagementProps) {
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-7xl mobile-dialog-content sm:max-w-7xl overflow-y-auto !top-[0vh] !translate-y-0 sm:!top-[6vh]">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Monitor className="h-5 w-5" />
-            Device Management
-          </DialogTitle>
-          <DialogDescription>
-            Manage your TRMNL devices, view status, and configure settings.
-          </DialogDescription>
-        </DialogHeader>
+    <>
+      {error && (
+        <Alert variant="destructive" className="mb-4">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
 
-        {error && (
-          <Alert variant="destructive">
-            <AlertTriangle className="h-4 w-4" />
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
+      {successMessage && (
+        <Alert className="mb-4">
+          <CheckCircle className="h-4 w-4" />
+          <AlertDescription>{successMessage}</AlertDescription>
+        </Alert>
+      )}
 
-        {successMessage && (
-          <Alert>
-            <CheckCircle className="h-4 w-4" />
-            <AlertDescription>{successMessage}</AlertDescription>
-          </Alert>
-        )}
-
-        <div className="space-y-4">
-          <div className="flex justify-between items-center">
-            <h3 className="text-lg font-semibold">Your Devices</h3>
-            <Button
-              onClick={() => setShowClaimDialog(true)}
-              className="flex items-center gap-2"
-            >
-              <Plus className="h-4 w-4" />
-              Claim Device
-            </Button>
-          </div>
-
-          {loading ? (
-            <div className="text-center py-8">Loading devices...</div>
-          ) : devices.length === 0 ? (
-            <Card>
-              <CardContent className="text-center py-8">
-                <Monitor className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                <h3 className="text-lg font-semibold mb-2">No Devices Claimed</h3>
-                <p className="text-muted-foreground mb-4">
-                  Claim your first TRMNL device to get started.
-                </p>
-                <Button onClick={() => setShowClaimDialog(true)}>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Claim Device
-                </Button>
-              </CardContent>
-            </Card>
-          ) : (
-            <Card>
-              <CardContent className="p-0">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Device</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="hidden sm:table-cell">Firmware</TableHead>
-                      <TableHead className="hidden sm:table-cell">Battery</TableHead>
-                      <TableHead className="hidden sm:table-cell">Signal</TableHead>
-                      <TableHead className="hidden lg:table-cell">Last Seen</TableHead>
-                      <TableHead className="hidden lg:table-cell">Created</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {devices.map((device) => (
-                      <TableRow key={device.id}>
-                        <TableCell>
-                          <div>
-                            <div className="font-medium">{device.name || "Unnamed Device"}</div>
-                            <div className="text-sm text-muted-foreground">ID: {device.friendly_id}</div>
-                          </div>
-                        </TableCell>
-                        <TableCell>{getStatusBadge(device)}</TableCell>
-                        <TableCell className="hidden sm:table-cell">
-                          {device.firmware_version || "Unknown"}
-                        </TableCell>
-                        <TableCell className="hidden sm:table-cell">
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <div className="flex items-center gap-1">
-                                {(() => {
-                                  const battery = getBatteryDisplay(device.battery_voltage);
-                                  return (
-                                    <>
-                                      {battery.icon}
-                                      <span className={`text-sm ${battery.color}`}>
-                                        {battery.text}
-                                      </span>
-                                    </>
-                                  );
-                                })()}
-                              </div>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              {getBatteryDisplay(device.battery_voltage).tooltip}
-                            </TooltipContent>
-                          </Tooltip>
-                        </TableCell>
-                        <TableCell className="hidden sm:table-cell">
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <div className="flex items-center gap-1">
-                                {(() => {
-                                  const signal = getSignalDisplay(device.rssi);
-                                  return (
-                                    <>
-                                      {signal.icon}
-                                      <span className={`text-sm ${signal.color}`}>
-                                        {signal.text}
-                                      </span>
-                                    </>
-                                  );
-                                })()}
-                              </div>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              {getSignalDisplay(device.rssi).tooltip}
-                            </TooltipContent>
-                          </Tooltip>
-                        </TableCell>
-                        <TableCell className="hidden lg:table-cell">
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <span className="cursor-default">
-                                {formatLastSeen(device.last_seen)}
-                              </span>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              {device.last_seen ? formatDate(device.last_seen) : "Never connected"}
-                            </TooltipContent>
-                          </Tooltip>
-                        </TableCell>
-                        <TableCell className="hidden lg:table-cell">
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <span className="cursor-default">
-                                {new Date(device.created_at).toLocaleDateString()}
-                              </span>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              {formatDate(device.created_at)}
-                            </TooltipContent>
-                          </Tooltip>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => openLogsDialog(device)}
-                                >
-                                  <FileText className="h-4 w-4" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>View Logs</TooltipContent>
-                            </Tooltip>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => openEditDialog(device)}
-                                >
-                                  <Edit className="h-4 w-4" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>Edit Device</TooltipContent>
-                            </Tooltip>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => setDeleteDevice(device)}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>Delete Device</TooltipContent>
-                            </Tooltip>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          )}
+      <div className="space-y-4">
+        <div className="flex justify-between items-center">
+          <h3 className="text-lg font-semibold">Your Devices</h3>
+          <Button
+            onClick={() => setShowClaimDialog(true)}
+            className="flex items-center gap-2"
+          >
+            <Plus className="h-4 w-4" />
+            Claim Device
+          </Button>
         </div>
-      </DialogContent>
+
+        {loading ? (
+          <div className="text-center py-8">Loading devices...</div>
+        ) : devices.length === 0 ? (
+          <Card>
+            <CardContent className="text-center py-8">
+              <Monitor className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+              <h3 className="text-lg font-semibold mb-2">No Devices Claimed</h3>
+              <p className="text-muted-foreground mb-4">
+                Claim your first TRMNL device to get started.
+              </p>
+              <Button onClick={() => setShowClaimDialog(true)}>
+                <Plus className="h-4 w-4 mr-2" />
+                Claim Device
+              </Button>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Device</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="hidden sm:table-cell">Firmware</TableHead>
+                    <TableHead className="hidden sm:table-cell">Battery</TableHead>
+                    <TableHead className="hidden sm:table-cell">Signal</TableHead>
+                    <TableHead className="hidden lg:table-cell">Last Seen</TableHead>
+                    <TableHead className="hidden lg:table-cell">Created</TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {devices.map((device) => (
+                    <TableRow key={device.id}>
+                      <TableCell>
+                        <div>
+                          <div className="font-medium">{device.name || "Unnamed Device"}</div>
+                          <div className="text-sm text-muted-foreground">ID: {device.friendly_id}</div>
+                        </div>
+                      </TableCell>
+                      <TableCell>{getStatusBadge(device)}</TableCell>
+                      <TableCell className="hidden sm:table-cell">
+                        {device.firmware_version || "Unknown"}
+                      </TableCell>
+                      <TableCell className="hidden sm:table-cell">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div className="flex items-center gap-1">
+                              {(() => {
+                                const battery = getBatteryDisplay(device.battery_voltage);
+                                return (
+                                  <>
+                                    {battery.icon}
+                                    <span className={`text-sm ${battery.color}`}>
+                                      {battery.text}
+                                    </span>
+                                  </>
+                                );
+                              })()}
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {getBatteryDisplay(device.battery_voltage).tooltip}
+                          </TooltipContent>
+                        </Tooltip>
+                      </TableCell>
+                      <TableCell className="hidden sm:table-cell">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div className="flex items-center gap-1">
+                              {(() => {
+                                const signal = getSignalDisplay(device.rssi);
+                                return (
+                                  <>
+                                    {signal.icon}
+                                    <span className={`text-sm ${signal.color}`}>
+                                      {signal.text}
+                                    </span>
+                                  </>
+                                );
+                              })()}
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {getSignalDisplay(device.rssi).tooltip}
+                          </TooltipContent>
+                        </Tooltip>
+                      </TableCell>
+                      <TableCell className="hidden lg:table-cell">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="cursor-default">
+                              {formatLastSeen(device.last_seen)}
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {device.last_seen ? formatDate(device.last_seen) : "Never connected"}
+                          </TooltipContent>
+                        </Tooltip>
+                      </TableCell>
+                      <TableCell className="hidden lg:table-cell">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="cursor-default">
+                              {new Date(device.created_at).toLocaleDateString()}
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {formatDate(device.created_at)}
+                          </TooltipContent>
+                        </Tooltip>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => openLogsDialog(device)}
+                              >
+                                <FileText className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>View Logs</TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => openEditDialog(device)}
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Edit Device</TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setDeleteDevice(device)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Delete Device</TooltipContent>
+                          </Tooltip>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        )}
+      </div>
 
       {/* Claim Device Dialog */}
       <Dialog open={showClaimDialog} onOpenChange={setShowClaimDialog}>
@@ -908,6 +878,6 @@ export function DeviceManagement({ isOpen, onClose }: DeviceManagementProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </Dialog>
+    </>
   );
 }

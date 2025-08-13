@@ -1335,14 +1335,16 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
   // Device utility functions
   const calculateBatteryPercentage = (voltage: number): number => {
     // Lithium battery voltage ranges: 2.75V (0%) to 4.2V (100%)
+    // Updated to match official TRMNL curve: 4.0V = 90%
     if (voltage >= 4.2) return 100;
     if (voltage <= 2.75) return 0;
     
-    // Linear interpolation between voltage thresholds
-    if (voltage > 3.95) return Math.round(75 + ((voltage - 3.95) / (4.2 - 3.95)) * 25);
-    if (voltage > 3.55) return Math.round(50 + ((voltage - 3.55) / (3.95 - 3.55)) * 25);
-    if (voltage > 3.15) return Math.round(25 + ((voltage - 3.15) / (3.55 - 3.15)) * 25);
-    return Math.round((voltage - 2.75) / (3.15 - 2.75) * 25);
+    // Improved curve matching official TRMNL behavior
+    if (voltage >= 4.0) return Math.round(90 + ((voltage - 4.0) / (4.2 - 4.0)) * 10);
+    if (voltage >= 3.7) return Math.round(75 + ((voltage - 3.7) / (4.0 - 3.7)) * 15);
+    if (voltage >= 3.4) return Math.round(50 + ((voltage - 3.4) / (3.7 - 3.4)) * 25);
+    if (voltage >= 3.0) return Math.round(25 + ((voltage - 3.0) / (3.4 - 3.0)) * 25);
+    return Math.round((voltage - 2.75) / (3.0 - 2.75) * 25);
   };
 
   const getSignalQuality = (rssi: number): { quality: string; strength: number; color: string } => {
@@ -1382,7 +1384,7 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
     
     return {
       icon,
-      text: `${percentage}% (${voltage.toFixed(1)}V)`,
+      text: `${percentage}%`,
       tooltip: `Battery Level: ${percentage}% (${voltage.toFixed(1)}V)`,
       color
     };

@@ -27,6 +27,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
@@ -90,11 +97,13 @@ export function UserSettings({ isOpen, onClose }: UserSettingsProps) {
 
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
+  const [timezone, setTimezone] = useState("");
   
   // Original values for change tracking
   const [originalValues, setOriginalValues] = useState({
     username: "",
-    email: ""
+    email: "",
+    timezone: ""
   });
 
   const [currentPassword, setCurrentPassword] = useState("");
@@ -130,6 +139,8 @@ export function UserSettings({ isOpen, onClose }: UserSettingsProps) {
       if (user) {
         setUsername(user.username);
         setEmail(user.email);
+        // Use user's timezone if available, otherwise default to browser timezone
+        setTimezone(user.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone);
       }
     }
   }, [isOpen, user]);
@@ -139,10 +150,13 @@ export function UserSettings({ isOpen, onClose }: UserSettingsProps) {
     if (user) {
       setUsername(user.username);
       setEmail(user.email);
+      const userTimezone = user.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+      setTimezone(userTimezone);
       
       setOriginalValues({
         username: user.username,
-        email: user.email
+        email: user.email,
+        timezone: userTimezone
       });
     }
   }, [user]);
@@ -170,11 +184,13 @@ export function UserSettings({ isOpen, onClose }: UserSettingsProps) {
       // Reset form state to defaults
       setUsername("");
       setEmail("");
+      setTimezone("");
       
       // Reset original values
       setOriginalValues({
         username: "",
-        email: ""
+        email: "",
+        timezone: ""
       });
     };
 
@@ -214,7 +230,8 @@ export function UserSettings({ isOpen, onClose }: UserSettingsProps) {
   const hasChanges = () => {
     return (
       (!config?.oidcEnabled && username !== originalValues.username) ||
-      (!config?.oidcEnabled && email !== originalValues.email)
+      (!config?.oidcEnabled && email !== originalValues.email) ||
+      timezone !== originalValues.timezone
     );
   };
 
@@ -230,7 +247,8 @@ export function UserSettings({ isOpen, onClose }: UserSettingsProps) {
         },
         credentials: "include",
         body: JSON.stringify({
-          ...(config?.oidcEnabled ? {} : { username, email })
+          ...(config?.oidcEnabled ? {} : { username, email }),
+          timezone
         }),
       });
 
@@ -238,7 +256,8 @@ export function UserSettings({ isOpen, onClose }: UserSettingsProps) {
         // Update original values to reflect the saved state
         setOriginalValues({
           username,
-          email
+          email,
+          timezone
         });
         
         // Refetch user data to ensure we have the latest from server
@@ -573,6 +592,28 @@ export function UserSettings({ isOpen, onClose }: UserSettingsProps) {
                           className="mt-2"
                         />
                       )}
+                    </div>
+
+                    <div>
+                      <Label htmlFor="timezone">Timezone</Label>
+                      <Select
+                        value={timezone}
+                        onValueChange={setTimezone}
+                      >
+                        <SelectTrigger className="mt-2">
+                          <SelectValue placeholder="Select timezone..." />
+                        </SelectTrigger>
+                        <SelectContent className="max-h-[200px]">
+                          {Intl.supportedValuesOf('timeZone').map((tz) => (
+                            <SelectItem key={tz} value={tz}>
+                              {tz.replace(/_/g, ' ')}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Used for schedule displays and timezone-aware features.
+                      </p>
                     </div>
                   </div>
 

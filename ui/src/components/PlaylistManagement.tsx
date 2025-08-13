@@ -24,6 +24,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
+import { Separator } from "@/components/ui/separator";
 import {
   Table,
   TableBody,
@@ -100,6 +103,19 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [selectedUserPlugin, setSelectedUserPlugin] = useState<UserPlugin | null>(null);
   const [addLoading, setAddLoading] = useState(false);
+
+  // Edit item dialog
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [editItem, setEditItem] = useState<PlaylistItem | null>(null);
+  const [editImportance, setEditImportance] = useState<number>(0);
+  const [editDurationOverride, setEditDurationOverride] = useState<string>("");
+  const [editLoading, setEditLoading] = useState(false);
+
+  // Schedule management dialog
+  const [showScheduleDialog, setShowScheduleDialog] = useState(false);
+  const [scheduleItem, setScheduleItem] = useState<PlaylistItem | null>(null);
+  const [schedules, setSchedules] = useState<any[]>([]);
+  const [scheduleLoading, setScheduleLoading] = useState(false);
 
   const fetchPlaylistItems = async () => {
     if (!selectedDeviceId) return;
@@ -264,6 +280,141 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
     }
   };
 
+  const updatePlaylistItem = async () => {
+    if (!editItem) return;
+
+    try {
+      setEditLoading(true);
+      setError(null);
+
+      const updateData: any = {
+        importance: editImportance,
+      };
+
+      // Only include duration_override if it's a valid number or null
+      if (editDurationOverride.trim() === "") {
+        updateData.duration_override = null;
+      } else {
+        const duration = parseInt(editDurationOverride);
+        if (!isNaN(duration) && duration > 0) {
+          updateData.duration_override = duration;
+        } else {
+          setError("Duration override must be a positive number or empty");
+          return;
+        }
+      }
+
+      const response = await fetch(`/api/playlists/items/${editItem.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+        body: JSON.stringify(updateData),
+      });
+
+      if (response.ok) {
+        setSuccessMessage("Playlist item updated successfully!");
+        setShowEditDialog(false);
+        setEditItem(null);
+        await fetchPlaylistItems();
+        onUpdate?.();
+      } else {
+        const errorData = await response.json();
+        setError(errorData.error || "Failed to update playlist item");
+      }
+    } catch (error) {
+      setError("Network error occurred");
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
+  const openEditDialog = (item: PlaylistItem) => {
+    setEditItem(item);
+    setEditImportance(item.importance);
+    setEditDurationOverride(item.duration_override ? item.duration_override.toString() : "");
+    setShowEditDialog(true);
+  };
+
+  const openScheduleDialog = async (item: PlaylistItem) => {
+    setScheduleItem(item);
+    setSchedules(item.schedules || []);
+    setShowScheduleDialog(true);
+  };
+
+  const formatDuration = (seconds: number): string => {
+    if (seconds < 60) {
+      return `${seconds}s`;
+    } else if (seconds < 3600) {
+      const minutes = Math.floor(seconds / 60);
+      const remainingSeconds = seconds % 60;
+      if (remainingSeconds === 0) {
+        return `${minutes}m`;
+      } else {
+        return `${minutes}m ${remainingSeconds}s`;
+      }
+    } else {
+      const hours = Math.floor(seconds / 3600);
+      const remainingMinutes = Math.floor((seconds % 3600) / 60);
+      const remainingSeconds = seconds % 60;
+      
+      let result = `${hours}h`;
+      if (remainingMinutes > 0) {
+        result += ` ${remainingMinutes}m`;
+      }
+      if (remainingSeconds > 0) {
+        result += ` ${remainingSeconds}s`;
+      }
+      return result;
+    }
+  };
+
+  const formatScheduleSummary = (schedules: any[]): string => {
+    if (!schedules || schedules.length === 0) {
+      return "Always active";
+    }
+
+    const activSchedules = schedules.filter(s => s.is_active);
+    if (activSchedules.length === 0) {
+      return "No active schedules";
+    }
+
+    // For display purposes, show the first schedule's summary
+    const schedule = activSchedules[0];
+    const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const selectedDays = [];
+
+    for (let i = 0; i < 7; i++) {
+      if (schedule.day_mask & (1 << i)) {
+        selectedDays.push(dayNames[i]);
+      }
+    }
+
+    const dayText = selectedDays.length === 7 ? "Daily" : 
+                   selectedDays.length === 5 && !selectedDays.includes("Sat") && !selectedDays.includes("Sun") ? "Mon-Fri" :
+                   selectedDays.length === 2 && selectedDays.includes("Sat") && selectedDays.includes("Sun") ? "Weekends" :
+                   selectedDays.join(", ");
+
+    const startTime = schedule.start_time?.substring(0, 5) || "09:00";
+    const endTime = schedule.end_time?.substring(0, 5) || "17:00";
+    
+    // Convert to 12-hour format for display
+    const formatTime12 = (time24: string) => {
+      const [hours, minutes] = time24.split(':');
+      const hour = parseInt(hours);
+      const ampm = hour >= 12 ? 'PM' : 'AM';
+      const hour12 = hour % 12 || 12;
+      return `${hour12}:${minutes}${ampm}`;
+    };
+
+    const timeRange = `${formatTime12(startTime)} - ${formatTime12(endTime)}`;
+    
+    return activSchedules.length > 1 ? 
+      `${dayText} ${timeRange} +${activSchedules.length - 1} more` :
+      `${dayText} ${timeRange}`;
+  };
+
   const getAvailableUserPlugins = () => {
     const usedPluginIds = playlistItems.map(item => item.user_plugin_id);
     return userPlugins.filter(plugin => !usedPluginIds.includes(plugin.id));
@@ -383,7 +534,7 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
                     return (
                     <TableRow key={item.id}>
                       <TableCell>
-                        <Badge variant="outline">#{item.order_index}</Badge>
+                        <div className="text-sm text-muted-foreground">#{item.order_index}</div>
                       </TableCell>
                       <TableCell>
                         <div>
@@ -427,13 +578,31 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
                         )}
                       </TableCell>
                       <TableCell className="hidden lg:table-cell">
-                        {item.duration_override ? `${item.duration_override}s` : "Default"}
+                        {item.duration_override ? formatDuration(item.duration_override) : "Default"}
                       </TableCell>
                       <TableCell className="hidden lg:table-cell">
-                        {item.schedules?.length || 0} schedule(s)
+                        <div className="text-sm">
+                          {formatScheduleSummary(item.schedules)}
+                        </div>
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center gap-2 justify-end">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => openEditDialog(item)}
+                            title="Edit playlist item"
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => openScheduleDialog(item)}
+                            title="Manage schedules"
+                          >
+                            <Calendar className="h-4 w-4" />
+                          </Button>
                           <Button
                             size="sm"
                             variant="outline"
@@ -519,6 +688,279 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
               disabled={!selectedUserPlugin || addLoading}
             >
               {addLoading ? "Adding..." : "Add Item"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Item Dialog */}
+      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Playlist Item</DialogTitle>
+            <DialogDescription>
+              Modify settings for "{editItem?.user_plugin?.name}".
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="importance">Importance Level</Label>
+              <Select
+                value={editImportance.toString()}
+                onValueChange={(value) => setEditImportance(parseInt(value))}
+              >
+                <SelectTrigger className="mt-2">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="0">Normal</SelectItem>
+                  <SelectItem value="1">Important</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1">
+                Important items are prioritized in the rotation.
+              </p>
+            </div>
+
+            <div>
+              <Label htmlFor="duration-override">Duration Override (seconds)</Label>
+              <Input
+                id="duration-override"
+                type="number"
+                min="60"
+                placeholder="Leave empty for device default"
+                value={editDurationOverride}
+                onChange={(e) => setEditDurationOverride(e.target.value)}
+                className="mt-2"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Override the device's default refresh rate for this item only. 
+                Leave empty to use the device's configured refresh rate.
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowEditDialog(false);
+                setEditItem(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={updatePlaylistItem}
+              disabled={editLoading}
+            >
+              {editLoading ? "Updating..." : "Update Item"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Schedule Management Dialog */}
+      <Dialog open={showScheduleDialog} onOpenChange={setShowScheduleDialog}>
+        <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Manage Schedules</DialogTitle>
+            <DialogDescription>
+              Set up custom schedules for "{scheduleItem?.user_plugin?.name}". 
+              Multiple schedules can be created for different times and days.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-6">
+            {schedules.length === 0 ? (
+              <Card>
+                <CardContent className="text-center py-8">
+                  <Calendar className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                  <h3 className="text-lg font-semibold mb-2">No Custom Schedules</h3>
+                  <p className="text-muted-foreground mb-4">
+                    This item will display during all active hours using your device's default refresh rate.
+                  </p>
+                  <Button 
+                    onClick={() => {
+                      // Add a default schedule
+                      const defaultSchedule = {
+                        id: `temp-${Date.now()}`,
+                        name: "Daily Schedule",
+                        day_mask: 127, // All days (1+2+4+8+16+32+64)
+                        start_time: "09:00:00",
+                        end_time: "17:00:00",
+                        timezone: "UTC",
+                        is_active: true
+                      };
+                      setSchedules([defaultSchedule]);
+                    }}
+                  >
+                    Create First Schedule
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="space-y-4">
+                {schedules.map((schedule, index) => (
+                  <Card key={schedule.id || index}>
+                    <CardHeader className="pb-3">
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-base">
+                          {schedule.name || `Schedule ${index + 1}`}
+                        </CardTitle>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setSchedules(schedules.filter((_, i) => i !== index));
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div>
+                        <Label>Schedule Name</Label>
+                        <Input
+                          value={schedule.name || ""}
+                          onChange={(e) => {
+                            const updated = [...schedules];
+                            updated[index] = { ...updated[index], name: e.target.value };
+                            setSchedules(updated);
+                          }}
+                          placeholder="e.g., Work Hours, Weekend Only"
+                          className="mt-2"
+                        />
+                      </div>
+
+                      <div>
+                        <Label>Days of Week</Label>
+                        <div className="mt-2 grid grid-cols-7 gap-2">
+                          {[
+                            { name: "Sun", bit: 1 },
+                            { name: "Mon", bit: 2 },
+                            { name: "Tue", bit: 4 },
+                            { name: "Wed", bit: 8 },
+                            { name: "Thu", bit: 16 },
+                            { name: "Fri", bit: 32 },
+                            { name: "Sat", bit: 64 }
+                          ].map(({ name, bit }) => (
+                            <div key={name} className="flex flex-col items-center">
+                              <Checkbox
+                                id={`${schedule.id}-${name}`}
+                                checked={(schedule.day_mask & bit) > 0}
+                                onCheckedChange={(checked) => {
+                                  const updated = [...schedules];
+                                  if (checked) {
+                                    updated[index] = { ...updated[index], day_mask: schedule.day_mask | bit };
+                                  } else {
+                                    updated[index] = { ...updated[index], day_mask: schedule.day_mask & ~bit };
+                                  }
+                                  setSchedules(updated);
+                                }}
+                              />
+                              <Label 
+                                htmlFor={`${schedule.id}-${name}`}
+                                className="text-xs mt-1 cursor-pointer"
+                              >
+                                {name}
+                              </Label>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <Label>Start Time</Label>
+                          <Input
+                            type="time"
+                            value={schedule.start_time?.substring(0, 5) || "09:00"}
+                            onChange={(e) => {
+                              const updated = [...schedules];
+                              updated[index] = { ...updated[index], start_time: `${e.target.value}:00` };
+                              setSchedules(updated);
+                            }}
+                            className="mt-2"
+                          />
+                        </div>
+                        <div>
+                          <Label>End Time</Label>
+                          <Input
+                            type="time"
+                            value={schedule.end_time?.substring(0, 5) || "17:00"}
+                            onChange={(e) => {
+                              const updated = [...schedules];
+                              updated[index] = { ...updated[index], end_time: `${e.target.value}:00` };
+                              setSchedules(updated);
+                            }}
+                            className="mt-2"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex items-center space-x-2">
+                        <Switch
+                          id={`active-${schedule.id}`}
+                          checked={schedule.is_active}
+                          onCheckedChange={(checked) => {
+                            const updated = [...schedules];
+                            updated[index] = { ...updated[index], is_active: checked };
+                            setSchedules(updated);
+                          }}
+                        />
+                        <Label htmlFor={`active-${schedule.id}`}>
+                          Schedule Active
+                        </Label>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+                
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    const newSchedule = {
+                      id: `temp-${Date.now()}`,
+                      name: `Schedule ${schedules.length + 1}`,
+                      day_mask: 127, // All days
+                      start_time: "09:00:00",
+                      end_time: "17:00:00",
+                      timezone: "UTC",
+                      is_active: true
+                    };
+                    setSchedules([...schedules, newSchedule]);
+                  }}
+                >
+                  + Add Another Schedule
+                </Button>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowScheduleDialog(false);
+                setScheduleItem(null);
+                setSchedules([]);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                // TODO: Save schedules to backend
+                setShowScheduleDialog(false);
+                setScheduleItem(null);
+                setSchedules([]);
+              }}
+              disabled={scheduleLoading}
+            >
+              {scheduleLoading ? "Saving..." : "Save Schedules"}
             </Button>
           </DialogFooter>
         </DialogContent>

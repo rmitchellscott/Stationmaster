@@ -390,13 +390,8 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                       </div>
                     </TableCell>
                     <TableCell className="hidden lg:table-cell">
-                      <div>
-                        <div className="font-medium">
-                          {userPlugin.plugin?.name || "Unknown Plugin"}
-                        </div>
-                        <div className="text-sm text-muted-foreground">
-                          {userPlugin.plugin?.type || "unknown"}
-                        </div>
+                      <div className="font-medium">
+                        {userPlugin.plugin?.name || "Unknown Plugin"}
                       </div>
                     </TableCell>
                     <TableCell className="hidden md:table-cell">

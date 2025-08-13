@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/rmitchellscott/stationmaster/internal/auth"
 	"github.com/rmitchellscott/stationmaster/internal/database"
+	"github.com/rmitchellscott/stationmaster/internal/logging"
 )
 
 // GetDevicesHandler returns all devices for the current user
@@ -115,9 +116,10 @@ func UpdateDeviceHandler(c *gin.Context) {
 	}
 
 	var req struct {
-		Name        string `json:"name"`
-		RefreshRate int    `json:"refresh_rate"`
-		IsActive    *bool  `json:"is_active"`
+		Name                 string `json:"name"`
+		RefreshRate          int    `json:"refresh_rate"`
+		IsActive             *bool  `json:"is_active"`
+		AllowFirmwareUpdates *bool  `json:"allow_firmware_updates"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -150,9 +152,13 @@ func UpdateDeviceHandler(c *gin.Context) {
 	if req.IsActive != nil {
 		device.IsActive = *req.IsActive
 	}
+	if req.AllowFirmwareUpdates != nil {
+		device.AllowFirmwareUpdates = *req.AllowFirmwareUpdates
+	}
 
 	err = deviceService.UpdateDevice(device)
 	if err != nil {
+		logging.Logf("[DEVICE UPDATE] Failed to update device %s: %v", device.ID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update device"})
 		return
 	}

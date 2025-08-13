@@ -2,13 +2,17 @@ package main
 
 import (
 	// standard library
+	"context"
 	"embed"
 	"fmt"
 	"io/fs"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
+	"time"
 
 	// third-party
 	"github.com/gin-gonic/gin"
@@ -20,6 +24,7 @@ import (
 	"github.com/rmitchellscott/stationmaster/internal/database"
 	"github.com/rmitchellscott/stationmaster/internal/handlers"
 	"github.com/rmitchellscott/stationmaster/internal/logging"
+	"github.com/rmitchellscott/stationmaster/internal/pollers"
 	"github.com/rmitchellscott/stationmaster/internal/trmnl"
 	"github.com/rmitchellscott/stationmaster/internal/version"
 )
@@ -56,6 +61,25 @@ func main() {
 
 	// Initialize proxy auth if configured
 	auth.InitProxyAuth()
+
+	// Initialize and start background pollers
+	pollerManager := pollers.NewManager()
+	
+	// Register pollers
+	db := database.GetDB()
+	firmwarePoller := pollers.NewFirmwarePoller(db)
+	modelPoller := pollers.NewModelPoller(db)
+	
+	pollerManager.Register(firmwarePoller)
+	pollerManager.Register(modelPoller)
+	
+	// Start pollers
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	
+	if err := pollerManager.Start(ctx); err != nil {
+		log.Fatalf("Failed to start pollers: %v", err)
+	}
 
 	port := config.Get("PORT", "")
 	if port == "" {
@@ -94,7 +118,24 @@ func main() {
 	router.GET("/api/setup/", trmnl.SetupHandler)
 	router.GET("/api/display", trmnl.DisplayHandler)
 	router.POST("/api/logs", trmnl.LogsHandler)
+	router.POST("/api/log", trmnl.LogsHandler)
 	router.GET("/api/trmnl/devices/:deviceId/image", trmnl.DeviceImageHandler)
+	router.GET("/api/trmnl/firmware/:version/download", trmnl.FirmwareDownloadHandler)
+	router.POST("/api/trmnl/firmware/update-complete", trmnl.FirmwareUpdateCompleteHandler)
+	
+	// Public firmware downloads (no authentication required)
+	// Custom handler to serve firmware files
+	router.GET("/files/firmware/*filepath", func(c *gin.Context) {
+		filepath := c.Param("filepath")
+		// Remove leading slash from filepath
+		if strings.HasPrefix(filepath, "/") {
+			filepath = filepath[1:]
+		}
+		// Use the same storage directory configuration as the firmware poller
+		storageDir := config.Get("FIRMWARE_STORAGE_DIR", "/data/firmware")
+		filePath := storageDir + "/" + filepath
+		c.File(filePath)
+	})
 
 	// Registration and password reset
 	router.POST("/api/auth/register", auth.MultiUserAuthMiddleware(), auth.RegisterHandler)
@@ -182,6 +223,21 @@ func main() {
 		admin.PUT("/plugins/:id", handlers.UpdatePluginHandler)              // PUT /api/admin/plugins/:id - update system plugin
 		admin.DELETE("/plugins/:id", handlers.DeletePluginHandler)           // DELETE /api/admin/plugins/:id - delete system plugin
 		admin.GET("/plugins/stats", handlers.GetPluginStatsHandler)          // GET /api/admin/plugins/stats - get plugin statistics
+
+		// Firmware management endpoints
+		admin.GET("/firmware/versions", handlers.GetFirmwareVersionsHandler)           // GET /api/admin/firmware/versions - list firmware versions
+		admin.GET("/firmware/latest", handlers.GetLatestFirmwareVersionHandler)       // GET /api/admin/firmware/latest - get latest firmware version
+		admin.GET("/firmware/stats", handlers.GetFirmwareStatsHandler)                // GET /api/admin/firmware/stats - get firmware statistics
+		admin.GET("/firmware/status", handlers.GetFirmwareStatusHandler)              // GET /api/admin/firmware/status - get real-time download status
+		admin.POST("/firmware/versions/:id/retry", handlers.RetryFirmwareDownloadHandler) // POST /api/admin/firmware/versions/:id/retry - retry firmware download
+		admin.DELETE("/firmware/versions/:id", handlers.DeleteFirmwareVersionHandler) // DELETE /api/admin/firmware/versions/:id - delete firmware version
+
+		// Device model management endpoints
+		admin.GET("/device-models", handlers.GetDeviceModelsHandler)                  // GET /api/admin/device-models - list device models
+
+		// Manual polling endpoints  
+		admin.POST("/firmware/poll", handlers.TriggerFirmwarePollHandler)             // POST /api/admin/firmware/poll - trigger manual firmware poll
+		admin.POST("/models/poll", handlers.TriggerModelPollHandler)                  // POST /api/admin/models/poll - trigger manual model poll
 	}
 
 	// Device management endpoints
@@ -296,8 +352,40 @@ func main() {
 		})
 	}
 
-	logging.Logf("[STARTUP] Listening on %s", addr)
-	if err := router.Run(addr); err != nil {
-		log.Fatalf("Failed to start server: %v", err)
+	// Create HTTP server
+	srv := &http.Server{
+		Addr:    addr,
+		Handler: router,
 	}
+
+	// Start server in a goroutine
+	go func() {
+		logging.Logf("[STARTUP] Listening on %s", addr)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Failed to start server: %v", err)
+		}
+	}()
+
+	// Wait for interrupt signal for graceful shutdown
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+	
+	logging.Logf("[SHUTDOWN] Shutting down server and pollers...")
+
+	// Stop pollers first
+	if err := pollerManager.Stop(); err != nil {
+		logging.Logf("[SHUTDOWN] Error stopping pollers: %v", err)
+	}
+
+	// Give a timeout context for shutdown
+	ctx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Shutdown HTTP server
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Fatalf("Server forced to shutdown: %v", err)
+	}
+
+	logging.Logf("[SHUTDOWN] Server and pollers stopped")
 }

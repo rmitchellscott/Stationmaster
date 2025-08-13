@@ -78,6 +78,7 @@ func GetSystemStatusHandler(c *gin.Context) {
 	// Get system settings
 	registrationEnabled, _ := database.GetSystemSetting("registration_enabled")
 	maxAPIKeys, _ := database.GetSystemSetting("max_api_keys_per_user")
+	siteURL, _ := database.GetSystemSetting("site_url")
 
 	// Check if we're in dry run mode
 	dryRunMode := config.Get("DRY_RUN", "") != ""
@@ -108,6 +109,7 @@ func GetSystemStatusHandler(c *gin.Context) {
 		"settings": gin.H{
 			"registration_enabled":  registrationEnabled,
 			"max_api_keys_per_user": maxAPIKeys,
+			"site_url":              siteURL,
 		},
 		"auth": gin.H{
 			"oidc_enabled":       oidcEnabled,
@@ -145,6 +147,7 @@ func UpdateSystemSettingHandler(c *gin.Context) {
 		"registration_enabled":         true,
 		"max_api_keys_per_user":        true,
 		"password_reset_timeout_hours": true,
+		"site_url":                     true,
 	}
 
 	if !allowedSettings[req.Key] {

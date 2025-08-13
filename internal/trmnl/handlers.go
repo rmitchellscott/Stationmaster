@@ -430,6 +430,8 @@ func processActivePlugins(device *database.Device, activeItems []database.Playli
 		return processRedirectPlugin(userPlugin)
 	case "alias":
 		return processAliasPlugin(userPlugin)
+	case "core_proxy":
+		return processCoreProxyPlugin(device, userPlugin)
 	default:
 		// For other plugin types, return default response
 		return gin.H{
@@ -532,6 +534,111 @@ func processAliasPlugin(userPlugin *database.UserPlugin) (gin.H, error) {
 	response := gin.H{
 		"image_url": imageURL,
 		"filename":  time.Now().Format("2006-01-02T15:04:05"),
+	}
+
+	return response, nil
+}
+
+// processCoreProxyPlugin handles core_proxy plugin type by forwarding requests to TRMNL's official server
+func processCoreProxyPlugin(device *database.Device, userPlugin *database.UserPlugin) (gin.H, error) {
+	// Parse plugin settings
+	var settings map[string]interface{}
+	if userPlugin.Settings != "" {
+		if err := json.Unmarshal([]byte(userPlugin.Settings), &settings); err != nil {
+			return nil, fmt.Errorf("failed to parse plugin settings: %w", err)
+		}
+	}
+
+	// Get TRMNL device MAC and access token from settings
+	deviceMac, ok := settings["device_mac"].(string)
+	if !ok || deviceMac == "" {
+		return nil, fmt.Errorf("device_mac not configured in plugin settings")
+	}
+
+	accessToken, ok := settings["access_token"].(string)
+	if !ok || accessToken == "" {
+		return nil, fmt.Errorf("access_token not configured in plugin settings")
+	}
+
+	// Get timeout (default to 5 seconds)
+	timeoutSeconds := 5
+	if timeout, ok := settings["timeout_seconds"].(float64); ok && timeout > 0 {
+		timeoutSeconds = int(timeout)
+		if timeoutSeconds > 15 {
+			timeoutSeconds = 15 // Cap at 15 seconds
+		}
+	}
+
+	// Create HTTP client with timeout
+	client := &http.Client{
+		Timeout: time.Duration(timeoutSeconds) * time.Second,
+	}
+
+	// Create request to TRMNL's API
+	req, err := http.NewRequest("GET", "https://usetrmnl.com/api/display", nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// Set headers that TRMNL expects
+	req.Header.Set("ID", deviceMac)
+	req.Header.Set("Access-Token", accessToken)
+	
+	// Forward device status headers if available from our local device
+	if device.FirmwareVersion != "" {
+		req.Header.Set("Fw-Version", device.FirmwareVersion)
+	}
+	if device.BatteryVoltage > 0 {
+		req.Header.Set("Battery-Voltage", fmt.Sprintf("%.2f", device.BatteryVoltage))
+	}
+	if device.RSSI != 0 {
+		req.Header.Set("Rssi", fmt.Sprintf("%d", device.RSSI))
+	}
+	if device.RefreshRate > 0 {
+		req.Header.Set("Refresh-Rate", fmt.Sprintf("%d", device.RefreshRate))
+	}
+
+	// Make request to TRMNL
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch from TRMNL API: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Check response status
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("TRMNL API returned status %d", resp.StatusCode)
+	}
+
+	// Parse JSON response from TRMNL
+	var trmnlResponse map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&trmnlResponse); err != nil {
+		return nil, fmt.Errorf("failed to parse TRMNL response: %w", err)
+	}
+
+	// Build response compatible with our API
+	response := gin.H{}
+	
+	// Copy filename if provided
+	if filename, ok := trmnlResponse["filename"]; ok {
+		response["filename"] = filename
+	} else {
+		response["filename"] = time.Now().Format("2006-01-02T15:04:05")
+	}
+	
+	// Copy image_url if provided
+	if imageURL, ok := trmnlResponse["image_url"]; ok {
+		response["image_url"] = imageURL
+	}
+	
+	// Copy refresh_rate if provided
+	if refreshRate, ok := trmnlResponse["refresh_rate"]; ok {
+		response["refresh_rate"] = fmt.Sprintf("%v", refreshRate)
+	}
+
+	// Copy any other fields that might be useful
+	if url, ok := trmnlResponse["url"]; ok {
+		response["image_url"] = url
 	}
 
 	return response, nil

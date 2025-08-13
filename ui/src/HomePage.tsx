@@ -6,6 +6,7 @@ import { PlaylistManagement } from "@/components/PlaylistManagement";
 import { DeviceSelector } from "@/components/DeviceSelector";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
 import { Device } from "@/utils/deviceHelpers";
 import { Puzzle, PlayCircle } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -33,7 +34,7 @@ const storeDeviceId = (deviceId: string | null) => {
 };
 
 export default function HomePage() {
-  const { isAuthenticated, isLoading, login, authConfigured } = useAuth();
+  const { isAuthenticated, isLoading, login, authConfigured, user } = useAuth();
   const { t } = useTranslation();
   
   // State
@@ -189,16 +190,21 @@ export default function HomePage() {
     }
   };
 
-  // Check if user has completed onboarding
-  const checkOnboardingStatus = () => {
-    // Only check after ALL loading is complete and we have attempted to fetch data
-    if (loading || userPluginsLoading || playlistItemsLoading) return;
-    
-    const hasDevices = devices.length > 0;
-    const hasPlugins = userPlugins.length > 0;
-    const hasPlaylistItems = playlistItems.length > 0;
-    
-    setShowOnboarding(!(hasDevices && hasPlugins && hasPlaylistItems));
+  // Complete onboarding and update state
+  const completeOnboarding = async () => {
+    try {
+      const response = await fetch("/api/user/complete-onboarding", {
+        method: "POST",
+        credentials: "include",
+      });
+      if (response.ok) {
+        setShowOnboarding(false);
+      } else {
+        console.error("Failed to complete onboarding");
+      }
+    } catch (error) {
+      console.error("Failed to complete onboarding:", error);
+    }
   };
 
   useEffect(() => {
@@ -217,8 +223,11 @@ export default function HomePage() {
   }, [selectedDeviceId]);
 
   useEffect(() => {
-    checkOnboardingStatus();
-  }, [devices, userPlugins, playlistItems, loading, userPluginsLoading, playlistItemsLoading]);
+    // Set onboarding status based on user data from auth context
+    if (user) {
+      setShowOnboarding(!user.onboarding_completed);
+    }
+  }, [user]);
 
   if (isLoading) {
     return null;
@@ -247,6 +256,15 @@ export default function HomePage() {
                   <li>Create plugin instances in the Plugins tab</li>
                   <li>Add playlist items in the Playlist Items tab</li>
                 </ol>
+              </div>
+              <div className="flex justify-end mt-4">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={completeOnboarding}
+                >
+                  Don't show again
+                </Button>
               </div>
             </CardContent>
           </Card>

@@ -356,17 +356,17 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
         </Card>
       ) : (
         <Card>
-          <CardContent className="p-0">
-            <Table>
+          <CardContent>
+            <Table className="w-full table-fixed lg:table-auto">
               <TableHeader>
                 <TableRow>
                   <TableHead>Order</TableHead>
                   <TableHead>Plugin</TableHead>
-                  <TableHead className="hidden sm:table-cell">Status</TableHead>
-                  <TableHead className="hidden sm:table-cell">Importance</TableHead>
-                  <TableHead className="hidden sm:table-cell">Duration</TableHead>
+                  <TableHead className="hidden md:table-cell">Status</TableHead>
+                  <TableHead className="hidden lg:table-cell">Importance</TableHead>
+                  <TableHead className="hidden lg:table-cell">Duration</TableHead>
                   <TableHead className="hidden lg:table-cell">Schedules</TableHead>
-                  <TableHead>Actions</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -397,9 +397,12 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
                           <div className="text-sm text-muted-foreground">
                             {item.user_plugin?.plugin?.name || "Unknown Plugin"}
                           </div>
+                          <div className="text-xs text-muted-foreground md:hidden mt-1">
+                            {isCurrentlyShowing ? "Now Showing" : item.is_visible ? "Visible" : "Hidden"} • {item.importance === 1 ? "Important" : "Normal"}
+                          </div>
                         </div>
                       </TableCell>
-                      <TableCell className="hidden sm:table-cell">
+                      <TableCell className="hidden md:table-cell">
                         {isCurrentlyShowing ? (
                           <Badge variant="default">
                             <PlayCircle className="h-3 w-3 mr-1" />
@@ -417,7 +420,7 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
                           </Badge>
                         )}
                       </TableCell>
-                      <TableCell className="hidden sm:table-cell">
+                      <TableCell className="hidden lg:table-cell">
                         {item.importance === 1 ? (
                           <Badge variant="secondary" className="bg-orange-100 text-orange-800">
                             <Star className="h-3 w-3 mr-1" />
@@ -427,14 +430,14 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
                           <Badge variant="outline">Normal</Badge>
                         )}
                       </TableCell>
-                      <TableCell className="hidden sm:table-cell">
+                      <TableCell className="hidden lg:table-cell">
                         {item.duration_override ? `${item.duration_override}s` : "Default"}
                       </TableCell>
                       <TableCell className="hidden lg:table-cell">
                         {item.schedules?.length || 0} schedule(s)
                       </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
+                      <TableCell className="text-right">
+                        <div className="flex items-center gap-2 justify-end">
                           <Button
                             size="sm"
                             variant="outline"

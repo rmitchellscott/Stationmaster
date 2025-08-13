@@ -12,6 +12,7 @@ interface User {
   is_admin: boolean
   created_at: string
   last_login?: string
+  onboarding_completed?: boolean
 }
 
 interface AuthContextType {

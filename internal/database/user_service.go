@@ -217,6 +217,14 @@ func (s *UserService) GetUserStats(userID uuid.UUID) (map[string]interface{}, er
 	return stats, nil
 }
 
+// CompleteOnboarding marks the user's onboarding as complete
+func (s *UserService) CompleteOnboarding(userID uuid.UUID) error {
+	return s.db.Model(&User{}).Where("id = ?", userID).Updates(map[string]interface{}{
+		"onboarding_completed": true,
+		"updated_at":          time.Now(),
+	}).Error
+}
+
 // CleanupExpiredSessions removes expired sessions
 func (s *UserService) CleanupExpiredSessions() error {
 	return s.db.Where("expires_at < ?", time.Now()).Delete(&UserSession{}).Error

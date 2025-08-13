@@ -37,13 +37,14 @@ type PasswordResetConfirmRequest struct {
 
 // UserResponse represents a user in API responses
 type UserResponse struct {
-	ID          uuid.UUID  `json:"id"`
-	Username    string     `json:"username"`
-	Email       string     `json:"email"`
-	IsAdmin     bool       `json:"is_admin"`
-	IsActive    bool       `json:"is_active"`
-	CreatedAt   time.Time  `json:"created_at"`
-	LastLogin   *time.Time `json:"last_login,omitempty"`
+	ID                  uuid.UUID  `json:"id"`
+	Username            string     `json:"username"`
+	Email               string     `json:"email"`
+	IsAdmin             bool       `json:"is_admin"`
+	IsActive            bool       `json:"is_active"`
+	OnboardingCompleted bool       `json:"onboarding_completed"`
+	CreatedAt           time.Time  `json:"created_at"`
+	LastLogin           *time.Time `json:"last_login,omitempty"`
 }
 
 // GetRegistrationStatusHandler returns whether registration is enabled (public endpoint)
@@ -193,13 +194,14 @@ func RegisterHandler(c *gin.Context) {
 
 	// Convert to response format
 	response := UserResponse{
-		ID:        newUser.ID,
-		Username:  newUser.Username,
-		Email:     newUser.Email,
-		IsAdmin:   newUser.IsAdmin,
-		IsActive:  newUser.IsActive,
-		CreatedAt: newUser.CreatedAt,
-		LastLogin: newUser.LastLogin,
+		ID:                  newUser.ID,
+		Username:            newUser.Username,
+		Email:               newUser.Email,
+		IsAdmin:             newUser.IsAdmin,
+		IsActive:            newUser.IsActive,
+		OnboardingCompleted: newUser.OnboardingCompleted,
+		CreatedAt:           newUser.CreatedAt,
+		LastLogin:           newUser.LastLogin,
 	}
 
 	c.JSON(http.StatusCreated, gin.H{
@@ -291,13 +293,14 @@ func MultiUserLoginHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"user": UserResponse{
-			ID:        user.ID,
-			Username:  user.Username,
-			Email:     user.Email,
-			IsAdmin:   user.IsAdmin,
-			IsActive:  user.IsActive,
-			CreatedAt: user.CreatedAt,
-			LastLogin: user.LastLogin,
+			ID:                  user.ID,
+			Username:            user.Username,
+			Email:               user.Email,
+			IsAdmin:             user.IsAdmin,
+			IsActive:            user.IsActive,
+			OnboardingCompleted: user.OnboardingCompleted,
+			CreatedAt:           user.CreatedAt,
+			LastLogin:           user.LastLogin,
 		},
 	})
 }
@@ -391,13 +394,14 @@ func GetCurrentUserHandler(c *gin.Context) {
 
 	user := currentUser.(*database.User)
 	response := UserResponse{
-		ID:        user.ID,
-		Username:  user.Username,
-		Email:     user.Email,
-		IsAdmin:   user.IsAdmin,
-		IsActive:  user.IsActive,
-		CreatedAt: user.CreatedAt,
-		LastLogin: user.LastLogin,
+		ID:                  user.ID,
+		Username:            user.Username,
+		Email:               user.Email,
+		IsAdmin:             user.IsAdmin,
+		IsActive:            user.IsActive,
+		OnboardingCompleted: user.OnboardingCompleted,
+		CreatedAt:           user.CreatedAt,
+		LastLogin:           user.LastLogin,
 	}
 
 	c.JSON(http.StatusOK, response)
@@ -460,13 +464,14 @@ func MultiUserCheckAuthHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"authenticated": true,
 		"user": UserResponse{
-			ID:        user.ID,
-			Username:  user.Username,
-			Email:     user.Email,
-			IsAdmin:   user.IsAdmin,
-			IsActive:  user.IsActive,
-			CreatedAt: user.CreatedAt,
-			LastLogin: user.LastLogin,
+			ID:                  user.ID,
+			Username:            user.Username,
+			Email:               user.Email,
+			IsAdmin:             user.IsAdmin,
+			IsActive:            user.IsActive,
+			OnboardingCompleted: user.OnboardingCompleted,
+			CreatedAt:           user.CreatedAt,
+			LastLogin:           user.LastLogin,
 		},
 	})
 }

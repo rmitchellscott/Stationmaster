@@ -6,6 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/rmitchellscott/stationmaster/internal/auth"
 	"github.com/rmitchellscott/stationmaster/internal/config"
+	"github.com/rmitchellscott/stationmaster/internal/database"
 )
 
 // ConfigHandler returns application configuration for the frontend
@@ -30,5 +31,25 @@ func DashboardHandler(c *gin.Context) {
 		"message": "Welcome to Stationmaster",
 		"userID":  user.ID.String(),
 		"username": user.Username,
+	})
+}
+
+// CompleteOnboardingHandler marks the user's onboarding as complete
+func CompleteOnboardingHandler(c *gin.Context) {
+	user, ok := auth.RequireUser(c)
+	if !ok {
+		return
+	}
+
+	userService := database.NewUserService(database.DB)
+	if err := userService.CompleteOnboarding(user.ID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to complete onboarding",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Onboarding completed successfully",
 	})
 }

@@ -102,13 +102,14 @@ func GetUsersHandler(c *gin.Context) {
 	response := make([]UserResponse, len(users))
 	for i, user := range users {
 		response[i] = UserResponse{
-			ID:        user.ID,
-			Username:  user.Username,
-			Email:     user.Email,
-			IsAdmin:   user.IsAdmin,
-			IsActive:  user.IsActive,
-			CreatedAt: user.CreatedAt,
-			LastLogin: user.LastLogin,
+			ID:                  user.ID,
+			Username:            user.Username,
+			Email:               user.Email,
+			IsAdmin:             user.IsAdmin,
+			IsActive:            user.IsActive,
+			OnboardingCompleted: user.OnboardingCompleted,
+			CreatedAt:           user.CreatedAt,
+			LastLogin:           user.LastLogin,
 		}
 	}
 
@@ -154,13 +155,14 @@ func GetUserHandler(c *gin.Context) {
 	}
 
 	response := UserResponse{
-		ID:        user.ID,
-		Username:  user.Username,
-		Email:     user.Email,
-		IsAdmin:   user.IsAdmin,
-		IsActive:  user.IsActive,
-		CreatedAt: user.CreatedAt,
-		LastLogin: user.LastLogin,
+		ID:                  user.ID,
+		Username:            user.Username,
+		Email:               user.Email,
+		IsAdmin:             user.IsAdmin,
+		IsActive:            user.IsActive,
+		OnboardingCompleted: user.OnboardingCompleted,
+		CreatedAt:           user.CreatedAt,
+		LastLogin:           user.LastLogin,
 	}
 
 	c.JSON(http.StatusOK, gin.H{

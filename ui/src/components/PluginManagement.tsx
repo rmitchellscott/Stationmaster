@@ -367,14 +367,14 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
         </Card>
       ) : (
         <Card>
-          <CardContent className="p-0">
-            <Table>
+          <CardContent>
+            <Table className="w-full table-fixed lg:table-auto">
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
-                  <TableHead>Plugin</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Created</TableHead>
+                  <TableHead className="hidden lg:table-cell">Plugin</TableHead>
+                  <TableHead className="hidden md:table-cell">Status</TableHead>
+                  <TableHead className="hidden lg:table-cell">Created</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -382,9 +382,14 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                 {userPlugins.map((userPlugin) => (
                   <TableRow key={userPlugin.id}>
                     <TableCell className="font-medium">
-                      {userPlugin.name}
+                      <div>
+                        <div>{userPlugin.name}</div>
+                        <div className="text-sm text-muted-foreground lg:hidden">
+                          {userPlugin.plugin?.name || "Unknown Plugin"} • {userPlugin.is_active ? "Active" : "Inactive"}
+                        </div>
+                      </div>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="hidden lg:table-cell">
                       <div>
                         <div className="font-medium">
                           {userPlugin.plugin?.name || "Unknown Plugin"}
@@ -394,14 +399,14 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="hidden md:table-cell">
                       {userPlugin.is_active ? (
                         <Badge variant="outline">Active</Badge>
                       ) : (
                         <Badge variant="secondary">Inactive</Badge>
                       )}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="hidden lg:table-cell">
                       {new Date(userPlugin.created_at).toLocaleDateString()}
                     </TableCell>
                     <TableCell className="text-right">
@@ -437,66 +442,144 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
 
       {/* Add Plugin Dialog */}
       <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
-        <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
+        <DialogContent className="sm:max-w-5xl max-h-[70vh] overflow-hidden flex flex-col mobile-dialog-content !top-[0vh] !translate-y-0 sm:!top-[6vh]">
+          <DialogHeader className="pb-3">
             <DialogTitle>Add Plugin Instance</DialogTitle>
             <DialogDescription>
-              Select a plugin and configure an instance for your device.
+              {selectedPlugin ? `Configure your ${selectedPlugin.name} instance` : "Select a plugin to create an instance for your device"}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-6">
-            <div>
-              <Label>Select Plugin</Label>
-              <Select
-                value={selectedPlugin?.id || ""}
-                onValueChange={(value) => {
-                  const plugin = plugins.find(p => p.id === value);
-                  setSelectedPlugin(plugin || null);
-                  setInstanceSettings({});
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Choose a plugin..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {plugins.map((plugin) => (
-                    <SelectItem key={plugin.id} value={plugin.id}>
-                      <div>
-                        <div className="font-medium">{plugin.name}</div>
-                        <div className="text-sm text-muted-foreground">
-                          {plugin.description}
+          <div className="flex-1 overflow-y-auto">
+            <div className="space-y-4">
+              {!selectedPlugin ? (
+                <div>
+                  <div className="mb-3">
+                    <Label className="text-base font-semibold">Available Plugins</Label>
+                  </div>
+                  {loading ? (
+                    <div className="text-center py-6">Loading available plugins...</div>
+                  ) : plugins.length === 0 ? (
+                    <Card>
+                      <CardContent className="text-center py-6">
+                        <Puzzle className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
+                        <h3 className="text-base font-semibold mb-2">No Plugins Available</h3>
+                        <p className="text-sm text-muted-foreground">
+                          No plugins have been installed by the administrator yet.
+                        </p>
+                      </CardContent>
+                    </Card>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-3">
+                      {plugins.map((plugin) => (
+                        <Card key={plugin.id} className="flex flex-col">
+                          <CardHeader className="pb-2">
+                            <CardTitle className="flex items-start justify-between gap-2">
+                              <div className="min-w-0 flex-1">
+                                <div className="text-base font-semibold truncate">{plugin.name}</div>
+                                <div className="text-xs text-muted-foreground">
+                                  v{plugin.version} by {plugin.author}
+                                </div>
+                              </div>
+                              <Badge variant="outline" className="flex-shrink-0 text-xs">{plugin.type}</Badge>
+                            </CardTitle>
+                          </CardHeader>
+                          <CardContent className="flex flex-col flex-grow pt-0">
+                            <div className="flex-grow mb-3">
+                              <p className="text-xs text-muted-foreground line-clamp-2">
+                                {plugin.description}
+                              </p>
+                            </div>
+                            <Button
+                              onClick={() => {
+                                setSelectedPlugin(plugin);
+                                setInstanceName(`My ${plugin.name}`);
+                                
+                                try {
+                                  if (plugin.config_schema) {
+                                    const schema = JSON.parse(plugin.config_schema);
+                                    const defaults: Record<string, any> = {};
+                                    
+                                    if (schema.properties) {
+                                      Object.keys(schema.properties).forEach(key => {
+                                        const property = schema.properties[key];
+                                        if (property.default !== undefined) {
+                                          defaults[key] = property.default;
+                                        }
+                                      });
+                                    }
+                                    
+                                    setInstanceSettings(defaults);
+                                  } else {
+                                    setInstanceSettings({});
+                                  }
+                                } catch (e) {
+                                  setInstanceSettings({});
+                                }
+                              }}
+                              size="sm"
+                              className="w-full mt-auto"
+                            >
+                              <Plus className="h-3 w-3 mr-2" />
+                              Create Instance
+                            </Button>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <>
+                  <div className="mb-3">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setSelectedPlugin(null);
+                        setInstanceName("");
+                        setInstanceSettings({});
+                      }}
+                      className="mb-2"
+                    >
+                      ← Back to Plugin Selection
+                    </Button>
+                    <div className="flex items-center gap-3 p-2 bg-muted/50 rounded-lg">
+                      <div className="flex-1">
+                        <div className="font-semibold text-sm">{selectedPlugin.name}</div>
+                        <div className="text-xs text-muted-foreground">
+                          v{selectedPlugin.version} by {selectedPlugin.author}
                         </div>
                       </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                      <Badge variant="outline" className="text-xs">{selectedPlugin.type}</Badge>
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="instanceName" className="text-sm">Instance Name</Label>
+                    <Input
+                      id="instanceName"
+                      placeholder={`My ${selectedPlugin.name}`}
+                      value={instanceName}
+                      onChange={(e) => setInstanceName(e.target.value)}
+                      className="mt-1"
+                    />
+                  </div>
+
+                  <div>
+                    <Label className="text-sm">Plugin Configuration</Label>
+                    <div className="mt-1">
+                      {renderSettingsForm(selectedPlugin, instanceSettings, (key, value) => {
+                        setInstanceSettings(prev => ({ ...prev, [key]: value }));
+                      })}
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
-
-            {selectedPlugin && (
-              <>
-                <div>
-                  <Label htmlFor="instanceName">Instance Name</Label>
-                  <Input
-                    id="instanceName"
-                    placeholder={`My ${selectedPlugin.name}`}
-                    value={instanceName}
-                    onChange={(e) => setInstanceName(e.target.value)}
-                  />
-                </div>
-
-                <div>
-                  <Label>Plugin Configuration</Label>
-                  {renderSettingsForm(selectedPlugin, instanceSettings, (key, value) => {
-                    setInstanceSettings(prev => ({ ...prev, [key]: value }));
-                  })}
-                </div>
-              </>
-            )}
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="pt-3">
             <Button
               variant="outline"
               onClick={() => {
@@ -508,12 +591,14 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
             >
               Cancel
             </Button>
-            <Button
-              onClick={createUserPlugin}
-              disabled={!selectedPlugin || !instanceName.trim() || createLoading}
-            >
-              {createLoading ? "Creating..." : "Create Instance"}
-            </Button>
+            {selectedPlugin && (
+              <Button
+                onClick={createUserPlugin}
+                disabled={!instanceName.trim() || createLoading}
+              >
+                {createLoading ? "Creating..." : "Create Instance"}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

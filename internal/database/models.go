@@ -13,8 +13,9 @@ type User struct {
 	Username  string    `gorm:"uniqueIndex;not null" json:"username"`
 	Email     string    `gorm:"uniqueIndex;not null" json:"email"`
 	Password  string    `gorm:"not null" json:"-"` // Never return password in JSON
-	IsAdmin   bool      `gorm:"default:false" json:"is_admin"`
-	IsActive  bool      `gorm:"default:true" json:"is_active"`
+	IsAdmin             bool `gorm:"default:false" json:"is_admin"`
+	IsActive            bool `gorm:"default:true" json:"is_active"`
+	OnboardingCompleted bool `gorm:"default:false" json:"onboarding_completed"`
 	
 	// Password reset
 	ResetToken        string    `gorm:"index" json:"-"`

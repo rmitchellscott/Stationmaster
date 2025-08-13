@@ -45,7 +45,6 @@ FROM alpine:3.22
 # Install runtime dependencies
 RUN apk add --no-cache \
       ca-certificates \
-      ghostscript \
       imagemagick \
       postgresql-client \
     && update-ca-certificates

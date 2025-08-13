@@ -26,7 +26,7 @@ import {
   AlertDescription,
 } from "@/components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -164,12 +164,32 @@ interface RestoreUpload {
   created_at: string;
 }
 
+interface DeviceModel {
+  id: string;
+  model_name: string;
+  display_name: string;
+  description?: string;
+  screen_width: number;
+  screen_height: number;
+  color_depth: number;
+  bit_depth: number;
+  has_wifi: boolean;
+  has_battery: boolean;
+  has_buttons: number;
+  capabilities?: string;
+  min_firmware?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 interface Device {
   id: string;
   user_id?: string;
   mac_address: string;
   friendly_id: string;
   name?: string;
+  model_name?: string;
   api_key: string;
   is_claimed: boolean;
   firmware_version?: string;
@@ -181,6 +201,7 @@ interface Device {
   created_at: string;
   updated_at: string;
   user?: User;
+  device_model?: DeviceModel;
 }
 
 interface Plugin {
@@ -210,6 +231,81 @@ interface PluginStats {
   active_plugins: number;
   total_user_plugins: number;
   active_user_plugins: number;
+}
+
+interface FirmwareVersion {
+  id: string;
+  version: string;
+  release_notes: string;
+  download_url: string;
+  file_size: number;
+  file_path: string;
+  sha256: string;
+  is_latest: boolean;
+  is_downloaded: boolean;
+  download_status?: string;
+  download_progress?: number;
+  download_error?: string;
+  released_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+interface DeviceModel {
+  id: string;
+  model_name: string;
+  display_name: string;
+  description?: string;
+  screen_width: number;
+  screen_height: number;
+  color_depth: number;
+  bit_depth: number;
+  has_wifi: boolean;
+  has_battery: boolean;
+  has_buttons: number;
+  capabilities?: string;
+  min_firmware?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+interface FirmwareStats {
+  firmware_versions: {
+    total: number;
+    downloaded: number;
+  };
+  device_models: {
+    total: number;
+  };
+  update_settings: {
+    enabled: number;
+    disabled: number;
+  };
+  firmware_distribution: Array<{
+    version: string;
+    count: number;
+  }>;
+}
+
+
+interface DeviceModel {
+  id: string;
+  model_name: string;
+  display_name: string;
+  description?: string;
+  screen_width: number;
+  screen_height: number;
+  color_depth: number;
+  bit_depth: number;
+  has_wifi: boolean;
+  has_battery: boolean;
+  has_buttons: number;
+  capabilities?: string;
+  min_firmware?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 interface SystemStatus {
@@ -262,6 +358,11 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
   const [deviceStats, setDeviceStats] = useState<DeviceStats | null>(null);
   const [plugins, setPlugins] = useState<Plugin[]>([]);
   const [pluginStats, setPluginStats] = useState<PluginStats | null>(null);
+  const [firmwareVersions, setFirmwareVersions] = useState<FirmwareVersion[]>([]);
+  const [firmwareStats, setFirmwareStats] = useState<FirmwareStats | null>(null);
+  const [deviceModels, setDeviceModels] = useState<DeviceModel[]>([]);
+  const [firmwarePolling, setFirmwarePolling] = useState(false);
+  const [modelPolling, setModelPolling] = useState(false);
   const [loading, setLoading] = useState(false);
   const [creatingBackup, setCreatingBackup] = useState(false);
   const [restoringBackup, setRestoringBackup] = useState(false);
@@ -281,6 +382,7 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
   const [registrationEnabled, setRegistrationEnabled] = useState(false);
   const [maxApiKeys, setMaxApiKeys] = useState("10");
   const [maxApiKeysError, setMaxApiKeysError] = useState<string | null>(null);
+  const [siteUrl, setSiteUrl] = useState("");
 
   const [resetPasswordDialog, setResetPasswordDialog] = useState<{
     isOpen: boolean;
@@ -337,6 +439,16 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
   const [creatingPlugin, setCreatingPlugin] = useState(false);
   const [deletingPlugin, setDeletingPlugin] = useState(false);
   
+  // Firmware delete state
+  const [deleteFirmwareDialog, setDeleteFirmwareDialog] = useState<{
+    isOpen: boolean;
+    version: any | null;
+  }>({ isOpen: false, version: null });
+  const [deletingFirmware, setDeletingFirmware] = useState(false);
+  
+  // Device models state
+  const [showDeviceModels, setShowDeviceModels] = useState(false);
+  
   // Plugin form state
   const [pluginName, setPluginName] = useState("");
   const [pluginType, setPluginType] = useState("");
@@ -350,7 +462,7 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
       setRestorePerformed(false);
       fetchSystemStatus();
       fetchUsers();
-      fetchAPIKeys();
+      // fetchAPIKeys();
       fetchBackupJobs();
       fetchRestoreUploads();
       fetchVersionInfo();
@@ -358,6 +470,9 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
       fetchDeviceStats();
       fetchPlugins();
       fetchPluginStats();
+      fetchFirmwareVersions();
+      fetchFirmwareStats();
+      fetchDeviceModels();
     }
   }, [isOpen]);
 
@@ -452,6 +567,7 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
         setSystemStatus(status);
         setRegistrationEnabled(status.settings.registration_enabled === "true");
         setMaxApiKeys(status.settings.max_api_keys_per_user);
+        setSiteUrl(status.settings.site_url || "");
       }
     } catch (error) {
       console.error("Failed to fetch system status:", error);
@@ -590,6 +706,160 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
       }
     } catch (error) {
       console.error("Failed to fetch plugin stats:", error);
+    }
+  };
+
+  const fetchFirmwareVersions = async () => {
+    try {
+      const response = await fetch("/api/admin/firmware/versions", {
+        credentials: "include",
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setFirmwareVersions(data.firmware_versions || []);
+      }
+    } catch (error) {
+      console.error("Failed to fetch firmware versions:", error);
+    }
+  };
+
+  // Auto-refresh firmware versions when downloads are in progress
+  useEffect(() => {
+    const hasDownloadingVersions = firmwareVersions.some(
+      version => version.download_status === 'downloading'
+    );
+    
+    if (hasDownloadingVersions) {
+      const interval = setInterval(() => {
+        fetchFirmwareVersions();
+      }, 2000); // Poll every 2 seconds
+      
+      return () => clearInterval(interval);
+    }
+  }, [firmwareVersions]);
+
+  const fetchFirmwareStats = async () => {
+    try {
+      const response = await fetch("/api/admin/firmware/stats", {
+        credentials: "include",
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setFirmwareStats(data);
+      }
+    } catch (error) {
+      console.error("Failed to fetch firmware stats:", error);
+    }
+  };
+
+
+  const fetchDeviceModels = async () => {
+    try {
+      const response = await fetch("/api/admin/device-models", {
+        credentials: "include",
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setDeviceModels(data.device_models || []);
+      }
+    } catch (error) {
+      console.error("Failed to fetch device models:", error);
+    }
+  };
+
+  const triggerFirmwarePoll = async () => {
+    try {
+      setFirmwarePolling(true);
+      const response = await fetch("/api/admin/firmware/poll", {
+        method: "POST",
+        credentials: "include",
+      });
+      if (response.ok) {
+        await fetchFirmwareVersions();
+        await fetchFirmwareStats();
+      } else {
+        setError("Failed to trigger firmware poll");
+      }
+    } catch (error) {
+      console.error("Failed to trigger firmware poll:", error);
+      setError("Failed to trigger firmware poll");
+    } finally {
+      setFirmwarePolling(false);
+    }
+  };
+
+  const retryFirmwareDownload = async (versionId: string, version: string) => {
+    try {
+      const response = await fetch(`/api/admin/firmware/versions/${versionId}/retry`, {
+        method: "POST",
+        credentials: "include",
+      });
+      
+      if (response.ok) {
+        setSuccessMessage(`Firmware ${version} download started`);
+      } else {
+        const data = await response.json();
+        setError(data.error || "Failed to start firmware download");
+      }
+    } catch (error) {
+      console.error("Failed to retry firmware download:", error);
+      setError("Failed to start firmware download");
+    }
+  };
+
+  const openDeleteFirmwareDialog = (version: any) => {
+    setDeleteFirmwareDialog({ isOpen: true, version });
+  };
+
+  const closeDeleteFirmwareDialog = () => {
+    setDeleteFirmwareDialog({ isOpen: false, version: null });
+  };
+
+  const confirmDeleteFirmware = async () => {
+    if (!deleteFirmwareDialog.version) return;
+
+    try {
+      setDeletingFirmware(true);
+      const response = await fetch(`/api/admin/firmware/versions/${deleteFirmwareDialog.version.id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      
+      if (response.ok) {
+        await fetchFirmwareVersions();
+        await fetchFirmwareStats();
+        closeDeleteFirmwareDialog();
+        setSuccessMessage("Firmware version deleted successfully");
+      } else {
+        const data = await response.json();
+        setError(data.error || "Failed to delete firmware version");
+      }
+    } catch (error) {
+      console.error("Failed to delete firmware version:", error);
+      setError("Failed to delete firmware version");
+    } finally {
+      setDeletingFirmware(false);
+    }
+  };
+
+  const triggerModelPoll = async () => {
+    try {
+      setModelPolling(true);
+      const response = await fetch("/api/admin/models/poll", {
+        method: "POST",
+        credentials: "include",
+      });
+      if (response.ok) {
+        await fetchDeviceModels();
+        await fetchFirmwareStats();
+      } else {
+        setError("Failed to trigger model poll");
+      }
+    } catch (error) {
+      console.error("Failed to trigger model poll:", error);
+      setError("Failed to trigger model poll");
+    } finally {
+      setModelPolling(false);
     }
   };
 
@@ -1096,7 +1366,7 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
           
           await fetchSystemStatus();
           await fetchUsers();
-          await fetchAPIKeys();
+          // await fetchAPIKeys();
           await fetchBackupJobs();
           await fetchRestoreUploads();
         } catch (error) {
@@ -1563,11 +1833,213 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
     return (
       <Dialog open={isOpen} onOpenChange={onClose}>
         <DialogContent className="max-w-6xl">
+          <DialogHeader>
+            <DialogTitle>{t("admin.loading_states.loading")}</DialogTitle>
+          </DialogHeader>
           <div className="flex items-center justify-center p-8">{t("admin.loading_states.loading")}</div>
         </DialogContent>
       </Dialog>
     );
   }
+
+  const FirmwareManagementTab = () => (
+    <div className="space-y-4">
+      {/* Firmware Statistics Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Firmware Versions</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {firmwareStats?.firmware_versions.total || 0}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {firmwareStats?.firmware_versions.downloaded || 0} downloaded
+            </p>
+          </CardContent>
+        </Card>
+        <Card 
+          className="cursor-pointer hover:bg-accent/50 transition-colors"
+          onClick={() => setShowDeviceModels(true)}
+        >
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Device Models</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {firmwareStats?.device_models.total || 0}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Device types
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Update Settings</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {firmwareStats?.update_settings.enabled || 0}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {firmwareStats?.update_settings.disabled || 0} disabled
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Latest Version</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {firmwareVersions.find(v => v.is_latest)?.version || 'N/A'}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Available
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Manual Polling Controls */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Manual Polling</CardTitle>
+          <CardDescription>
+            Trigger manual checks for firmware updates and device models
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex gap-2">
+          <Button
+            onClick={triggerFirmwarePoll}
+            disabled={firmwarePolling}
+            variant="outline"
+          >
+            {firmwarePolling ? (
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+            ) : (
+              <Download className="h-4 w-4 mr-2" />
+            )}
+            {firmwarePolling ? 'Polling...' : 'Poll Firmware'}
+          </Button>
+          <Button
+            onClick={triggerModelPoll}
+            disabled={modelPolling}
+            variant="outline"
+          >
+            {modelPolling ? (
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+            ) : (
+              <Monitor className="h-4 w-4 mr-2" />
+            )}
+            {modelPolling ? 'Polling...' : 'Poll Models'}
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* Firmware Versions Table */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Firmware Versions</CardTitle>
+          <CardDescription>
+            Available firmware versions for TRMNL devices
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Version</TableHead>
+                <TableHead>Released</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Size</TableHead>
+                <TableHead>Notes</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {firmwareVersions.map((version) => (
+                <TableRow key={version.id}>
+                  <TableCell className="font-medium">
+                    {version.version}
+                    {version.is_latest && (
+                      <Badge variant="secondary" className="ml-2">Latest</Badge>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {new Date(version.released_at).toLocaleDateString()}
+                  </TableCell>
+                  <TableCell>
+                    {version.download_status === 'downloading' && (
+                      <Badge variant="outline">
+                        <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                        Downloading {version.download_progress || 0}%
+                      </Badge>
+                    )}
+                    {version.download_status === 'downloaded' && (
+                      <Badge variant="outline">
+                        Downloaded
+                      </Badge>
+                    )}
+                    {version.download_status === 'failed' && (
+                      <Badge variant="outline" className="text-red-600">
+                        <XCircle className="w-3 h-3 mr-1" />
+                        Failed
+                      </Badge>
+                    )}
+                    {(!version.download_status || version.download_status === 'pending') && (
+                      <Badge variant="outline" className="text-orange-600">
+                        <Clock className="w-3 h-3 mr-1" />
+                        Pending
+                      </Badge>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {version.file_size > 0 ? 
+                      `${(version.file_size / 1024 / 1024).toFixed(2)} MB` : 
+                      'Unknown'
+                    }
+                  </TableCell>
+                  <TableCell className="max-w-xs truncate">
+                    {version.release_notes || 'No release notes available'}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex items-center justify-end gap-2">
+                      {(version.download_status === 'failed' || version.download_status === 'pending') && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => retryFirmwareDownload(version.id, version.version)}
+                          title={version.download_status === 'failed' ? 'Retry download' : 'Download now'}
+                        >
+                          <Download className="w-4 h-4" />
+                        </Button>
+                      )}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => openDeleteFirmwareDialog(version)}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+          {firmwareVersions.length === 0 && (
+            <div className="text-center py-8 text-muted-foreground">
+              No firmware versions available. Try polling for updates.
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+    </div>
+  );
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
@@ -1610,10 +2082,10 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
               <Users className="h-4 w-4" />
               <span className="hidden sm:inline ml-1.5">{t("admin.tabs.users")}</span>
             </TabsTrigger>
-            <TabsTrigger value="api-keys">
+            {/* <TabsTrigger value="api-keys">
               <Key className="h-4 w-4" />
               <span className="hidden sm:inline ml-1.5">{t("admin.tabs.api_keys")}</span>
-            </TabsTrigger>
+            </TabsTrigger> */}
             <TabsTrigger value="devices">
               <Monitor className="h-4 w-4" />
               <span className="hidden sm:inline ml-1.5">Devices</span>
@@ -1621,6 +2093,10 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
             <TabsTrigger value="plugins">
               <Puzzle className="h-4 w-4" />
               <span className="hidden sm:inline ml-1.5">Plugins</span>
+            </TabsTrigger>
+            <TabsTrigger value="firmware">
+              <Download className="h-4 w-4" />
+              <span className="hidden sm:inline ml-1.5">Firmware</span>
             </TabsTrigger>
             <TabsTrigger value="settings">
               <SettingsIcon className="h-4 w-4" />
@@ -1975,7 +2451,7 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
                   </div>
                   </TabsContent>
 
-          <TabsContent value="api-keys">
+          {/* <TabsContent value="api-keys">
             <div className="space-y-4">
               <Card>
                 <CardHeader>
@@ -2083,10 +2559,41 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
                 </CardContent>
               </Card>
             </div>
-          </TabsContent>
+          </TabsContent> */}
 
           <TabsContent value="settings">
             <div className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Site Configuration</CardTitle>
+                  <CardDescription>Configure the public URL for your instance</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    <Label htmlFor="site-url">Site URL</Label>
+                    <Input
+                      id="site-url"
+                      placeholder="https://stationmaster.example.com"
+                      value={siteUrl}
+                      onChange={(e) => setSiteUrl(e.target.value)}
+                      onBlur={() => {
+                        const trimmedUrl = siteUrl.trim();
+                        if (trimmedUrl && !trimmedUrl.match(/^https?:\/\//)) {
+                          setError("Site URL must start with http:// or https://");
+                          return;
+                        }
+                        updateSystemSetting("site_url", trimmedUrl);
+                      }}
+                      className="max-w-md"
+                    />
+                    <p className="text-sm text-muted-foreground">
+                      Full URL including protocol (http/https) used for firmware downloads and other external links.
+                      Leave empty to use relative URLs.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+
               <Card>
                 <CardHeader>
                   <CardTitle>{t("admin.cards.user_management")}</CardTitle>
@@ -2386,6 +2893,7 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
                         <TableHead>Friendly ID</TableHead>
                         <TableHead>Name</TableHead>
                         <TableHead className="hidden md:table-cell">Owner</TableHead>
+                        <TableHead className="hidden lg:table-cell">Model</TableHead>
                         <TableHead className="hidden lg:table-cell">MAC Address</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead className="hidden lg:table-cell">Last Seen</TableHead>
@@ -2408,6 +2916,11 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
                               </span>
                             ) : (
                               <span className="text-muted-foreground">Unclaimed</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="hidden lg:table-cell">
+                            {device.device_model?.display_name || device.model_name || (
+                              <span className="text-muted-foreground">Unknown</span>
                             )}
                           </TableCell>
                           <TableCell className="hidden lg:table-cell">
@@ -2632,6 +3145,9 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
                 </CardContent>
               </Card>
             </div>
+          </TabsContent>
+          <TabsContent value="firmware">
+            <FirmwareManagementTab />
           </TabsContent>
         </Tabs>
       </DialogContent>
@@ -2988,6 +3504,9 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
                 <strong>MAC Address:</strong> <code>{viewDevice.mac_address}</code>
               </p>
               <p>
+                <strong>Model:</strong> {viewDevice.device_model?.display_name || viewDevice.model_name || "Unknown"}
+              </p>
+              <p>
                 <strong>Owner:</strong>{" "}
                 {viewDevice.user_id ? 
                   users.find(u => u.id === viewDevice.user_id)?.username || "Unknown User" : 
@@ -3042,6 +3561,81 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
               </p>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Device Models Dialog */}
+      <Dialog open={showDeviceModels} onOpenChange={setShowDeviceModels}>
+        <DialogContent className="sm:max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Device Models</DialogTitle>
+            <DialogDescription>
+              View all device models synced from the TRMNL API
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[60vh] overflow-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Model Name</TableHead>
+                  <TableHead>Display Name</TableHead>
+                  <TableHead>Screen Size</TableHead>
+                  <TableHead>Color Depth</TableHead>
+                  <TableHead>Features</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {deviceModels.map((model) => (
+                  <TableRow key={model.id}>
+                    <TableCell>
+                      <code className="text-xs bg-muted px-2 py-1 rounded">
+                        {model.model_name}
+                      </code>
+                    </TableCell>
+                    <TableCell className="font-medium">
+                      {model.display_name}
+                    </TableCell>
+                    <TableCell>
+                      {model.screen_width} × {model.screen_height}
+                    </TableCell>
+                    <TableCell>
+                      {model.bit_depth === 1 ? "Monochrome" : 
+                       model.bit_depth === 8 ? "Grayscale" : 
+                       `${model.bit_depth}-bit Color`}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex gap-1">
+                        {model.has_wifi && (
+                          <Badge variant="secondary" className="text-xs">WiFi</Badge>
+                        )}
+                        {model.has_battery && (
+                          <Badge variant="secondary" className="text-xs">Battery</Badge>
+                        )}
+                        {model.has_buttons > 0 && (
+                          <Badge variant="secondary" className="text-xs">
+                            {model.has_buttons} Button{model.has_buttons > 1 ? 's' : ''}
+                          </Badge>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={model.is_active ? "default" : "secondary"}>
+                        {model.is_active ? "Active" : "Inactive"}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {deviceModels.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center text-muted-foreground">
+                      No device models found. Try triggering a manual model poll.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
         </DialogContent>
       </Dialog>
 
@@ -3288,6 +3882,36 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
               variant="destructive"
             >
               {deletingPlugin ? "Deleting..." : "Delete Plugin"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Firmware Delete Dialog */}
+      <AlertDialog 
+        open={deleteFirmwareDialog.isOpen}
+        onOpenChange={closeDeleteFirmwareDialog}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-destructive" />
+              Delete Firmware Version
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete firmware version "{deleteFirmwareDialog.version?.version}"? This will also remove the downloaded file. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletingFirmware}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDeleteFirmware}
+              disabled={deletingFirmware}
+              variant="destructive"
+            >
+              {deletingFirmware ? "Deleting..." : "Delete Firmware"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

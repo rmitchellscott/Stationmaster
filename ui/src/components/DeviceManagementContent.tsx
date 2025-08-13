@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import {
   Table,
   TableBody,
@@ -60,6 +61,7 @@ interface Device {
   battery_voltage?: number;
   rssi?: number;
   refresh_rate: number;
+  allow_firmware_updates?: boolean;
   last_seen?: string;
   is_active: boolean;
   created_at: string;
@@ -70,7 +72,6 @@ interface DeviceLog {
   id: string;
   device_id: string;
   log_data: string;
-  level: string;
   timestamp: string;
   created_at: string;
 }
@@ -93,6 +94,7 @@ export function DeviceManagementContent() {
   const [editDevice, setEditDevice] = useState<Device | null>(null);
   const [editDeviceName, setEditDeviceName] = useState("");
   const [editRefreshRate, setEditRefreshRate] = useState("");
+  const [editAllowFirmwareUpdates, setEditAllowFirmwareUpdates] = useState(true);
 
   // Device deletion
   const [deleteDevice, setDeleteDevice] = useState<Device | null>(null);
@@ -196,6 +198,7 @@ export function DeviceManagementContent() {
         body: JSON.stringify({
           name: editDeviceName.trim(),
           refresh_rate: refreshRate,
+          allow_firmware_updates: editAllowFirmwareUpdates,
         }),
       });
 
@@ -243,6 +246,7 @@ export function DeviceManagementContent() {
     setEditDevice(device);
     setEditDeviceName(device.name || "");
     setEditRefreshRate(device.refresh_rate.toString());
+    setEditAllowFirmwareUpdates(device.allow_firmware_updates ?? true);
   };
 
   const fetchDeviceLogs = async (device: Device, offset = 0) => {
@@ -286,19 +290,6 @@ export function DeviceManagementContent() {
     }
   };
 
-  const getLevelBadgeColor = (level: string) => {
-    switch (level.toLowerCase()) {
-      case "error":
-        return "bg-destructive";
-      case "warn":
-      case "warning":
-        return "bg-amber-600";
-      case "debug":
-        return "bg-slate-600";
-      default:
-        return "bg-blue-600";
-    }
-  };
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleString();
@@ -698,6 +689,22 @@ export function DeviceManagementContent() {
                 How often the device should check for new content (60-86400 seconds)
               </p>
             </div>
+
+            <div>
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="edit-allow-firmware-updates"
+                  checked={editAllowFirmwareUpdates}
+                  onCheckedChange={setEditAllowFirmwareUpdates}
+                />
+                <Label htmlFor="edit-allow-firmware-updates">
+                  Allow automatic firmware updates
+                </Label>
+              </div>
+              <p className="text-sm text-muted-foreground mt-1">
+                When enabled, device will automatically update to the latest firmware
+              </p>
+            </div>
           </div>
 
           <DialogFooter>
@@ -800,7 +807,6 @@ export function DeviceManagementContent() {
                       <TableHeader>
                         <TableRow>
                           <TableHead>Timestamp</TableHead>
-                          <TableHead>Level</TableHead>
                           <TableHead>Log Data</TableHead>
                         </TableRow>
                       </TableHeader>
@@ -820,12 +826,7 @@ export function DeviceManagementContent() {
                               </Tooltip>
                             </TableCell>
                             <TableCell>
-                              <Badge className={getLevelBadgeColor(log.level)}>
-                                {log.level.toUpperCase()}
-                              </Badge>
-                            </TableCell>
-                            <TableCell>
-                              <div className="max-w-md">
+                              <div className="max-w-lg">
                                 <pre className="text-xs bg-muted p-2 rounded overflow-x-auto whitespace-pre-wrap">
                                   {formatLogData(log.log_data)}
                                 </pre>

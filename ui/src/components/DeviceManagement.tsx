@@ -56,12 +56,31 @@ import {
   FileText,
 } from "lucide-react";
 
+interface DeviceModel {
+  id: string;
+  model_name: string;
+  display_name: string;
+  description?: string;
+  screen_width: number;
+  screen_height: number;
+  color_depth: number;
+  has_wifi: boolean;
+  has_battery: boolean;
+  has_buttons: number;
+  capabilities?: string;
+  min_firmware?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 interface Device {
   id: string;
   user_id?: string;
   mac_address: string;
   friendly_id: string;
   name?: string;
+  model_name?: string;
   api_key: string;
   is_claimed: boolean;
   firmware_version?: string;
@@ -72,13 +91,13 @@ interface Device {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  device_model?: DeviceModel;
 }
 
 interface DeviceLog {
   id: string;
   device_id: string;
   log_data: string;
-  level: string;
   timestamp: string;
   created_at: string;
 }
@@ -301,19 +320,6 @@ export function DeviceManagement({ isOpen, onClose }: DeviceManagementProps) {
     }
   };
 
-  const getLevelBadgeColor = (level: string) => {
-    switch (level.toLowerCase()) {
-      case "error":
-        return "bg-destructive";
-      case "warn":
-      case "warning":
-        return "bg-amber-600";
-      case "debug":
-        return "bg-slate-600";
-      default:
-        return "bg-blue-600";
-    }
-  };
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleString();
@@ -502,6 +508,7 @@ export function DeviceManagement({ isOpen, onClose }: DeviceManagementProps) {
                     <TableRow>
                       <TableHead>Device</TableHead>
                       <TableHead>Status</TableHead>
+                      <TableHead className="hidden md:table-cell">Model</TableHead>
                       <TableHead className="hidden sm:table-cell">Firmware</TableHead>
                       <TableHead className="hidden sm:table-cell">Battery</TableHead>
                       <TableHead className="hidden sm:table-cell">Signal</TableHead>
@@ -520,6 +527,11 @@ export function DeviceManagement({ isOpen, onClose }: DeviceManagementProps) {
                           </div>
                         </TableCell>
                         <TableCell>{getStatusBadge(device)}</TableCell>
+                        <TableCell className="hidden md:table-cell">
+                          {device.device_model?.display_name || device.model_name || (
+                            <span className="text-muted-foreground">Unknown</span>
+                          )}
+                        </TableCell>
                         <TableCell className="hidden sm:table-cell">
                           {device.firmware_version || "Unknown"}
                         </TableCell>
@@ -830,7 +842,6 @@ export function DeviceManagement({ isOpen, onClose }: DeviceManagementProps) {
                       <TableHeader>
                         <TableRow>
                           <TableHead>Timestamp</TableHead>
-                          <TableHead>Level</TableHead>
                           <TableHead>Log Data</TableHead>
                         </TableRow>
                       </TableHeader>
@@ -850,12 +861,7 @@ export function DeviceManagement({ isOpen, onClose }: DeviceManagementProps) {
                               </Tooltip>
                             </TableCell>
                             <TableCell>
-                              <Badge className={getLevelBadgeColor(log.level)}>
-                                {log.level.toUpperCase()}
-                              </Badge>
-                            </TableCell>
-                            <TableCell>
-                              <div className="max-w-md">
+                              <div className="max-w-lg">
                                 <pre className="text-xs bg-muted p-2 rounded overflow-x-auto whitespace-pre-wrap">
                                   {formatLogData(log.log_data)}
                                 </pre>

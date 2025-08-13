@@ -15,6 +15,36 @@ func RunMigrations(logPrefix string) error {
 	// Create migrator with our migrations
 	m := gormigrate.New(DB, gormigrate.DefaultOptions, []*gormigrate.Migration{
 		{
+			ID: "202501130000_add_bit_depth_to_device_models",
+			Migrate: func(tx *gorm.DB) error {
+				// Check if bit_depth column already exists
+				if tx.Migrator().HasColumn(&DeviceModel{}, "bit_depth") {
+					return nil // Column already exists, skip
+				}
+
+				// For SQLite, we need to handle foreign keys carefully
+				var dbType string
+				if err := tx.Raw("SELECT sqlite_version()").Scan(&dbType); err == nil {
+					// SQLite - temporarily disable foreign keys
+					if err := tx.Exec("PRAGMA foreign_keys = OFF").Error; err != nil {
+						return fmt.Errorf("failed to disable foreign keys: %w", err)
+					}
+					defer tx.Exec("PRAGMA foreign_keys = ON")
+				}
+
+				// Add the bit_depth column with default value of 1
+				if err := tx.Exec("ALTER TABLE device_models ADD COLUMN bit_depth INTEGER DEFAULT 1").Error; err != nil {
+					return fmt.Errorf("failed to add bit_depth column: %w", err)
+				}
+
+				return nil
+			},
+			Rollback: func(tx *gorm.DB) error {
+				// SQLite doesn't support dropping columns easily, so we'll leave it
+				return nil
+			},
+		},
+		{
 			ID: "202501130001_add_core_proxy_plugin",
 			Migrate: func(tx *gorm.DB) error {
 				// Check if plugin already exists

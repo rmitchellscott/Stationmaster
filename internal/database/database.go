@@ -63,9 +63,14 @@ func Initialize() error {
 		return fmt.Errorf("failed to initialize database: %w", err)
 	}
 
-	// Run auto-migration
+	// Run gormigrate migrations first
+	if err := RunMigrations("STARTUP"); err != nil {
+		return fmt.Errorf("failed to run gormigrate migrations: %w", err)
+	}
+
+	// Run auto-migration for remaining models
 	if err := runMigrations("STARTUP"); err != nil {
-		return fmt.Errorf("failed to run migrations: %w", err)
+		return fmt.Errorf("failed to run auto-migrations: %w", err)
 	}
 
 	// Initialize default system settings
@@ -156,6 +161,7 @@ func runMigrations(logPrefix string) error {
 	logging.Logf("[%s] GORM auto-migration completed successfully", logPrefix)
 	return nil
 }
+
 
 // RunAutoMigrations runs GORM auto-migration for all models (public wrapper)
 func RunAutoMigrations(logPrefix string) error {

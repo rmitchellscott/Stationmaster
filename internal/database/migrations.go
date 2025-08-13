@@ -14,8 +14,57 @@ func RunMigrations(logPrefix string) error {
 
 	// Create migrator with our migrations
 	m := gormigrate.New(DB, gormigrate.DefaultOptions, []*gormigrate.Migration{
-		// Add any future migrations here
-		// For now, we rely on AutoMigrate for the initial schema
+		{
+			ID: "202501130001_add_core_proxy_plugin",
+			Migrate: func(tx *gorm.DB) error {
+				// Check if plugin already exists
+				var existingPlugin Plugin
+				err := tx.Where("name = ? AND type = ?", "Core Proxy", "core_proxy").First(&existingPlugin).Error
+				if err == nil {
+					// Plugin already exists, skip
+					return nil
+				}
+
+				// Create Core Proxy plugin
+				plugin := Plugin{
+					Name:        "Core Proxy",
+					Type:        "core_proxy",
+					Description: "Proxies requests to TRMNL official server to display core screens in your playlist",
+					ConfigSchema: `{
+						"type": "object",
+						"properties": {
+							"device_mac": {
+								"type": "string",
+								"title": "TRMNL Device MAC Address",
+								"description": "The MAC address of your TRMNL device registered on usetrmnl.com"
+							},
+							"access_token": {
+								"type": "string",
+								"title": "TRMNL Access Token",
+								"description": "Your device access token from usetrmnl.com"
+							},
+							"timeout_seconds": {
+								"type": "number",
+								"title": "Timeout (seconds)",
+								"description": "Request timeout in seconds (default: 5, max: 15)",
+								"default": 5,
+								"minimum": 1,
+								"maximum": 15
+							}
+						},
+						"required": ["device_mac", "access_token"]
+					}`,
+					Version:  "1.0.0",
+					Author:   "Stationmaster",
+					IsActive: true,
+				}
+
+				return tx.Create(&plugin).Error
+			},
+			Rollback: func(tx *gorm.DB) error {
+				return tx.Where("name = ? AND type = ?", "Core Proxy", "core_proxy").Delete(&Plugin{}).Error
+			},
+		},
 	})
 
 	// Set initial schema if this is a fresh database

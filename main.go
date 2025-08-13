@@ -230,6 +230,9 @@ func main() {
 
 	// Dashboard endpoint (simple placeholder for now)
 	protected.GET("/dashboard", handlers.DashboardHandler)
+	
+	// User endpoints
+	protected.POST("/user/complete-onboarding", handlers.CompleteOnboardingHandler)
 
 	// Version endpoint
 	protected.GET("/version", func(c *gin.Context) {

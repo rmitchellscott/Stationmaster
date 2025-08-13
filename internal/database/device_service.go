@@ -140,6 +140,11 @@ func (ds *DeviceService) UpdateRefreshRate(deviceID uuid.UUID, refreshRate int) 
 	return ds.db.Model(&Device{}).Where("id = ?", deviceID).Update("refresh_rate", refreshRate).Error
 }
 
+// UpdateLastPlaylistIndex updates the last shown playlist item index for rotation
+func (ds *DeviceService) UpdateLastPlaylistIndex(deviceID uuid.UUID, index int) error {
+	return ds.db.Model(&Device{}).Where("id = ?", deviceID).Update("last_playlist_index", index).Error
+}
+
 // UpdateDeviceStatus updates device status information from TRMNL requests
 func (ds *DeviceService) UpdateDeviceStatus(macAddress string, firmwareVersion string, batteryVoltage float64, rssi int) error {
 	now := time.Now()

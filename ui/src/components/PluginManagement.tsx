@@ -34,17 +34,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  Tooltip,
-  TooltipTrigger,
-  TooltipContent,
-} from "@/components/ui/tooltip";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
-import {
   Puzzle,
   Plus,
   Edit,
@@ -52,7 +41,6 @@ import {
   Settings as SettingsIcon,
   AlertTriangle,
   CheckCircle,
-  Copy,
 } from "lucide-react";
 
 interface Plugin {
@@ -81,56 +69,43 @@ interface UserPlugin {
 }
 
 interface PluginManagementProps {
-  isOpen: boolean;
-  onClose: () => void;
+  selectedDeviceId: string;
+  onUpdate?: () => void;
 }
 
-export function PluginManagement({ isOpen, onClose }: PluginManagementProps) {
+export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagementProps) {
   const { t } = useTranslation();
-  const [plugins, setPlugins] = useState<Plugin[]>([]);
   const [userPlugins, setUserPlugins] = useState<UserPlugin[]>([]);
+  const [plugins, setPlugins] = useState<Plugin[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  // Plugin instance creation
-  const [showCreateDialog, setShowCreateDialog] = useState(false);
-  const [createLoading, setCreateLoading] = useState(false);
+  // Add plugin dialog
+  const [showAddDialog, setShowAddDialog] = useState(false);
   const [selectedPlugin, setSelectedPlugin] = useState<Plugin | null>(null);
   const [instanceName, setInstanceName] = useState("");
   const [instanceSettings, setInstanceSettings] = useState<Record<string, any>>({});
+  const [createLoading, setCreateLoading] = useState(false);
 
-  // Plugin instance editing
+  // Edit plugin dialog
+  const [showEditDialog, setShowEditDialog] = useState(false);
   const [editUserPlugin, setEditUserPlugin] = useState<UserPlugin | null>(null);
   const [editInstanceName, setEditInstanceName] = useState("");
   const [editInstanceSettings, setEditInstanceSettings] = useState<Record<string, any>>({});
+  const [updateLoading, setUpdateLoading] = useState(false);
 
-  // Plugin instance deletion
-  const [deleteUserPlugin, setDeleteUserPlugin] = useState<UserPlugin | null>(null);
-  const [deleteLoading, setDeleteLoading] = useState(false);
-
-  useEffect(() => {
-    if (isOpen) {
-      fetchPlugins();
-      fetchUserPlugins();
-    }
-  }, [isOpen]);
-
-  const fetchPlugins = async () => {
+  const fetchUserPlugins = async () => {
     try {
       setLoading(true);
-      setError(null);
-
-      const response = await fetch("/api/plugins", {
+      const response = await fetch("/api/user-plugins", {
         credentials: "include",
       });
-
       if (response.ok) {
         const data = await response.json();
-        setPlugins(data.plugins || []);
+        setUserPlugins(data.user_plugins || []);
       } else {
-        const errorData = await response.json();
-        setError(errorData.error || "Failed to fetch plugins");
+        setError("Failed to fetch user plugins");
       }
     } catch (error) {
       setError("Network error occurred");
@@ -139,57 +114,23 @@ export function PluginManagement({ isOpen, onClose }: PluginManagementProps) {
     }
   };
 
-  const fetchUserPlugins = async () => {
+  const fetchPlugins = async () => {
     try {
-      const response = await fetch("/api/user-plugins", {
+      const response = await fetch("/api/plugins", {
         credentials: "include",
       });
-
       if (response.ok) {
         const data = await response.json();
-        setUserPlugins(data.user_plugins || []);
-      } else {
-        const errorData = await response.json();
-        setError(errorData.error || "Failed to fetch user plugins");
+        setPlugins(data.plugins || []);
       }
     } catch (error) {
-      setError("Network error occurred");
+      console.error("Failed to fetch plugins:", error);
     }
-  };
-
-  const openCreateDialog = (plugin: Plugin) => {
-    setSelectedPlugin(plugin);
-    setInstanceName(`${plugin.name} Instance`);
-    
-    // Parse default settings from schema
-    try {
-      if (plugin.config_schema) {
-        const schema = JSON.parse(plugin.config_schema);
-        const defaults: Record<string, any> = {};
-        
-        if (schema.properties) {
-          Object.keys(schema.properties).forEach(key => {
-            const property = schema.properties[key];
-            if (property.default !== undefined) {
-              defaults[key] = property.default;
-            }
-          });
-        }
-        
-        setInstanceSettings(defaults);
-      } else {
-        setInstanceSettings({});
-      }
-    } catch (e) {
-      setInstanceSettings({});
-    }
-    
-    setShowCreateDialog(true);
   };
 
   const createUserPlugin = async () => {
     if (!selectedPlugin || !instanceName.trim()) {
-      setError("Please fill in all required fields");
+      setError("Please provide a name for the plugin instance");
       return;
     }
 
@@ -212,11 +153,12 @@ export function PluginManagement({ isOpen, onClose }: PluginManagementProps) {
 
       if (response.ok) {
         setSuccessMessage("Plugin instance created successfully!");
-        setShowCreateDialog(false);
+        setShowAddDialog(false);
         setSelectedPlugin(null);
         setInstanceName("");
         setInstanceSettings({});
         await fetchUserPlugins();
+        onUpdate?.();
       } else {
         const errorData = await response.json();
         setError(errorData.error || "Failed to create plugin instance");
@@ -228,24 +170,14 @@ export function PluginManagement({ isOpen, onClose }: PluginManagementProps) {
     }
   };
 
-  const openEditDialog = (userPlugin: UserPlugin) => {
-    setEditUserPlugin(userPlugin);
-    setEditInstanceName(userPlugin.name);
-    
-    try {
-      setEditInstanceSettings(userPlugin.settings ? JSON.parse(userPlugin.settings) : {});
-    } catch (e) {
-      setEditInstanceSettings({});
-    }
-  };
-
-  const updateUserPlugin = async () => {
+  const updatePluginInstance = async () => {
     if (!editUserPlugin || !editInstanceName.trim()) {
-      setError("Please fill in all required fields");
+      setError("Please provide a name for the plugin instance");
       return;
     }
 
     try {
+      setUpdateLoading(true);
       setError(null);
 
       const response = await fetch(`/api/user-plugins/${editUserPlugin.id}`, {
@@ -262,484 +194,323 @@ export function PluginManagement({ isOpen, onClose }: PluginManagementProps) {
 
       if (response.ok) {
         setSuccessMessage("Plugin instance updated successfully!");
+        setShowEditDialog(false);
         setEditUserPlugin(null);
         setEditInstanceName("");
         setEditInstanceSettings({});
         await fetchUserPlugins();
+        onUpdate?.();
       } else {
         const errorData = await response.json();
         setError(errorData.error || "Failed to update plugin instance");
       }
     } catch (error) {
       setError("Network error occurred");
+    } finally {
+      setUpdateLoading(false);
     }
   };
 
-  const confirmDeleteUserPlugin = async () => {
-    if (!deleteUserPlugin) return;
+  const deleteUserPlugin = async (userPluginId: string) => {
+    if (!confirm("Are you sure you want to delete this plugin instance?")) {
+      return;
+    }
 
     try {
-      setDeleteLoading(true);
       setError(null);
-
-      const response = await fetch(`/api/user-plugins/${deleteUserPlugin.id}`, {
+      const response = await fetch(`/api/user-plugins/${userPluginId}`, {
         method: "DELETE",
         credentials: "include",
       });
 
       if (response.ok) {
         setSuccessMessage("Plugin instance deleted successfully!");
-        setDeleteUserPlugin(null);
         await fetchUserPlugins();
+        onUpdate?.();
       } else {
         const errorData = await response.json();
         setError(errorData.error || "Failed to delete plugin instance");
       }
     } catch (error) {
       setError("Network error occurred");
-    } finally {
-      setDeleteLoading(false);
     }
   };
 
-  const copyUserPlugin = async (userPlugin: UserPlugin) => {
-    try {
-      setError(null);
+  useEffect(() => {
+    fetchUserPlugins();
+    fetchPlugins();
+  }, [selectedDeviceId]);
 
-      const response = await fetch("/api/user-plugins", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        credentials: "include",
-        body: JSON.stringify({
-          plugin_id: userPlugin.plugin_id,
-          name: `${userPlugin.name} (Copy)`,
-          settings: userPlugin.settings ? JSON.parse(userPlugin.settings) : {},
-        }),
-      });
-
-      if (response.ok) {
-        setSuccessMessage("Plugin instance copied successfully!");
-        await fetchUserPlugins();
-      } else {
-        const errorData = await response.json();
-        setError(errorData.error || "Failed to copy plugin instance");
-      }
-    } catch (error) {
-      setError("Network error occurred");
+  useEffect(() => {
+    if (successMessage) {
+      const timer = setTimeout(() => setSuccessMessage(null), 5000);
+      return () => clearTimeout(timer);
     }
-  };
+  }, [successMessage]);
 
-  const renderSettingsForm = (
-    schema: string | null,
-    settings: Record<string, any>,
-    onSettingsChange: (settings: Record<string, any>) => void
-  ) => {
-    if (!schema) {
-      return (
-        <div>
-          <Label>Settings (JSON)</Label>
-          <Textarea
-            value={JSON.stringify(settings, null, 2)}
-            onChange={(e) => {
-              try {
-                onSettingsChange(JSON.parse(e.target.value));
-              } catch (err) {
-                // Invalid JSON, don't update
-              }
-            }}
-            placeholder="{}"
-            className="mt-2 font-mono"
-            rows={6}
-          />
-        </div>
-      );
+  useEffect(() => {
+    if (error) {
+      const timer = setTimeout(() => setError(null), 5000);
+      return () => clearTimeout(timer);
     }
+  }, [error]);
 
+  const renderSettingsForm = (plugin: Plugin, settings: Record<string, any>, onChange: (key: string, value: any) => void) => {
+    let schema;
     try {
-      const parsedSchema = JSON.parse(schema);
-      
-      if (!parsedSchema.properties) {
-        return renderSettingsForm(null, settings, onSettingsChange);
-      }
-
-      return (
-        <div className="space-y-4">
-          {Object.keys(parsedSchema.properties).map((key) => {
-            const property = parsedSchema.properties[key];
-            const value = settings[key] || property.default || "";
-
-            const updateSetting = (newValue: any) => {
-              onSettingsChange({
-                ...settings,
-                [key]: newValue,
-              });
-            };
-
-            switch (property.type) {
-              case "string":
-                if (property.enum) {
-                  return (
-                    <div key={key}>
-                      <Label htmlFor={key}>{property.title || key}</Label>
-                      <Select value={value} onValueChange={updateSetting}>
-                        <SelectTrigger className="mt-2">
-                          <SelectValue placeholder="Select an option" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {property.enum.map((option: string) => (
-                            <SelectItem key={option} value={option}>
-                              {option}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      {property.description && (
-                        <p className="text-sm text-gray-600 mt-1">{property.description}</p>
-                      )}
-                    </div>
-                  );
-                } else if (property.format === "textarea") {
-                  return (
-                    <div key={key}>
-                      <Label htmlFor={key}>{property.title || key}</Label>
-                      <Textarea
-                        id={key}
-                        value={value}
-                        onChange={(e) => updateSetting(e.target.value)}
-                        placeholder={property.placeholder}
-                        className="mt-2"
-                        rows={3}
-                      />
-                      {property.description && (
-                        <p className="text-sm text-gray-600 mt-1">{property.description}</p>
-                      )}
-                    </div>
-                  );
-                } else {
-                  return (
-                    <div key={key}>
-                      <Label htmlFor={key}>{property.title || key}</Label>
-                      <Input
-                        id={key}
-                        type={property.format === "password" ? "password" : "text"}
-                        value={value}
-                        onChange={(e) => updateSetting(e.target.value)}
-                        placeholder={property.placeholder}
-                        className="mt-2"
-                      />
-                      {property.description && (
-                        <p className="text-sm text-gray-600 mt-1">{property.description}</p>
-                      )}
-                    </div>
-                  );
-                }
-              
-              case "number":
-              case "integer":
-                return (
-                  <div key={key}>
-                    <Label htmlFor={key}>{property.title || key}</Label>
-                    <Input
-                      id={key}
-                      type="number"
-                      min={property.minimum}
-                      max={property.maximum}
-                      step={property.type === "integer" ? 1 : "any"}
-                      value={value}
-                      onChange={(e) => updateSetting(property.type === "integer" 
-                        ? parseInt(e.target.value) || 0
-                        : parseFloat(e.target.value) || 0
-                      )}
-                      className="mt-2"
-                    />
-                    {property.description && (
-                      <p className="text-sm text-gray-600 mt-1">{property.description}</p>
-                    )}
-                  </div>
-                );
-              
-              case "boolean":
-                return (
-                  <div key={key} className="flex items-center space-x-2">
-                    <input
-                      id={key}
-                      type="checkbox"
-                      checked={!!value}
-                      onChange={(e) => updateSetting(e.target.checked)}
-                      className="rounded border-gray-300"
-                    />
-                    <Label htmlFor={key}>{property.title || key}</Label>
-                    {property.description && (
-                      <p className="text-sm text-gray-600">{property.description}</p>
-                    )}
-                  </div>
-                );
-              
-              default:
-                return (
-                  <div key={key}>
-                    <Label>{property.title || key}</Label>
-                    <Textarea
-                      value={JSON.stringify(value, null, 2)}
-                      onChange={(e) => {
-                        try {
-                          updateSetting(JSON.parse(e.target.value));
-                        } catch (err) {
-                          // Invalid JSON
-                        }
-                      }}
-                      className="mt-2 font-mono"
-                      rows={3}
-                    />
-                    {property.description && (
-                      <p className="text-sm text-gray-600 mt-1">{property.description}</p>
-                    )}
-                  </div>
-                );
-            }
-          })}
-        </div>
-      );
+      schema = JSON.parse(plugin.config_schema);
     } catch (e) {
-      return renderSettingsForm(null, settings, onSettingsChange);
+      return <div className="text-muted-foreground">Invalid schema configuration</div>;
     }
-  };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString();
+    const properties = schema.properties || {};
+
+    return (
+      <div className="space-y-4">
+        {Object.keys(properties).map((key) => {
+          const prop = properties[key];
+          const value = settings[key] || prop.default || "";
+
+          if (prop.type === "string") {
+            return (
+              <div key={key}>
+                <Label htmlFor={key}>{prop.title || key}</Label>
+                <Input
+                  id={key}
+                  placeholder={prop.placeholder || ""}
+                  value={value}
+                  onChange={(e) => onChange(key, e.target.value)}
+                  className="mt-2"
+                />
+                {prop.description && (
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {prop.description}
+                  </p>
+                )}
+              </div>
+            );
+          }
+
+          if (prop.type === "integer" || prop.type === "number") {
+            return (
+              <div key={key}>
+                <Label htmlFor={key}>{prop.title || key}</Label>
+                <Input
+                  id={key}
+                  type="number"
+                  placeholder={prop.placeholder || ""}
+                  value={value}
+                  onChange={(e) => onChange(key, prop.type === "integer" ? parseInt(e.target.value) || 0 : parseFloat(e.target.value) || 0)}
+                  className="mt-2"
+                />
+                {prop.description && (
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {prop.description}
+                  </p>
+                )}
+              </div>
+            );
+          }
+
+          return null;
+        })}
+      </div>
+    );
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-7xl mobile-dialog-content sm:max-w-7xl overflow-y-auto !top-[0vh] !translate-y-0 sm:!top-[6vh]">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Puzzle className="h-5 w-5" />
-            Plugin Management
-          </DialogTitle>
-          <DialogDescription>
-            Manage your plugins and create instances with custom settings.
-          </DialogDescription>
-        </DialogHeader>
+    <div className="space-y-4">
+      {error && (
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
 
-        {error && (
-          <Alert variant="destructive">
-            <AlertTriangle className="h-4 w-4" />
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
+      {successMessage && (
+        <Alert>
+          <CheckCircle className="h-4 w-4" />
+          <AlertDescription>{successMessage}</AlertDescription>
+        </Alert>
+      )}
 
-        {successMessage && (
-          <Alert>
-            <CheckCircle className="h-4 w-4" />
-            <AlertDescription>{successMessage}</AlertDescription>
-          </Alert>
-        )}
+      <div className="flex justify-between items-center">
+        <div>
+          <h3 className="text-lg font-semibold">Plugin Instances</h3>
+          <p className="text-muted-foreground">
+            Manage your plugin instances for the selected device
+          </p>
+        </div>
+        <Button onClick={() => setShowAddDialog(true)} className="flex items-center gap-2">
+          <Plus className="h-4 w-4" />
+          Add Plugin
+        </Button>
+      </div>
 
-        <Tabs defaultValue="instances" className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="instances">My Plugin Instances</TabsTrigger>
-            <TabsTrigger value="available">Available Plugins</TabsTrigger>
-          </TabsList>
-          
-          <TabsContent value="instances" className="space-y-4">
-            <div className="flex justify-between items-center">
-              <h3 className="text-lg font-semibold">Plugin Instances</h3>
-            </div>
-
-            {loading ? (
-              <div className="text-center py-8">Loading plugin instances...</div>
-            ) : userPlugins.length === 0 ? (
-              <Card>
-                <CardContent className="text-center py-8">
-                  <Puzzle className="h-12 w-12 mx-auto text-gray-400 mb-4" />
-                  <h3 className="text-lg font-semibold mb-2">No Plugin Instances</h3>
-                  <p className="text-gray-600 mb-4">
-                    Create your first plugin instance to get started.
-                  </p>
-                </CardContent>
-              </Card>
-            ) : (
-              <Card>
-                <CardContent className="p-0">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Instance Name</TableHead>
-                        <TableHead>Plugin</TableHead>
-                        <TableHead className="hidden sm:table-cell">Type</TableHead>
-                        <TableHead className="hidden sm:table-cell">Status</TableHead>
-                        <TableHead className="hidden lg:table-cell">Created</TableHead>
-                        <TableHead>Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {userPlugins.map((userPlugin) => (
-                        <TableRow key={userPlugin.id}>
-                          <TableCell>
-                            <div className="font-medium">{userPlugin.name}</div>
-                          </TableCell>
-                          <TableCell>
-                            <div>
-                              <div className="font-medium">{userPlugin.plugin.name}</div>
-                              <div className="text-sm text-gray-600">v{userPlugin.plugin.version}</div>
-                            </div>
-                          </TableCell>
-                          <TableCell className="hidden sm:table-cell">
-                            <Badge variant="outline">{userPlugin.plugin.type}</Badge>
-                          </TableCell>
-                          <TableCell className="hidden sm:table-cell">
-                            {userPlugin.is_active ? (
-                              <Badge variant="default">Active</Badge>
-                            ) : (
-                              <Badge variant="secondary">Inactive</Badge>
-                            )}
-                          </TableCell>
-                          <TableCell className="hidden lg:table-cell">
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <span className="cursor-default">
-                                  {new Date(userPlugin.created_at).toLocaleDateString()}
-                                </span>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                {formatDate(userPlugin.created_at)}
-                              </TooltipContent>
-                            </Tooltip>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => openEditDialog(userPlugin)}
-                              >
-                                <Edit className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => copyUserPlugin(userPlugin)}
-                              >
-                                <Copy className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => setDeleteUserPlugin(userPlugin)}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </CardContent>
-              </Card>
-            )}
-          </TabsContent>
-
-          <TabsContent value="available" className="space-y-4">
-            <div className="flex justify-between items-center">
-              <h3 className="text-lg font-semibold">Available Plugins</h3>
-            </div>
-
-            {loading ? (
-              <div className="text-center py-8">Loading available plugins...</div>
-            ) : plugins.length === 0 ? (
-              <Card>
-                <CardContent className="text-center py-8">
-                  <Puzzle className="h-12 w-12 mx-auto text-gray-400 mb-4" />
-                  <h3 className="text-lg font-semibold mb-2">No Plugins Available</h3>
-                  <p className="text-gray-600">
-                    No plugins have been installed by the administrator yet.
-                  </p>
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {plugins.map((plugin) => (
-                  <Card key={plugin.id} className="h-full flex flex-col">
-                    <CardHeader className="pb-3">
-                      <CardTitle className="flex items-start justify-between gap-3">
-                        <div className="min-w-0 flex-1">
-                          <div className="text-lg font-semibold truncate">{plugin.name}</div>
-                          <div className="text-sm font-normal text-muted-foreground">
-                            v{plugin.version} by {plugin.author}
-                          </div>
+      {loading ? (
+        <div className="flex items-center justify-center py-8">
+          <div className="text-muted-foreground">Loading plugins...</div>
+        </div>
+      ) : userPlugins.length === 0 ? (
+        <Card>
+          <CardContent className="text-center py-8">
+            <Puzzle className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+            <h3 className="text-lg font-semibold mb-2">No Plugin Instances</h3>
+            <p className="text-muted-foreground mb-4">
+              Create plugin instances to display content on your device.
+            </p>
+            <Button onClick={() => setShowAddDialog(true)}>
+              <Plus className="h-4 w-4 mr-2" />
+              Add Your First Plugin
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Plugin</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Created</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {userPlugins.map((userPlugin) => (
+                  <TableRow key={userPlugin.id}>
+                    <TableCell className="font-medium">
+                      {userPlugin.name}
+                    </TableCell>
+                    <TableCell>
+                      <div>
+                        <div className="font-medium">
+                          {userPlugin.plugin?.name || "Unknown Plugin"}
                         </div>
-                        <Badge variant="outline" className="flex-shrink-0">{plugin.type}</Badge>
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="flex flex-col flex-grow pt-0">
-                      <div className="flex-grow mb-4">
-                        <p className="text-sm text-muted-foreground line-clamp-3 min-h-[4.5rem]">
-                          {plugin.description}
-                        </p>
+                        <div className="text-sm text-muted-foreground">
+                          {userPlugin.plugin?.type || "unknown"}
+                        </div>
                       </div>
-                      <Button
-                        onClick={() => openCreateDialog(plugin)}
-                        className="w-full mt-auto"
-                      >
-                        <Plus className="h-4 w-4 mr-2" />
-                        Create Instance
-                      </Button>
-                    </CardContent>
-                  </Card>
+                    </TableCell>
+                    <TableCell>
+                      {userPlugin.is_active ? (
+                        <Badge variant="outline">Active</Badge>
+                      ) : (
+                        <Badge variant="secondary">Inactive</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {new Date(userPlugin.created_at).toLocaleDateString()}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex items-center gap-2 justify-end">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setEditUserPlugin(userPlugin);
+                            setEditInstanceName(userPlugin.name);
+                            setEditInstanceSettings(userPlugin.settings || {});
+                            setShowEditDialog(true);
+                          }}
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => deleteUserPlugin(userPlugin.id)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </div>
-            )}
-          </TabsContent>
-        </Tabs>
-      </DialogContent>
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
 
-      {/* Create Instance Dialog */}
-      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+      {/* Add Plugin Dialog */}
+      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
         <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Create Plugin Instance</DialogTitle>
+            <DialogTitle>Add Plugin Instance</DialogTitle>
             <DialogDescription>
-              Create a new instance of "{selectedPlugin?.name}" with custom settings.
+              Select a plugin and configure an instance for your device.
             </DialogDescription>
           </DialogHeader>
-          
+
           <div className="space-y-6">
             <div>
-              <Label htmlFor="instance-name">Instance Name</Label>
-              <Input
-                id="instance-name"
-                value={instanceName}
-                onChange={(e) => setInstanceName(e.target.value)}
-                placeholder="My Plugin Instance"
-                className="mt-2"
-              />
+              <Label>Select Plugin</Label>
+              <Select
+                value={selectedPlugin?.id || ""}
+                onValueChange={(value) => {
+                  const plugin = plugins.find(p => p.id === value);
+                  setSelectedPlugin(plugin || null);
+                  setInstanceSettings({});
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose a plugin..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {plugins.map((plugin) => (
+                    <SelectItem key={plugin.id} value={plugin.id}>
+                      <div>
+                        <div className="font-medium">{plugin.name}</div>
+                        <div className="text-sm text-muted-foreground">
+                          {plugin.description}
+                        </div>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             {selectedPlugin && (
-              <div>
-                <Label>Plugin Settings</Label>
-                <div className="mt-2 p-4 border rounded-lg">
-                  {renderSettingsForm(
-                    selectedPlugin.config_schema,
-                    instanceSettings,
-                    setInstanceSettings
-                  )}
+              <>
+                <div>
+                  <Label htmlFor="instanceName">Instance Name</Label>
+                  <Input
+                    id="instanceName"
+                    placeholder={`My ${selectedPlugin.name}`}
+                    value={instanceName}
+                    onChange={(e) => setInstanceName(e.target.value)}
+                  />
                 </div>
-              </div>
+
+                <div>
+                  <Label>Plugin Configuration</Label>
+                  {renderSettingsForm(selectedPlugin, instanceSettings, (key, value) => {
+                    setInstanceSettings(prev => ({ ...prev, [key]: value }));
+                  })}
+                </div>
+              </>
             )}
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowAddDialog(false);
+                setSelectedPlugin(null);
+                setInstanceName("");
+                setInstanceSettings({});
+              }}
+            >
               Cancel
             </Button>
             <Button
               onClick={createUserPlugin}
-              disabled={createLoading || !instanceName.trim()}
+              disabled={!selectedPlugin || !instanceName.trim() || createLoading}
             >
               {createLoading ? "Creating..." : "Create Instance"}
             </Button>
@@ -747,8 +518,8 @@ export function PluginManagement({ isOpen, onClose }: PluginManagementProps) {
         </DialogContent>
       </Dialog>
 
-      {/* Edit Instance Dialog */}
-      <Dialog open={!!editUserPlugin} onOpenChange={() => setEditUserPlugin(null)}>
+      {/* Edit Plugin Dialog */}
+      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
         <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit Plugin Instance</DialogTitle>
@@ -756,73 +527,46 @@ export function PluginManagement({ isOpen, onClose }: PluginManagementProps) {
               Update the settings for "{editUserPlugin?.name}".
             </DialogDescription>
           </DialogHeader>
-          
-          <div className="space-y-6">
+
+          <div className="space-y-4">
             <div>
               <Label htmlFor="edit-instance-name">Instance Name</Label>
               <Input
                 id="edit-instance-name"
                 value={editInstanceName}
                 onChange={(e) => setEditInstanceName(e.target.value)}
+                placeholder="Enter instance name"
                 className="mt-2"
               />
             </div>
 
-            {editUserPlugin && (
+            {editUserPlugin?.plugin && (
               <div>
-                <Label>Plugin Settings</Label>
-                <div className="mt-2 p-4 border rounded-lg">
-                  {renderSettingsForm(
-                    editUserPlugin.plugin.config_schema,
-                    editInstanceSettings,
-                    setEditInstanceSettings
-                  )}
-                </div>
+                <Label className="mb-2 block">Plugin Settings</Label>
+                {renderSettingsForm(
+                  editUserPlugin.plugin,
+                  editInstanceSettings,
+                  (key: string, value: any) => {
+                    setEditInstanceSettings(prev => ({ ...prev, [key]: value }));
+                  }
+                )}
               </div>
             )}
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditUserPlugin(null)}>
+            <Button variant="outline" onClick={() => setShowEditDialog(false)}>
               Cancel
             </Button>
             <Button
-              onClick={updateUserPlugin}
-              disabled={!editInstanceName.trim()}
+              onClick={updatePluginInstance}
+              disabled={updateLoading || !editInstanceName.trim()}
             >
-              Update Instance
+              {updateLoading ? "Updating..." : "Update Instance"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* Delete Instance Dialog */}
-      <Dialog open={!!deleteUserPlugin} onOpenChange={() => setDeleteUserPlugin(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-destructive" />
-              Delete Plugin Instance
-            </DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete "{deleteUserPlugin?.name}"? This will remove it from all playlists. This action cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteUserPlugin(null)}>
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={confirmDeleteUserPlugin}
-              disabled={deleteLoading}
-            >
-              {deleteLoading ? "Deleting..." : "Delete Instance"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </Dialog>
+    </div>
   );
 }

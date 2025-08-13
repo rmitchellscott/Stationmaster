@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "@/components/AuthProvider";
 import { useConfig } from "@/components/ConfigProvider";
+import { DeviceManagementContent } from "@/components/DeviceManagementContent";
 import {
   Dialog,
   DialogContent,
@@ -50,6 +51,7 @@ import {
   Key,
   User,
   UserCog,
+  Monitor,
   Save,
   Plus,
   Copy,
@@ -505,10 +507,16 @@ export function UserSettings({ isOpen, onClose }: UserSettingsProps) {
                 <UserCog className="h-4 w-4" />
                 <span className="ml-1.5">{t("settings.tabs.account")}</span>
               </TabsTrigger>
+              <TabsTrigger value="devices">
+                <Monitor className="h-4 w-4" />
+                <span className="ml-1.5">Devices</span>
+              </TabsTrigger>
+              {/* Temporarily hidden
               <TabsTrigger value="api-keys">
                 <Key className="h-4 w-4" />
                 <span className="ml-1.5">{t("settings.tabs.api_keys")}</span>
               </TabsTrigger>
+              */}
             </TabsList>
 
             <TabsContent value="profile">
@@ -667,6 +675,10 @@ export function UserSettings({ isOpen, onClose }: UserSettingsProps) {
                   </CardContent>
                 </Card>
               </div>
+            </TabsContent>
+
+            <TabsContent value="devices">
+              <DeviceManagementContent />
             </TabsContent>
 
             <TabsContent value="api-keys">

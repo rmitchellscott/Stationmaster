@@ -206,6 +206,7 @@ type Device struct {
 	RSSI           int        `json:"rssi,omitempty"`
 	RefreshRate    int        `gorm:"default:1800" json:"refresh_rate"` // seconds
 	LastSeen       *time.Time `json:"last_seen,omitempty"`
+	LastPlaylistIndex int     `gorm:"default:0" json:"last_playlist_index"` // Track last shown playlist item
 	IsActive       bool       `gorm:"default:true" json:"is_active"`
 	CreatedAt      time.Time  `json:"created_at"`
 	UpdatedAt      time.Time  `json:"updated_at"`

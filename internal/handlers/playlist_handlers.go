@@ -9,7 +9,7 @@ import (
 	"github.com/rmitchellscott/stationmaster/internal/database"
 )
 
-// GetPlaylistsHandler returns all playlists for the current user
+// GetPlaylistsHandler returns all playlists for the current user, optionally filtered by device
 func GetPlaylistsHandler(c *gin.Context) {
 	user, ok := auth.RequireUser(c)
 	if !ok {
@@ -20,7 +20,38 @@ func GetPlaylistsHandler(c *gin.Context) {
 	db := database.GetDB()
 	playlistService := database.NewPlaylistService(db)
 
-	playlists, err := playlistService.GetPlaylistsByUserID(userUUID)
+	// Check if device_id parameter is provided
+	deviceIDStr := c.Query("device_id")
+	var playlists []database.Playlist
+	var err error
+
+	if deviceIDStr != "" {
+		// Filter by device ID
+		deviceID, parseErr := uuid.Parse(deviceIDStr)
+		if parseErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid device ID"})
+			return
+		}
+
+		// Verify device ownership first
+		deviceService := database.NewDeviceService(db)
+		device, deviceErr := deviceService.GetDeviceByID(deviceID)
+		if deviceErr != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Device not found"})
+			return
+		}
+
+		if device.UserID == nil || *device.UserID != userUUID {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
+			return
+		}
+
+		playlists, err = playlistService.GetPlaylistsByDeviceID(deviceID)
+	} else {
+		// Return all playlists for user
+		playlists, err = playlistService.GetPlaylistsByUserID(userUUID)
+	}
+
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch playlists"})
 		return

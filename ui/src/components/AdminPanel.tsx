@@ -59,7 +59,7 @@ import {
   Key,
   Settings as SettingsIcon,
   Database,
-  Plus,
+
   Edit,
   CheckCircle,
   XCircle,
@@ -3050,11 +3050,9 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
 
               {/* Create Plugin Button */}
               <div className="flex justify-end">
-                <Button
+                                <Button 
                   onClick={() => setShowCreatePluginDialog(true)}
-                  className="flex items-center gap-2"
                 >
-                  <Plus className="h-4 w-4" />
                   Create Plugin
                 </Button>
               </div>

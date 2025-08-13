@@ -186,7 +186,6 @@ func DisplayHandler(c *gin.Context) {
 	// Parse and update device status
 	var batteryVoltage float64
 	var rssi int
-	var refreshRate int
 
 	if batteryVoltageStr != "" {
 		if bv, err := strconv.ParseFloat(batteryVoltageStr, 64); err == nil {
@@ -200,11 +199,8 @@ func DisplayHandler(c *gin.Context) {
 		}
 	}
 
-	if refreshRateStr != "" {
-		if rr, err := strconv.Atoi(refreshRateStr); err == nil {
-			refreshRate = rr
-		}
-	}
+	// Note: We still read the refresh rate header for completeness but don't use it
+	// to update the database as refresh rate is now determined by the priority logic
 
 	// Update device status in database FIRST, then check firmware
 	err = deviceService.UpdateDeviceStatus(device.MacAddress, firmwareVersion, batteryVoltage, rssi, modelHeader)
@@ -229,13 +225,11 @@ func DisplayHandler(c *gin.Context) {
 		activeItems = []database.PlaylistItem{}
 	}
 
-	// Check if we need to update refresh rate using GORM-safe method
-	if refreshRate > 0 && refreshRate != device.RefreshRate {
-		err = deviceService.UpdateRefreshRate(device.ID, refreshRate)
-		if err != nil {
-			// Log error but don't fail the request
-		}
-	}
+	// Note: We no longer update the device's refresh rate in the database
+	// based on headers from the device. The refresh rate determination is now:
+	// 1. Plugin-provided refresh rate (if any)
+	// 2. Playlist item duration override (if any)
+	// 3. Device's stored refresh rate (fallback)
 
 	// Determine device status
 	status := 0
@@ -247,7 +241,7 @@ func DisplayHandler(c *gin.Context) {
 	firmwareUpdate := checkFirmwareUpdate(device)
 
 	// Process active plugins and generate response
-	response, err := processActivePlugins(device, activeItems)
+	response, currentItem, err := processActivePlugins(device, activeItems)
 	if err != nil {
 		// Fall back to default response if plugin processing fails
 		if debugMode {
@@ -273,10 +267,17 @@ func DisplayHandler(c *gin.Context) {
 		// Ensure required fields are set when plugins succeed
 		response["status"] = status
 
-		// Use device refresh rate if not overridden by plugin
+		// Implement refresh rate priority: plugin > playlist item override > device default
 		if _, exists := response["refresh_rate"]; !exists {
-			response["refresh_rate"] = fmt.Sprintf("%d", device.RefreshRate)
+			// Plugin didn't provide refresh rate, check playlist item override
+			if currentItem != nil && currentItem.DurationOverride != nil {
+				response["refresh_rate"] = fmt.Sprintf("%d", *currentItem.DurationOverride)
+			} else {
+				// Fallback to device's stored refresh rate
+				response["refresh_rate"] = fmt.Sprintf("%d", device.RefreshRate)
+			}
 		}
+		// If plugin provided refresh_rate, we use it as-is (highest priority)
 	}
 
 	// Always add firmware update info to response
@@ -464,9 +465,9 @@ func DeviceImageHandler(c *gin.Context) {
 }
 
 // processActivePlugins processes the active playlist items and generates appropriate response
-func processActivePlugins(device *database.Device, activeItems []database.PlaylistItem) (gin.H, error) {
+func processActivePlugins(device *database.Device, activeItems []database.PlaylistItem) (gin.H, *database.PlaylistItem, error) {
 	if len(activeItems) == 0 {
-		return nil, fmt.Errorf("no active playlist items")
+		return nil, nil, fmt.Errorf("no active playlist items")
 	}
 
 	// Calculate next item index for rotation
@@ -492,23 +493,26 @@ func processActivePlugins(device *database.Device, activeItems []database.Playli
 
 	userPlugin, err := pluginService.GetUserPluginByID(item.UserPluginID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get user plugin: %w", err)
+		return nil, nil, fmt.Errorf("failed to get user plugin: %w", err)
 	}
 
 	// Handle different plugin types
 	switch userPlugin.Plugin.Type {
 	case "redirect":
-		return processRedirectPlugin(userPlugin)
+		response, err := processRedirectPlugin(userPlugin)
+		return response, &item, err
 	case "alias":
-		return processAliasPlugin(userPlugin)
+		response, err := processAliasPlugin(userPlugin)
+		return response, &item, err
 	case "core_proxy":
-		return processCoreProxyPlugin(device, userPlugin)
+		response, err := processCoreProxyPlugin(device, userPlugin)
+		return response, &item, err
 	default:
 		// For other plugin types, return default response
 		return gin.H{
 			"image_url": getImageURLForDevice(device),
 			"filename":  "display.png",
-		}, nil
+		}, &item, nil
 	}
 }
 

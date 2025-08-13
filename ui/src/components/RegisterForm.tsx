@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { ArrowLeft, UserPlus } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 
 export function RegisterForm() {
   const { t } = useTranslation();
@@ -163,8 +163,7 @@ export function RegisterForm() {
     <div className="bg-background pt-0 pb-8 px-8">
       <Card className="max-w-md mx-auto bg-card">
         <CardHeader>
-          <CardTitle className="text-xl flex items-center">
-            <UserPlus className="mr-2 h-5 w-5" />
+          <CardTitle className="text-xl">
             {t("register.title")}
           </CardTitle>
         </CardHeader>

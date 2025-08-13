@@ -4,11 +4,12 @@ import { LoginForm } from "@/components/LoginForm";
 import { PluginManagement } from "@/components/PluginManagement";
 import { PlaylistManagement } from "@/components/PlaylistManagement";
 import { DeviceSelector } from "@/components/DeviceSelector";
+import { DeviceManagementContent } from "@/components/DeviceManagementContent";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Device } from "@/utils/deviceHelpers";
-import { Puzzle, PlayCircle } from "lucide-react";
+import { Puzzle, PlayCircle, Monitor } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 const SELECTED_DEVICE_KEY = "stationmaster_selected_device";
@@ -252,9 +253,9 @@ export default function HomePage() {
               <div className="bg-muted/50 rounded-lg p-4">
                 <h4 className="font-medium mb-2">Quick Start Guide</h4>
                 <ol className="list-decimal list-inside space-y-1 text-sm text-muted-foreground">
-                  <li>Add a device in Settings → Devices</li>
+                  <li>Add a device in the Devices tab</li>
                   <li>Create plugin instances in the Plugins tab</li>
-                  <li>Add playlist items in the Playlist Items tab</li>
+                  <li>Select a device and add playlist items in the Playlist tab</li>
                 </ol>
               </div>
               <div className="flex justify-end mt-4">
@@ -274,46 +275,53 @@ export default function HomePage() {
           <CardHeader>
             <CardTitle className="text-2xl">Dashboard</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-6">
-            <DeviceSelector
-              devices={devices}
-              selectedDeviceId={selectedDeviceId}
-              onDeviceChange={(deviceId) => {
-                setSelectedDeviceId(deviceId);
-                storeDeviceId(deviceId);
-              }}
-              loading={loading}
-            />
-            
-            {selectedDeviceId && (
-              <Tabs defaultValue="plugins" className="w-full">
-                <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger value="plugins">
-                    <Puzzle className="h-4 w-4 mr-2" />
-                    Plugins
-                  </TabsTrigger>
-                  <TabsTrigger value="playlist">
-                    <PlayCircle className="h-4 w-4 mr-2" />
-                    Playlist
-                  </TabsTrigger>
-                </TabsList>
-                
-                <TabsContent value="plugins" className="mt-6">
-                  <PluginManagement 
-                    selectedDeviceId={selectedDeviceId}
-                    onUpdate={fetchUserPlugins}
-                  />
-                </TabsContent>
-                
-                <TabsContent value="playlist" className="mt-6">
+          <CardContent>
+            <Tabs defaultValue="plugins" className="w-full">
+              <TabsList className="grid w-full grid-cols-3">
+                <TabsTrigger value="plugins">
+                  <Puzzle className="h-4 w-4 mr-2" />
+                  Plugins
+                </TabsTrigger>
+                <TabsTrigger value="playlist">
+                  <PlayCircle className="h-4 w-4 mr-2" />
+                  Playlist
+                </TabsTrigger>
+                <TabsTrigger value="devices">
+                  <Monitor className="h-4 w-4 mr-2" />
+                  Devices
+                </TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="plugins" className="mt-6">
+                <PluginManagement 
+                  selectedDeviceId={selectedDeviceId || ""}
+                  onUpdate={fetchUserPlugins}
+                />
+              </TabsContent>
+              
+              <TabsContent value="playlist" className="mt-6 space-y-6">
+                <DeviceSelector
+                  devices={devices}
+                  selectedDeviceId={selectedDeviceId}
+                  onDeviceChange={(deviceId) => {
+                    setSelectedDeviceId(deviceId);
+                    storeDeviceId(deviceId);
+                  }}
+                  loading={loading}
+                />
+                {selectedDeviceId && (
                   <PlaylistManagement 
                     selectedDeviceId={selectedDeviceId}
                     devices={devices}
                     onUpdate={fetchPlaylistItems}
                   />
-                </TabsContent>
-              </Tabs>
-            )}
+                )}
+              </TabsContent>
+              
+              <TabsContent value="devices" className="mt-6">
+                <DeviceManagementContent />
+              </TabsContent>
+            </Tabs>
           </CardContent>
         </Card>
       </div>

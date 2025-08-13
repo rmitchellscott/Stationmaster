@@ -39,7 +39,6 @@ import {
 } from "@/components/ui/tooltip";
 import {
   PlayCircle,
-  Plus,
   Edit,
   Trash2,
   Star,
@@ -316,11 +315,9 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
         </div>
         <Button
           onClick={() => setShowAddDialog(true)}
-          className="flex items-center gap-2"
           disabled={getAvailableUserPlugins().length === 0}
         >
-          <Plus className="h-4 w-4" />
-          Add Item
+          {getAvailableUserPlugins().length === 0 ? "All Plugins Added" : "Add Item"}
         </Button>
       </div>
 
@@ -349,8 +346,7 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
               onClick={() => setShowAddDialog(true)}
               disabled={getAvailableUserPlugins().length === 0}
             >
-              <Plus className="h-4 w-4 mr-2" />
-              Add Item
+              {getAvailableUserPlugins().length === 0 ? "All Plugins Added" : "Add Item"}
             </Button>
           </CardContent>
         </Card>

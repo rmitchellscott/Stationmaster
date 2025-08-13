@@ -33,9 +33,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Separator } from "@/components/ui/separator";
 import {
   Puzzle,
-  Plus,
   Edit,
   Trash2,
   Settings as SettingsIcon,
@@ -341,8 +341,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
             Manage your plugin instances for the selected device
           </p>
         </div>
-        <Button onClick={() => setShowAddDialog(true)} className="flex items-center gap-2">
-          <Plus className="h-4 w-4" />
+        <Button onClick={() => setShowAddDialog(true)}>
           Add Plugin
         </Button>
       </div>
@@ -360,7 +359,6 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
               Create plugin instances to display content on your device.
             </p>
             <Button onClick={() => setShowAddDialog(true)}>
-              <Plus className="h-4 w-4 mr-2" />
               Add Your First Plugin
             </Button>
           </CardContent>
@@ -412,7 +410,21 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                           onClick={() => {
                             setEditUserPlugin(userPlugin);
                             setEditInstanceName(userPlugin.name);
-                            setEditInstanceSettings(userPlugin.settings || {});
+                            
+                            // Parse settings from JSON string to object
+                            let parsedSettings = {};
+                            try {
+                              if (userPlugin.settings && typeof userPlugin.settings === 'string') {
+                                parsedSettings = JSON.parse(userPlugin.settings);
+                              } else if (userPlugin.settings && typeof userPlugin.settings === 'object') {
+                                parsedSettings = userPlugin.settings;
+                              }
+                            } catch (e) {
+                              console.error('Failed to parse plugin settings:', e);
+                              parsedSettings = {};
+                            }
+                            
+                            setEditInstanceSettings(parsedSettings);
                             setShowEditDialog(true);
                           }}
                         >
@@ -515,7 +527,6 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                               size="sm"
                               className="w-full mt-auto"
                             >
-                              <Plus className="h-3 w-3 mr-2" />
                               Create Instance
                             </Button>
                           </CardContent>
@@ -608,7 +619,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4">
+          <div className="space-y-6">
             <div>
               <Label htmlFor="edit-instance-name">Instance Name</Label>
               <Input
@@ -621,16 +632,26 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
             </div>
 
             {editUserPlugin?.plugin && (
-              <div>
-                <Label className="mb-2 block">Plugin Settings</Label>
-                {renderSettingsForm(
-                  editUserPlugin.plugin,
-                  editInstanceSettings,
-                  (key: string, value: any) => {
-                    setEditInstanceSettings(prev => ({ ...prev, [key]: value }));
-                  }
-                )}
-              </div>
+              <>
+                <Separator />
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <SettingsIcon className="h-4 w-4" />
+                      Plugin Configuration
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-0">
+                    {renderSettingsForm(
+                      editUserPlugin.plugin,
+                      editInstanceSettings,
+                      (key: string, value: any) => {
+                        setEditInstanceSettings(prev => ({ ...prev, [key]: value }));
+                      }
+                    )}
+                  </CardContent>
+                </Card>
+              </>
             )}
           </div>
 

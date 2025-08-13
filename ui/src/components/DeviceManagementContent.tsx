@@ -34,7 +34,6 @@ import {
 } from "@/components/ui/tooltip";
 import {
   Monitor,
-  Plus,
   Edit,
   Trash2,
   Battery,
@@ -431,11 +430,9 @@ export function DeviceManagementContent() {
       <div className="space-y-4">
         <div className="flex justify-between items-center">
           <h3 className="text-lg font-semibold">Your Devices</h3>
-          <Button
+                    <Button 
             onClick={() => setShowClaimDialog(true)}
-            className="flex items-center gap-2"
           >
-            <Plus className="h-4 w-4" />
             Claim Device
           </Button>
         </div>
@@ -451,7 +448,6 @@ export function DeviceManagementContent() {
                 Claim your first TRMNL device to get started.
               </p>
               <Button onClick={() => setShowClaimDialog(true)}>
-                <Plus className="h-4 w-4 mr-2" />
                 Claim Device
               </Button>
             </CardContent>

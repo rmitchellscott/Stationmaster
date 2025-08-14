@@ -651,7 +651,7 @@ export function DeviceManagementContent() {
 
       {/* Edit Device Dialog */}
       <Dialog open={!!editDevice} onOpenChange={() => setEditDevice(null)}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md mobile-dialog-content overflow-y-auto !top-[0vh] !translate-y-0 sm:!top-[6vh]">
           <DialogHeader>
             <DialogTitle>Edit Device</DialogTitle>
             <DialogDescription>
@@ -685,7 +685,6 @@ export function DeviceManagementContent() {
                 How often the device should check for new content (60-86400 seconds)
               </p>
             </div>
-
             <div>
               <div className="flex items-center space-x-2">
                 <Switch
@@ -700,6 +699,26 @@ export function DeviceManagementContent() {
               <p className="text-sm text-muted-foreground mt-1">
                 When enabled, device will automatically update to the latest firmware
               </p>
+            </div>
+            <div>
+              <Label htmlFor="edit-mac-address">MAC Address</Label>
+              <Input
+                id="edit-mac-address"
+                type="text"
+                value={editDevice?.mac_address || ""}
+                readOnly
+                className="mt-2 font-mono text-sm"
+              />
+            </div>
+            <div>
+              <Label htmlFor="edit-api-key">API Key</Label>
+              <Input
+                id="edit-api-key"
+                type="text"
+                value={editDevice?.api_key || ""}
+                readOnly
+                className="mt-2 font-mono text-sm"
+              />
             </div>
           </div>
 

@@ -201,7 +201,7 @@ type Device struct {
 	MacAddress           string     `gorm:"size:255;not null;uniqueIndex" json:"mac_address"` // Original MAC address from device
 	FriendlyID           string     `gorm:"size:10;not null;uniqueIndex" json:"friendly_id"`  // Generated short ID like "917F0B"
 	Name                 string     `gorm:"size:255" json:"name,omitempty"`                   // User-defined name, empty until claimed
-	ModelName            string     `gorm:"size:100;index" json:"model_name,omitempty"`       // Device model identifier
+	ModelName            *string    `gorm:"size:100;index" json:"model_name,omitempty"`       // Device model identifier
 	APIKey               string     `gorm:"size:255;not null;index" json:"api_key"`
 	IsClaimed            bool       `gorm:"default:false" json:"is_claimed"`
 	FirmwareVersion      string     `gorm:"size:50" json:"firmware_version,omitempty"`
@@ -216,7 +216,7 @@ type Device struct {
 	UpdatedAt            time.Time  `json:"updated_at"`
 
 	// Associations
-	User        *User        `gorm:"foreignKey:UserID" json:"-"`
+	User        *User        `gorm:"foreignKey:UserID;constraint:OnDelete:SET NULL" json:"-"`
 	DeviceModel *DeviceModel `gorm:"references:ModelName;foreignKey:ModelName" json:"device_model,omitempty"`
 	// Playlists relationship defined in Playlist model to avoid circular constraints
 }

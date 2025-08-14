@@ -1,6 +1,6 @@
 # Stationmaster
 
-A robust user management and authentication system built with Go and React. Based on the authentication system from Aviary, Stationmaster provides a clean foundation for building applications that require user management.
+A Bring Your Own Server (BYOS) solution for TRMNL with a Go backend and static React frontend. 
 
 ## Features
 
@@ -16,10 +16,10 @@ A robust user management and authentication system built with Go and React. Base
   - Password reset functionality
   - User profile management
   
-- 🔑 **API Key Management**
-  - Generate and manage API keys
-  - Key expiration and rotation
-  - Usage tracking
+- 📱 **Device Management**
+  - TRMNL device integration
+  - Firmware management and updates
+  - Device scheduling and configuration
   
 - 🎨 **Modern UI**
   - React + TypeScript frontend
@@ -46,7 +46,7 @@ cd stationmaster
 cp .env.example .env
 ```
 
-3. Edit `.env` and set your configuration (especially `JWT_SECRET`)
+3. Edit `.env` and configure your settings (see Environment Variables section below)
 
 4. Start the application:
 ```bash
@@ -77,27 +77,129 @@ cd ui
 npm run dev
 ```
 
-## Configuration
+## Environment Variables
 
-### Environment Variables
+### Core Configuration
 
-Key configuration options:
-
-- `MULTI_USER_MODE`: Enable multi-user mode (default: true)
-- `PUBLIC_REGISTRATION_ENABLED`: Allow public user registration
-- `JWT_SECRET`: Secret key for JWT tokens (required)
-- `OIDC_ENABLED`: Enable OIDC authentication
-- `PROXY_AUTH_ENABLED`: Enable proxy authentication
-- `SMTP_ENABLED`: Enable email functionality for password resets
-
-See `.env.example` for all available options.
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | `8000` | Port for the web server |
+| `GIN_MODE` | `release` | Gin framework mode (`debug`, `release`, `test`) |
+| `DATA_DIR` | `/data` | Directory for data storage |
+| `DISABLE_UI` | - | Set to any value to disable the web UI |
 
 ### Database Configuration
 
-By default, Stationmaster uses SQLite. For production, PostgreSQL is recommended:
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DB_TYPE` | `sqlite` | Database type (`sqlite`, `postgres`) |
+| `DB_HOST` | `localhost` | Database host (PostgreSQL only) |
+| `DB_PORT` | `5432` | Database port (PostgreSQL only) |
+| `DB_USER` | `stationmaster` | Database username (PostgreSQL only) |
+| `DB_PASSWORD` | - | Database password (PostgreSQL only) |
+| `DB_NAME` | `stationmaster` | Database name (PostgreSQL only) |
+| `DB_SSLMODE` | `disable` | SSL mode for PostgreSQL |
+| `DATABASE_URL` | `/data/stationmaster.db` | Complete database connection string |
 
+### Authentication & Security
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `JWT_SECRET` | - | **REQUIRED** Secret key for JWT tokens |
+| `SESSION_TIMEOUT` | `24h` | JWT token expiration time |
+| `ALLOW_INSECURE` | `false` | Allow insecure connections (HTTP) |
+| `AUTH_USERNAME` | - | Basic auth username for legacy auth |
+| `AUTH_PASSWORD` | - | Basic auth password for legacy auth |
+| `API_KEY` | - | Global API key for legacy auth |
+
+### User Management
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MULTI_USER_MODE` | `true` | Enable multi-user functionality |
+| `PUBLIC_REGISTRATION_ENABLED` | `false` | Allow public user registration |
+| `ADMIN_USERNAME` | - | Initial admin username |
+| `ADMIN_PASSWORD` | - | Initial admin password |
+| `ADMIN_EMAIL` | - | Initial admin email |
+| `DISABLE_WELCOME_EMAIL` | `false` | Disable welcome emails for new users |
+
+### OIDC/SSO Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OIDC_ENABLED` | `false` | Enable OIDC authentication |
+| `OIDC_ISSUER` | - | OIDC provider issuer URL |
+| `OIDC_CLIENT_ID` | - | OIDC client ID |
+| `OIDC_CLIENT_SECRET` | - | OIDC client secret |
+| `OIDC_REDIRECT_URL` | - | OIDC callback URL |
+| `OIDC_SCOPES` | `openid profile email` | OIDC scopes to request |
+| `OIDC_SSO_ONLY` | `false` | Disable local login when OIDC is enabled |
+| `OIDC_AUTO_CREATE_USERS` | `false` | Auto-create users from OIDC claims |
+| `OIDC_ADMIN_GROUP` | - | OIDC group that grants admin privileges |
+| `OIDC_SUCCESS_REDIRECT_URL` | - | Redirect URL after successful OIDC login |
+| `OIDC_POST_LOGOUT_REDIRECT_URL` | - | Redirect URL after OIDC logout |
+| `OIDC_BUTTON_TEXT` | - | Custom text for OIDC login button |
+| `OIDC_DEBUG` | `false` | Enable OIDC debug logging |
+
+### Proxy Authentication
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PROXY_AUTH_ENABLED` | `false` | Enable proxy authentication |
+| `PROXY_AUTH_HEADER` | `X-Remote-User` | Header containing authenticated username |
+
+### SMTP Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SMTP_ENABLED` | `false` | Enable SMTP for email functionality |
+| `SMTP_HOST` | - | SMTP server hostname |
+| `SMTP_PORT` | `587` | SMTP server port |
+| `SMTP_USERNAME` | - | SMTP authentication username |
+| `SMTP_PASSWORD` | - | SMTP authentication password |
+| `SMTP_FROM` | - | From address for outgoing emails |
+| `SMTP_TLS` | `true` | Use TLS for SMTP connection |
+| `SITE_URL` | - | Base URL for email links |
+
+### TRMNL Integration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TRMNL_MODEL_API_URL` | `https://usetrmnl.com/api/models` | API URL for device models |
+| `TRMNL_FIRMWARE_API_URL` | `https://usetrmnl.com/api/firmware/latest` | API URL for firmware updates |
+| `MODEL_POLLER` | `true` | Enable automatic model polling |
+| `MODEL_POLLER_INTERVAL` | `1h` | Interval for model polling |
+| `FIRMWARE_POLLER` | `true` | Enable automatic firmware polling |
+| `FIRMWARE_POLLER_INTERVAL` | `1h` | Interval for firmware polling |
+| `FIRMWARE_STORAGE_DIR` | `/data/firmware` | Directory for firmware storage |
+| `FIRMWARE_AUTO_DOWNLOAD` | `true` | Automatically download new firmware |
+
+### Development & Debugging
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DEBUG` | `false` | Enable debug mode |
+| `DRY_RUN` | `false` | Enable dry-run mode (no actual changes) |
+| `RMAPI_HOST` | - | reMarkable API host override |
+
+### File-based Secrets
+
+All environment variables support file-based configuration by appending `_FILE` to the variable name. For example:
+- `JWT_SECRET_FILE=/run/secrets/jwt_secret`
+- `DB_PASSWORD_FILE=/run/secrets/db_password`
+
+This is useful for Docker secrets or other secret management systems.
+
+## Database Configuration
+
+### SQLite (Default)
 ```env
-DATABASE_TYPE=postgres
+DATABASE_URL=/data/stationmaster.db
+```
+
+### PostgreSQL (Production)
+```env
+DB_TYPE=postgres
 DATABASE_URL=postgres://user:password@host/dbname?sslmode=disable
 ```
 
@@ -124,11 +226,12 @@ DATABASE_URL=postgres://user:password@host/dbname?sslmode=disable
 - `POST /api/profile/password` - Change password
 - `DELETE /api/profile` - Delete account
 
-### API Keys
+### Device Management
 
-- `GET /api/api-keys` - List user's API keys
-- `POST /api/api-keys` - Create new API key
-- `DELETE /api/api-keys/:id` - Delete API key
+- `GET /api/devices` - List devices
+- `POST /api/devices` - Add device
+- `PUT /api/devices/:id` - Update device
+- `DELETE /api/devices/:id` - Delete device
 
 ## Building from Source
 
@@ -148,10 +251,14 @@ npm run build
 docker build -t stationmaster .
 ```
 
+## Security Considerations
+
+- **Always change the default `JWT_SECRET`** in production
+- Use strong passwords for admin accounts
+- Enable HTTPS in production (set `ALLOW_INSECURE=false`)
+- Use PostgreSQL for production deployments
+- Consider using file-based secrets for sensitive configuration
+
 ## License
 
 MIT License - See LICENSE file for details
-
-## Credits
-
-Based on the authentication system from [Aviary](https://github.com/rmitchellscott/aviary)

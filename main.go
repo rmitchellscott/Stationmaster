@@ -15,6 +15,7 @@ import (
 	"time"
 
 	// third-party
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 
@@ -100,6 +101,29 @@ func main() {
 
 	router := gin.New()
 	router.Use(gin.Logger(), gin.Recovery())
+
+	// Configure CORS for browser-based device simulators
+	corsConfig := cors.DefaultConfig()
+	corsConfig.AllowAllOrigins = true
+	corsConfig.AllowMethods = []string{"GET", "POST", "OPTIONS"}
+	corsConfig.AllowHeaders = []string{
+		"Origin",
+		"Content-Type",
+		"Accept",
+		"Authorization",
+		// TRMNL device headers
+		"ID",
+		"Access-Token",
+		"Refresh-Rate",
+		"Battery-Voltage",
+		"Fw-Version",
+		"Rssi",
+		"Model",
+		"Width",
+		"Height",
+		"User-Agent",
+	}
+	router.Use(cors.New(corsConfig))
 
 	// Public auth endpoints
 	router.POST("/api/auth/login", auth.MultiUserLoginHandler)

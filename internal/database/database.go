@@ -121,7 +121,7 @@ func initSQLite(config *DatabaseConfig) (*gorm.DB, error) {
 
 	dbPath := filepath.Join(config.DataDir, "stationmaster.db")
 
-	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{
+	db, err := gorm.Open(sqlite.Open(dbPath+"?_pragma=foreign_keys(1)"), &gorm.Config{
 		Logger: getGormLogger(),
 	})
 	if err != nil {
@@ -140,6 +140,15 @@ func initSQLite(config *DatabaseConfig) (*gorm.DB, error) {
 	// Enable foreign keys for SQLite
 	if err := db.Exec("PRAGMA foreign_keys = ON").Error; err != nil {
 		return nil, err
+	}
+	
+	// Verify foreign keys are enabled
+	var fkEnabled int
+	if err := db.Raw("PRAGMA foreign_keys").Scan(&fkEnabled).Error; err != nil {
+		return nil, fmt.Errorf("failed to check foreign keys status: %w", err)
+	}
+	if fkEnabled != 1 {
+		return nil, fmt.Errorf("foreign keys are not enabled (got %d, expected 1)", fkEnabled)
 	}
 
 	return db, nil

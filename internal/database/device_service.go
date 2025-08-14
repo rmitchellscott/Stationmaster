@@ -38,10 +38,14 @@ func (ds *DeviceService) CreateUnclaimedDevice(macAddress string, modelName stri
 		MacAddress:  macAddress,
 		FriendlyID:  friendlyID,
 		APIKey:      apiKey,
-		ModelName:   modelName,
 		RefreshRate: 1800, // 30 minutes default
 		IsActive:    true,
 		IsClaimed:   false,
+	}
+
+	// Only set ModelName if it's not empty to avoid foreign key constraint issues
+	if modelName != "" {
+		device.ModelName = &modelName
 	}
 
 	if err := ds.db.Create(device).Error; err != nil {
@@ -184,7 +188,7 @@ func (ds *DeviceService) UpdateDeviceStatus(macAddress string, firmwareVersion s
 			// Check if device currently has a model_name
 			var device Device
 			if err := tx.Select("model_name").Where("mac_address = ?", macAddress).First(&device).Error; err == nil {
-				if device.ModelName == "" {
+				if device.ModelName == nil || *device.ModelName == "" {
 					// Check if the mapped model exists in device_models table
 					var deviceModel DeviceModel
 					if err := tx.Where("model_name = ?", mappedModelName).First(&deviceModel).Error; err == nil {
@@ -196,7 +200,7 @@ func (ds *DeviceService) UpdateDeviceStatus(macAddress string, firmwareVersion s
 						logging.Logf("[DEVICE STATUS] Model %s not found in device_models table, skipping model update", mappedModelName)
 					}
 				} else {
-					logging.Logf("[DEVICE STATUS] Device already has model_name: %s, skipping", device.ModelName)
+					logging.Logf("[DEVICE STATUS] Device already has model_name: %s, skipping", *device.ModelName)
 				}
 			}
 		}

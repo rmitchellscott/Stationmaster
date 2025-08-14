@@ -13,6 +13,7 @@ interface User {
   created_at: string
   last_login?: string
   onboarding_completed?: boolean
+  timezone?: string
 }
 
 interface AuthContextType {

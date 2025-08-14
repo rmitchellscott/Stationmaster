@@ -16,6 +16,7 @@ type User struct {
 	IsAdmin             bool      `gorm:"default:false" json:"is_admin"`
 	IsActive            bool      `gorm:"default:true" json:"is_active"`
 	OnboardingCompleted bool      `gorm:"default:false" json:"onboarding_completed"`
+	Timezone            string    `gorm:"size:50;default:'UTC'" json:"timezone"` // User's preferred timezone (IANA format)
 
 	// Password reset
 	ResetToken        string    `gorm:"index" json:"-"`
@@ -313,7 +314,7 @@ type PlaylistItem struct {
 	// Associations
 	Playlist   Playlist   `gorm:"foreignKey:PlaylistID" json:"-"`
 	UserPlugin UserPlugin `gorm:"foreignKey:UserPluginID" json:"user_plugin"`
-	Schedules  []Schedule `gorm:"foreignKey:PlaylistItemID;constraint:OnDelete:CASCADE" json:"-"`
+	Schedules  []Schedule `gorm:"foreignKey:PlaylistItemID;constraint:OnDelete:CASCADE" json:"schedules"`
 }
 
 func (pi *PlaylistItem) BeforeCreate(tx *gorm.DB) error {

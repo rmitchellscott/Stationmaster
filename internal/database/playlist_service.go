@@ -1,9 +1,11 @@
 package database
 
 import (
+	"log"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/rmitchellscott/stationmaster/internal/utils"
 	"gorm.io/gorm"
 )
 
@@ -214,42 +216,92 @@ func (pls *PlaylistService) GetActivePlaylistItemsForTime(deviceID uuid.UUID, cu
 
 	// Filter items that match the current time
 	var activeItems []PlaylistItem
-	
-	// Get current day of week (0=Sunday, 1=Monday, etc.)
-	weekday := int(currentTime.Weekday())
-	dayBit := 1 << weekday
-	
-	currentTimeStr := currentTime.Format("15:04:05")
-	
-	for _, item := range items {
+
+	log.Printf("[SCHEDULE DEBUG] Device: %s, Current time UTC: %s",
+		deviceID.String(), currentTime.UTC().Format("2006-01-02 15:04:05"))
+	log.Printf("[SCHEDULE DEBUG] Found %d playlist items", len(items))
+
+	for i, item := range items {
+		log.Printf("[SCHEDULE DEBUG] Item %d: ID=%s, Visible=%t, Schedules=%d",
+			i, item.ID.String(), item.IsVisible, len(item.Schedules))
+
 		if !item.IsVisible {
+			log.Printf("[SCHEDULE DEBUG] Item %d: Skipping - not visible", i)
 			continue
 		}
-		
+
 		// If no schedules, item is always active
 		if len(item.Schedules) == 0 {
+			log.Printf("[SCHEDULE DEBUG] Item %d: Active - no schedules (always active)", i)
 			activeItems = append(activeItems, item)
 			continue
 		}
-		
+
 		// Check if any schedule matches current time
-		for _, schedule := range item.Schedules {
+		itemMatched := false
+		for j, schedule := range item.Schedules {
+			log.Printf("[SCHEDULE DEBUG] Item %d, Schedule %d: Name=%s, Active=%t, DayMask=%d, Start=%s, End=%s, Timezone=%s",
+				i, j, schedule.Name, schedule.IsActive, schedule.DayMask, schedule.StartTime, schedule.EndTime, schedule.Timezone)
+
 			if !schedule.IsActive {
+				log.Printf("[SCHEDULE DEBUG] Item %d, Schedule %d: Skipping - not active", i, j)
 				continue
 			}
+
+			// Load the schedule's timezone with validation
+			scheduleTimezone := utils.NormalizeTimezone(schedule.Timezone)
 			
+			loc, err := time.LoadLocation(scheduleTimezone)
+			if err != nil {
+				log.Printf("[SCHEDULE DEBUG] Item %d, Schedule %d: Invalid timezone %s, falling back to UTC", i, j, scheduleTimezone)
+				loc = time.UTC
+				scheduleTimezone = "UTC"
+			}
+
+			// Convert current time to schedule's timezone
+			currentTimeInScheduleTZ := currentTime.In(loc)
+			weekday := int(currentTimeInScheduleTZ.Weekday())
+			dayBit := 1 << weekday
+			currentTimeStr := currentTimeInScheduleTZ.Format("15:04:05")
+
+			log.Printf("[SCHEDULE DEBUG] Item %d, Schedule %d: Current time in %s: %s, Weekday: %d, DayBit: %d",
+				i, j, scheduleTimezone, currentTimeInScheduleTZ.Format("2006-01-02 15:04:05"), weekday, dayBit)
+
 			// Check day mask
-			if (schedule.DayMask & dayBit) == 0 {
+			dayMatch := (schedule.DayMask & dayBit) != 0
+			log.Printf("[SCHEDULE DEBUG] Item %d, Schedule %d: Day match = %t (schedule mask %d & current bit %d)",
+				i, j, dayMatch, schedule.DayMask, dayBit)
+			if !dayMatch {
 				continue
 			}
-			
-			// Check time range
-			if currentTimeStr >= schedule.StartTime && currentTimeStr <= schedule.EndTime {
+
+			// Check time range (schedule times are stored as local times in the schedule's timezone)
+			// Handle overnight schedules where end_time < start_time (crosses midnight)
+			var timeMatch bool
+			if schedule.EndTime < schedule.StartTime {
+				// Overnight schedule: active if current time is >= start OR <= end
+				timeMatch = currentTimeStr >= schedule.StartTime || currentTimeStr <= schedule.EndTime
+				log.Printf("[SCHEDULE DEBUG] Item %d, Schedule %d: Overnight schedule - Time match = %t (%s >= %s || %s <= %s)",
+					i, j, timeMatch, currentTimeStr, schedule.StartTime, currentTimeStr, schedule.EndTime)
+			} else {
+				// Normal schedule: active if current time is between start and end
+				timeMatch = currentTimeStr >= schedule.StartTime && currentTimeStr <= schedule.EndTime
+				log.Printf("[SCHEDULE DEBUG] Item %d, Schedule %d: Normal schedule - Time match = %t (%s >= %s && %s <= %s)",
+					i, j, timeMatch, currentTimeStr, schedule.StartTime, currentTimeStr, schedule.EndTime)
+			}
+			if timeMatch {
+				log.Printf("[SCHEDULE DEBUG] Item %d: ACTIVE - matched schedule %d", i, j)
 				activeItems = append(activeItems, item)
+				itemMatched = true
 				break
 			}
 		}
+
+		if !itemMatched {
+			log.Printf("[SCHEDULE DEBUG] Item %d: No matching schedules", i)
+		}
 	}
-	
+
+	log.Printf("[SCHEDULE DEBUG] Final result: %d active items", len(activeItems))
 	return activeItems, nil
 }

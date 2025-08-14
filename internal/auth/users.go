@@ -8,13 +8,14 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/rmitchellscott/stationmaster/internal/database"
+	"github.com/rmitchellscott/stationmaster/internal/utils"
 )
-
 
 // UpdateUserRequest represents a user update request
 type UpdateUserRequest struct {
 	Username *string `json:"username,omitempty"`
 	Email    *string `json:"email,omitempty" binding:"omitempty,email"`
+	Timezone *string `json:"timezone,omitempty"`
 	IsAdmin  *bool   `json:"is_admin,omitempty"`
 	IsActive *bool   `json:"is_active,omitempty"`
 }
@@ -40,7 +41,6 @@ type SelfDeleteRequest struct {
 	CurrentPassword string `json:"current_password" binding:"required"`
 	Confirmation    string `json:"confirmation" binding:"required"`
 }
-
 
 // GetUsersHandler returns all users (admin only)
 func GetUsersHandler(c *gin.Context) {
@@ -105,6 +105,7 @@ func GetUsersHandler(c *gin.Context) {
 			ID:                  user.ID,
 			Username:            user.Username,
 			Email:               user.Email,
+			Timezone:            user.Timezone,
 			IsAdmin:             user.IsAdmin,
 			IsActive:            user.IsActive,
 			OnboardingCompleted: user.OnboardingCompleted,
@@ -158,6 +159,7 @@ func GetUserHandler(c *gin.Context) {
 		ID:                  user.ID,
 		Username:            user.Username,
 		Email:               user.Email,
+		Timezone:            user.Timezone,
 		IsAdmin:             user.IsAdmin,
 		IsActive:            user.IsActive,
 		OnboardingCompleted: user.OnboardingCompleted,
@@ -208,6 +210,13 @@ func UpdateUserHandler(c *gin.Context) {
 	}
 	if req.Email != nil && *req.Email != "" {
 		updates["email"] = *req.Email
+	}
+	if req.Timezone != nil && *req.Timezone != "" {
+		if err := utils.ValidateTimezone(*req.Timezone); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid timezone: " + err.Error()})
+			return
+		}
+		updates["timezone"] = *req.Timezone
 	}
 	if req.IsAdmin != nil {
 		updates["is_admin"] = *req.IsAdmin
@@ -312,6 +321,13 @@ func UpdateCurrentUserHandler(c *gin.Context) {
 	if req.Email != nil && *req.Email != "" {
 		updates["email"] = *req.Email
 	}
+	if req.Timezone != nil && *req.Timezone != "" {
+		if err := utils.ValidateTimezone(*req.Timezone); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid timezone: " + err.Error()})
+			return
+		}
+		updates["timezone"] = *req.Timezone
+	}
 
 	if len(updates) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "No fields to update"})
@@ -365,7 +381,6 @@ func UpdatePasswordHandler(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"success": true})
 }
-
 
 // AdminUpdatePasswordHandler updates any user's password (admin only)
 func AdminUpdatePasswordHandler(c *gin.Context) {

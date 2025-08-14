@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/rmitchellscott/stationmaster/internal/auth"
 	"github.com/rmitchellscott/stationmaster/internal/database"
+	"github.com/rmitchellscott/stationmaster/internal/utils"
 )
 
 // GetPlaylistsHandler returns all playlists for the current user, optionally filtered by device
@@ -503,6 +504,12 @@ func AddScheduleHandler(c *gin.Context) {
 	if req.Timezone == "" {
 		req.Timezone = "UTC"
 	}
+	
+	// Validate timezone
+	if err := utils.ValidateTimezone(req.Timezone); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid timezone: " + err.Error()})
+		return
+	}
 
 	db := database.GetDB()
 	playlistService := database.NewPlaylistService(db)
@@ -588,6 +595,11 @@ func UpdateScheduleHandler(c *gin.Context) {
 		schedule.EndTime = req.EndTime
 	}
 	if req.Timezone != "" {
+		// Validate timezone
+		if err := utils.ValidateTimezone(req.Timezone); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid timezone: " + err.Error()})
+			return
+		}
 		schedule.Timezone = req.Timezone
 	}
 	if req.IsActive != nil {

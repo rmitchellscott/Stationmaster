@@ -70,18 +70,6 @@ func (ds *DeviceService) ClaimDevice(userID uuid.UUID, friendlyID, name string) 
 		return nil, err
 	}
 
-	// TODO: Create default playlist for the device after fixing circular constraint
-	// playlistService := NewPlaylistService(ds.db)
-	// _, err = playlistService.CreatePlaylist(userID, device.ID, "Default", true)
-	// if err != nil {
-	// 	// Rollback device claim if playlist creation fails
-	// 	device.UserID = nil
-	// 	device.Name = ""
-	// 	device.IsClaimed = false
-	// 	ds.db.Save(device)
-	// 	return nil, err
-	// }
-
 	return device, nil
 }
 

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
+import { useAuth } from "@/components/AuthProvider";
 import {
   Dialog,
   DialogContent,
@@ -93,7 +94,49 @@ interface PlaylistManagementProps {
 
 export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: PlaylistManagementProps) {
   const { t } = useTranslation();
+  const { user } = useAuth();
   const [playlistItems, setPlaylistItems] = useState<PlaylistItem[]>([]);
+
+  // Get user's timezone or fall back to browser timezone
+  const getUserTimezone = () => {
+    return user?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+  };
+
+  // Convert local time (HH:MM) to UTC time for database storage
+  const convertLocalTimeToUTC = (localTime: string): string => {
+    const timezone = getUserTimezone();
+    const today = new Date().toISOString().split('T')[0]; // Today in YYYY-MM-DD
+    
+    // Parse the time input as if it's in the user's timezone
+    const [hours, minutes] = localTime.split(':').map(Number);
+    
+    // Create a date in user's timezone (using a reference date to handle DST correctly)
+    const localDate = new Date();
+    localDate.setFullYear(parseInt(today.split('-')[0]));
+    localDate.setMonth(parseInt(today.split('-')[1]) - 1); // Month is 0-indexed
+    localDate.setDate(parseInt(today.split('-')[2]));
+    localDate.setHours(hours, minutes, 0, 0);
+    
+    // Convert to UTC
+    const utcTime = localDate.toISOString().substring(11, 19); // Extract HH:MM:SS
+    return utcTime;
+  };
+
+  // Convert UTC time (HH:MM:SS) from database to local time for display
+  const convertUTCTimeToLocal = (utcTime: string): string => {
+    const today = new Date().toISOString().split('T')[0]; // Today in YYYY-MM-DD
+    const utcDateTime = `${today}T${utcTime}Z`;
+    const utcDate = new Date(utcDateTime);
+    
+    // Convert to local time using the browser's timezone
+    const localTime = utcDate.toLocaleTimeString('en-GB', { 
+      hour12: false, 
+      hour: '2-digit', 
+      minute: '2-digit'
+    });
+    
+    return localTime; // Returns HH:MM
+  };
   const [userPlugins, setUserPlugins] = useState<UserPlugin[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -104,12 +147,9 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
   const [selectedUserPlugin, setSelectedUserPlugin] = useState<UserPlugin | null>(null);
   const [addLoading, setAddLoading] = useState(false);
 
-  // Edit item dialog
-  const [showEditDialog, setShowEditDialog] = useState(false);
-  const [editItem, setEditItem] = useState<PlaylistItem | null>(null);
+  // Edit item state (now used in schedule dialog)
   const [editImportance, setEditImportance] = useState<number>(0);
   const [editDurationOverride, setEditDurationOverride] = useState<string>("");
-  const [editLoading, setEditLoading] = useState(false);
 
   // Schedule management dialog
   const [showScheduleDialog, setShowScheduleDialog] = useState(false);
@@ -280,67 +320,113 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
     }
   };
 
-  const updatePlaylistItem = async () => {
-    if (!editItem) return;
+  const openScheduleDialog = async (item: PlaylistItem) => {
+    setScheduleItem(item);
+    
+    // Convert UTC times from database to local times for display
+    const schedulesWithLocalTimes = (item.schedules || []).map(schedule => ({
+      ...schedule,
+      start_time: convertUTCTimeToLocal(schedule.start_time) + ":00", // Add seconds for UI
+      end_time: convertUTCTimeToLocal(schedule.end_time) + ":00", // Add seconds for UI
+    }));
+    
+    setSchedules(schedulesWithLocalTimes);
+    
+    // Also load the edit data for importance and duration
+    setEditImportance(item.importance);
+    setEditDurationOverride(item.duration_override ? item.duration_override.toString() : "");
+    setShowScheduleDialog(true);
+  };
+
+  const saveSchedules = async () => {
+    if (!scheduleItem) return;
 
     try {
-      setEditLoading(true);
+      setScheduleLoading(true);
       setError(null);
 
-      const updateData: any = {
-        importance: editImportance,
-      };
-
-      // Only include duration_override if it's a valid number or null
-      if (editDurationOverride.trim() === "") {
-        updateData.duration_override = null;
-      } else {
-        const duration = parseInt(editDurationOverride);
-        if (!isNaN(duration) && duration > 0) {
-          updateData.duration_override = duration;
-        } else {
-          setError("Duration override must be a positive number or empty");
-          return;
+      // First, delete all existing schedules
+      const existingSchedules = scheduleItem.schedules || [];
+      for (const existingSchedule of existingSchedules) {
+        if (existingSchedule.id && !existingSchedule.id.startsWith('temp-')) {
+          await fetch(`/api/playlists/schedules/${existingSchedule.id}`, {
+            method: "DELETE",
+            credentials: "include",
+          });
         }
       }
 
-      const response = await fetch(`/api/playlists/items/${editItem.id}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        credentials: "include",
-        body: JSON.stringify(updateData),
-      });
+      // Then create all new schedules
+      for (const schedule of schedules) {
+        if (!schedule.is_active) continue; // Skip inactive schedules
 
-      if (response.ok) {
-        setSuccessMessage("Playlist item updated successfully!");
-        setShowEditDialog(false);
-        setEditItem(null);
-        await fetchPlaylistItems();
-        onUpdate?.();
-      } else {
-        const errorData = await response.json();
-        setError(errorData.error || "Failed to update playlist item");
+        const scheduleData = {
+          name: schedule.name || "Unnamed Schedule",
+          day_mask: schedule.day_mask,
+          start_time: convertLocalTimeToUTC(schedule.start_time.substring(0, 5)), // Convert to UTC
+          end_time: convertLocalTimeToUTC(schedule.end_time.substring(0, 5)), // Convert to UTC
+          timezone: "UTC",
+        };
+
+        const response = await fetch(`/api/playlists/items/${scheduleItem.id}/schedules`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          credentials: "include",
+          body: JSON.stringify(scheduleData),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || "Failed to save schedule");
+        }
       }
+
+      // Update playlist item settings (importance and duration)
+      if (editImportance !== scheduleItem.importance || 
+          editDurationOverride !== (scheduleItem.duration_override ? scheduleItem.duration_override.toString() : "")) {
+        
+        const updateData: any = {
+          importance: editImportance,
+        };
+
+        // Only include duration_override if it's a valid number or null
+        if (editDurationOverride.trim() === "") {
+          updateData.duration_override = null;
+        } else {
+          const duration = parseInt(editDurationOverride);
+          if (!isNaN(duration) && duration > 0) {
+            updateData.duration_override = duration;
+          }
+        }
+
+        const itemUpdateResponse = await fetch(`/api/playlists/items/${scheduleItem.id}`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          credentials: "include",
+          body: JSON.stringify(updateData),
+        });
+
+        if (!itemUpdateResponse.ok) {
+          const errorData = await itemUpdateResponse.json();
+          throw new Error(errorData.error || "Failed to update playlist item settings");
+        }
+      }
+
+      setSuccessMessage("Schedules and settings saved successfully!");
+      setShowScheduleDialog(false);
+      setScheduleItem(null);
+      setSchedules([]);
+      await fetchPlaylistItems(); // Refresh to get updated schedules
+      onUpdate?.();
     } catch (error) {
-      setError("Network error occurred");
+      setError(error instanceof Error ? error.message : "Network error occurred");
     } finally {
-      setEditLoading(false);
+      setScheduleLoading(false);
     }
-  };
-
-  const openEditDialog = (item: PlaylistItem) => {
-    setEditItem(item);
-    setEditImportance(item.importance);
-    setEditDurationOverride(item.duration_override ? item.duration_override.toString() : "");
-    setShowEditDialog(true);
-  };
-
-  const openScheduleDialog = async (item: PlaylistItem) => {
-    setScheduleItem(item);
-    setSchedules(item.schedules || []);
-    setShowScheduleDialog(true);
   };
 
   const formatDuration = (seconds: number): string => {
@@ -396,8 +482,9 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
                    selectedDays.length === 2 && selectedDays.includes("Sat") && selectedDays.includes("Sun") ? "Weekends" :
                    selectedDays.join(", ");
 
-    const startTime = schedule.start_time?.substring(0, 5) || "09:00";
-    const endTime = schedule.end_time?.substring(0, 5) || "17:00";
+    // Convert UTC times from database to local times for display
+    const startTimeLocal = schedule.start_time ? convertUTCTimeToLocal(schedule.start_time) : "09:00";
+    const endTimeLocal = schedule.end_time ? convertUTCTimeToLocal(schedule.end_time) : "17:00";
     
     // Convert to 12-hour format for display
     const formatTime12 = (time24: string) => {
@@ -408,7 +495,7 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
       return `${hour12}:${minutes}${ampm}`;
     };
 
-    const timeRange = `${formatTime12(startTime)} - ${formatTime12(endTime)}`;
+    const timeRange = `${formatTime12(startTimeLocal)} - ${formatTime12(endTimeLocal)}`;
     
     return activSchedules.length > 1 ? 
       `${dayText} ${timeRange} +${activSchedules.length - 1} more` :
@@ -582,7 +669,7 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
                       </TableCell>
                       <TableCell className="hidden lg:table-cell">
                         <div className="text-sm">
-                          {formatScheduleSummary(item.schedules)}
+                          {formatScheduleSummary(item.schedules || [])}
                         </div>
                       </TableCell>
                       <TableCell className="text-right">
@@ -590,16 +677,8 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => openEditDialog(item)}
-                            title="Edit playlist item"
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
                             onClick={() => openScheduleDialog(item)}
-                            title="Manage schedules"
+                            title="Manage schedules & settings"
                           >
                             <Calendar className="h-4 w-4" />
                           </Button>
@@ -693,86 +772,63 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
         </DialogContent>
       </Dialog>
 
-      {/* Edit Item Dialog */}
-      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Edit Playlist Item</DialogTitle>
-            <DialogDescription>
-              Modify settings for "{editItem?.user_plugin?.name}".
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="importance">Importance Level</Label>
-              <Select
-                value={editImportance.toString()}
-                onValueChange={(value) => setEditImportance(parseInt(value))}
-              >
-                <SelectTrigger className="mt-2">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="0">Normal</SelectItem>
-                  <SelectItem value="1">Important</SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground mt-1">
-                Important items are prioritized in the rotation.
-              </p>
-            </div>
-
-            <div>
-              <Label htmlFor="duration-override">Duration Override (seconds)</Label>
-              <Input
-                id="duration-override"
-                type="number"
-                min="60"
-                placeholder="Leave empty for device default"
-                value={editDurationOverride}
-                onChange={(e) => setEditDurationOverride(e.target.value)}
-                className="mt-2"
-              />
-              <p className="text-xs text-muted-foreground mt-1">
-                Override the device's default refresh rate for this item only. 
-                Leave empty to use the device's configured refresh rate.
-              </p>
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setShowEditDialog(false);
-                setEditItem(null);
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={updatePlaylistItem}
-              disabled={editLoading}
-            >
-              {editLoading ? "Updating..." : "Update Item"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       {/* Schedule Management Dialog */}
       <Dialog open={showScheduleDialog} onOpenChange={setShowScheduleDialog}>
-        <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-4xl max-h-[85vh] overflow-y-auto !top-[0vh] !translate-y-0 sm:!top-[6vh]">
           <DialogHeader>
-            <DialogTitle>Manage Schedules</DialogTitle>
+            <DialogTitle>Manage Schedules & Settings</DialogTitle>
             <DialogDescription>
-              Set up custom schedules for "{scheduleItem?.user_plugin?.name}". 
+              Configure schedules and settings for "{scheduleItem?.user_plugin?.name}". 
               Multiple schedules can be created for different times and days.
             </DialogDescription>
           </DialogHeader>
           
           <div className="space-y-6">
+            {/* Playlist Item Settings */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Playlist Item Settings</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="importance">Importance Level</Label>
+                    <Select
+                      value={editImportance.toString()}
+                      onValueChange={(value) => setEditImportance(parseInt(value))}
+                    >
+                      <SelectTrigger className="mt-2">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="0">Normal</SelectItem>
+                        <SelectItem value="1">Important</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Important items are prioritized in the rotation.
+                    </p>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="duration-override">Duration Override (seconds)</Label>
+                    <Input
+                      id="duration-override"
+                      type="number"
+                      min="60"
+                      placeholder="Leave empty for device default"
+                      value={editDurationOverride}
+                      onChange={(e) => setEditDurationOverride(e.target.value)}
+                      className="mt-2"
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Override the device's default refresh rate for this item only. 
+                      Leave empty to use the device's configured refresh rate.
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
             {schedules.length === 0 ? (
               <Card>
                 <CardContent className="text-center py-8">
@@ -783,14 +839,13 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
                   </p>
                   <Button 
                     onClick={() => {
-                      // Add a default schedule
+                      // Add a default schedule (times are in local time for UI display)
                       const defaultSchedule = {
                         id: `temp-${Date.now()}`,
                         name: "Daily Schedule",
                         day_mask: 127, // All days (1+2+4+8+16+32+64)
-                        start_time: "09:00:00",
-                        end_time: "17:00:00",
-                        timezone: "UTC",
+                        start_time: "09:00:00", // Local time for display
+                        end_time: "17:00:00", // Local time for display
                         is_active: true
                       };
                       setSchedules([defaultSchedule]);
@@ -821,82 +876,90 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
                       </div>
                     </CardHeader>
                     <CardContent className="space-y-4">
-                      <div>
-                        <Label>Schedule Name</Label>
-                        <Input
-                          value={schedule.name || ""}
-                          onChange={(e) => {
-                            const updated = [...schedules];
-                            updated[index] = { ...updated[index], name: e.target.value };
-                            setSchedules(updated);
-                          }}
-                          placeholder="e.g., Work Hours, Weekend Only"
-                          className="mt-2"
-                        />
-                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <Label>Schedule Name</Label>
+                          <Input
+                            value={schedule.name || ""}
+                            onChange={(e) => {
+                              const updated = [...schedules];
+                              updated[index] = { ...updated[index], name: e.target.value };
+                              setSchedules(updated);
+                            }}
+                            placeholder="e.g., Work Hours, Weekend Only"
+                            className="mt-2"
+                          />
+                        </div>
 
-                      <div>
-                        <Label>Days of Week</Label>
-                        <div className="mt-2 grid grid-cols-7 gap-2">
-                          {[
-                            { name: "Sun", bit: 1 },
-                            { name: "Mon", bit: 2 },
-                            { name: "Tue", bit: 4 },
-                            { name: "Wed", bit: 8 },
-                            { name: "Thu", bit: 16 },
-                            { name: "Fri", bit: 32 },
-                            { name: "Sat", bit: 64 }
-                          ].map(({ name, bit }) => (
-                            <div key={name} className="flex flex-col items-center">
-                              <Checkbox
-                                id={`${schedule.id}-${name}`}
-                                checked={(schedule.day_mask & bit) > 0}
-                                onCheckedChange={(checked) => {
-                                  const updated = [...schedules];
-                                  if (checked) {
-                                    updated[index] = { ...updated[index], day_mask: schedule.day_mask | bit };
-                                  } else {
-                                    updated[index] = { ...updated[index], day_mask: schedule.day_mask & ~bit };
-                                  }
-                                  setSchedules(updated);
-                                }}
-                              />
-                              <Label 
-                                htmlFor={`${schedule.id}-${name}`}
-                                className="text-xs mt-1 cursor-pointer"
-                              >
-                                {name}
-                              </Label>
-                            </div>
-                          ))}
+                        <div>
+                          <Label>Days of Week</Label>
+                          <div className="mt-2 grid grid-cols-7 gap-2">
+                            {[
+                              { name: "Sun", bit: 1 },
+                              { name: "Mon", bit: 2 },
+                              { name: "Tue", bit: 4 },
+                              { name: "Wed", bit: 8 },
+                              { name: "Thu", bit: 16 },
+                              { name: "Fri", bit: 32 },
+                              { name: "Sat", bit: 64 }
+                            ].map(({ name, bit }) => (
+                              <div key={name} className="flex flex-col items-center">
+                                <Checkbox
+                                  id={`${schedule.id}-${name}`}
+                                  checked={(schedule.day_mask & bit) > 0}
+                                  onCheckedChange={(checked) => {
+                                    const updated = [...schedules];
+                                    if (checked) {
+                                      updated[index] = { ...updated[index], day_mask: schedule.day_mask | bit };
+                                    } else {
+                                      updated[index] = { ...updated[index], day_mask: schedule.day_mask & ~bit };
+                                    }
+                                    setSchedules(updated);
+                                  }}
+                                />
+                                <Label 
+                                  htmlFor={`${schedule.id}-${name}`}
+                                  className="text-xs mt-1 cursor-pointer"
+                                >
+                                  {name}
+                                </Label>
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       </div>
 
                       <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <Label>Start Time</Label>
+                        <div className="flex flex-col gap-3">
+                          <Label htmlFor={`start-time-${schedule.id}`} className="px-1">
+                            Start Time
+                          </Label>
                           <Input
                             type="time"
+                            id={`start-time-${schedule.id}`}
                             value={schedule.start_time?.substring(0, 5) || "09:00"}
                             onChange={(e) => {
                               const updated = [...schedules];
                               updated[index] = { ...updated[index], start_time: `${e.target.value}:00` };
                               setSchedules(updated);
                             }}
-                            className="mt-2"
+                            className="bg-background appearance-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-calendar-picker-indicator]:appearance-none"
                           />
                         </div>
-                        <div>
-                          <Label>End Time</Label>
+                        <div className="flex flex-col gap-3">
+                          <Label htmlFor={`end-time-${schedule.id}`} className="px-1">
+                            End Time
+                          </Label>
                           <Input
                             type="time"
+                            id={`end-time-${schedule.id}`}
                             value={schedule.end_time?.substring(0, 5) || "17:00"}
                             onChange={(e) => {
                               const updated = [...schedules];
                               updated[index] = { ...updated[index], end_time: `${e.target.value}:00` };
                               setSchedules(updated);
                             }}
-                            className="mt-2"
+                            className="bg-background appearance-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-calendar-picker-indicator]:appearance-none"
                           />
                         </div>
                       </div>
@@ -925,10 +988,9 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
                     const newSchedule = {
                       id: `temp-${Date.now()}`,
                       name: `Schedule ${schedules.length + 1}`,
-                      day_mask: 127, // All days
-                      start_time: "09:00:00",
-                      end_time: "17:00:00",
-                      timezone: "UTC",
+                      day_mask: 127, // All days (1+2+4+8+16+32+64)
+                      start_time: "09:00:00", // Local time for display
+                      end_time: "17:00:00", // Local time for display
                       is_active: true
                     };
                     setSchedules([...schedules, newSchedule]);
@@ -952,15 +1014,10 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
               Cancel
             </Button>
             <Button
-              onClick={() => {
-                // TODO: Save schedules to backend
-                setShowScheduleDialog(false);
-                setScheduleItem(null);
-                setSchedules([]);
-              }}
+              onClick={saveSchedules}
               disabled={scheduleLoading}
             >
-              {scheduleLoading ? "Saving..." : "Save Schedules"}
+              {scheduleLoading ? "Saving..." : "Save Schedules & Settings"}
             </Button>
           </DialogFooter>
         </DialogContent>

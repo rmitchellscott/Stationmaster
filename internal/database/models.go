@@ -447,7 +447,7 @@ func GetAllModels() []interface{} {
 		&Schedule{},
 		&DeviceLog{},
 		&FirmwareVersion{},
-		// &DeviceModel{}, // Managed manually due to foreign key constraints with devices table
+		// &DeviceModel{}, // Managed manually in migrations to avoid foreign key constraint issues
 		// &FirmwareUpdateJob{}, // Removed - using automatic updates
 	}
 }

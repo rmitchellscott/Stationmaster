@@ -591,6 +591,7 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
   const [showScheduleDialog, setShowScheduleDialog] = useState(false);
   const [scheduleItem, setScheduleItem] = useState<PlaylistItem | null>(null);
   const [schedules, setSchedules] = useState<any[]>([]);
+  const [originalSchedules, setOriginalSchedules] = useState<any[]>([]);
   const [scheduleLoading, setScheduleLoading] = useState(false);
 
   // Drag and drop sensors
@@ -883,11 +884,25 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
     }));
     
     setSchedules(schedulesWithLocalTimes);
+    setOriginalSchedules(JSON.parse(JSON.stringify(schedulesWithLocalTimes))); // Deep copy for comparison
     
     // Also load the edit data for importance and duration
     setEditImportance(item.importance);
     setEditDurationOverride(item.duration_override ? item.duration_override.toString() : "");
     setShowScheduleDialog(true);
+  };
+
+  const hasScheduleChanges = () => {
+    if (!scheduleItem) return false;
+    
+    // Check if importance or duration changed
+    const importanceChanged = editImportance !== scheduleItem.importance;
+    const durationChanged = editDurationOverride !== (scheduleItem.duration_override ? scheduleItem.duration_override.toString() : "");
+    
+    // Check if schedules changed
+    const schedulesChanged = JSON.stringify(schedules) !== JSON.stringify(originalSchedules);
+    
+    return importanceChanged || durationChanged || schedulesChanged;
   };
 
   const saveSchedules = async () => {
@@ -971,6 +986,7 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
       setShowScheduleDialog(false);
       setScheduleItem(null);
       setSchedules([]);
+      setOriginalSchedules([]);
       await fetchPlaylistItems(); // Refresh to get updated schedules
       onUpdate?.();
     } catch (error) {
@@ -1477,13 +1493,14 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
                 setShowScheduleDialog(false);
                 setScheduleItem(null);
                 setSchedules([]);
+                setOriginalSchedules([]);
               }}
             >
               Cancel
             </Button>
             <Button
               onClick={saveSchedules}
-              disabled={scheduleLoading}
+              disabled={scheduleLoading || !hasScheduleChanges()}
             >
               {scheduleLoading ? "Saving..." : "Save Schedules & Settings"}
             </Button>

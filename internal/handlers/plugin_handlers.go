@@ -24,6 +24,12 @@ func GetPluginsHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"plugins": plugins})
 }
 
+// UserPluginResponse represents a user plugin with computed status
+type UserPluginResponse struct {
+	database.UserPlugin
+	IsUsedInPlaylists bool `json:"is_used_in_playlists"`
+}
+
 // GetUserPluginsHandler returns all plugin instances for the current user
 func GetUserPluginsHandler(c *gin.Context) {
 	user, ok := auth.RequireUser(c)
@@ -41,7 +47,17 @@ func GetUserPluginsHandler(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"user_plugins": userPlugins})
+	// Create response with playlist usage information
+	var response []UserPluginResponse
+	for _, userPlugin := range userPlugins {
+		isUsed := len(userPlugin.PlaylistItems) > 0
+		response = append(response, UserPluginResponse{
+			UserPlugin:        userPlugin,
+			IsUsedInPlaylists: isUsed,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{"user_plugins": response})
 }
 
 // CreateUserPluginHandler creates a new plugin instance for the user
@@ -244,11 +260,11 @@ func CreatePluginHandler(c *gin.Context) {
 	pluginService := database.NewPluginService(db)
 
 	plugin, err := pluginService.CreatePlugin(
-		req.Name, 
-		req.Type, 
-		req.Description, 
-		req.ConfigSchema, 
-		req.Version, 
+		req.Name,
+		req.Type,
+		req.Description,
+		req.ConfigSchema,
+		req.Version,
 		req.Author,
 	)
 	if err != nil {

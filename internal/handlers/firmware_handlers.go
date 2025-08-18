@@ -115,7 +115,7 @@ func GetFirmwareStatsHandler(c *gin.Context) {
 
 	// Count devices by firmware update settings
 	var devicesWithUpdatesEnabled, devicesWithUpdatesDisabled int64
-	
+
 	db.Model(&database.Device{}).Where("allow_firmware_updates = ?", true).Count(&devicesWithUpdatesEnabled)
 	db.Model(&database.Device{}).Where("allow_firmware_updates = ?", false).Count(&devicesWithUpdatesDisabled)
 
@@ -124,7 +124,7 @@ func GetFirmwareStatsHandler(c *gin.Context) {
 		Version string `json:"version"`
 		Count   int64  `json:"count"`
 	}
-	
+
 	var distribution []FirmwareDistribution
 	db.Model(&database.Device{}).
 		Select("firmware_version as version, count(*) as count").
@@ -165,40 +165,40 @@ func countDownloadedVersions(versions []database.FirmwareVersion) int {
 // TriggerFirmwarePollHandler triggers a manual firmware poll with immediate feedback
 func TriggerFirmwarePollHandler(c *gin.Context) {
 	db := database.GetDB()
-	
+
 	logging.Logf("[MANUAL FIRMWARE POLL] Starting manual firmware poll")
-	
+
 	// Create firmware poller for discovery
 	firmwarePoller := pollers.NewFirmwarePoller(db)
-	
+
 	// Create a context with timeout for the initial discovery
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	
+
 	// Do the firmware discovery synchronously to create database entries immediately
 	if err := firmwarePoller.DiscoverFirmware(ctx); err != nil {
 		logging.Logf("[MANUAL FIRMWARE POLL] Discovery failed: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to discover firmware versions"})
 		return
 	}
-	
+
 	// Start downloads in a background goroutine
 	go func() {
 		// Create a background context for downloads (not tied to HTTP request)
 		downloadCtx, downloadCancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		defer downloadCancel()
-		
+
 		logging.Logf("[MANUAL FIRMWARE POLL] Starting background downloads")
-		
+
 		// Start downloads for any pending firmware
 		if err := firmwarePoller.StartPendingDownloads(downloadCtx); err != nil {
 			logging.Logf("[MANUAL FIRMWARE POLL] Download failed: %v", err)
 			return
 		}
-		
+
 		logging.Logf("[MANUAL FIRMWARE POLL] Background downloads completed")
 	}()
-	
+
 	// Return immediately with firmware entries now available
 	c.JSON(http.StatusOK, gin.H{"message": "Firmware discovery completed, downloads started"})
 }
@@ -263,18 +263,18 @@ func RetryFirmwareDownloadHandler(c *gin.Context) {
 		ctx := context.Background()
 		ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 		defer cancel()
-		
+
 		logging.Logf("[RETRY DOWNLOAD] Starting download for firmware %s", firmwareVersion.Version)
-		
+
 		// Create a firmware poller to use its download functionality
 		firmwarePoller := pollers.NewFirmwarePoller(db)
-		
+
 		// Reset status to downloading
 		firmwareVersion.DownloadStatus = "pending"
 		firmwareVersion.DownloadProgress = 0
 		firmwareVersion.DownloadError = ""
 		db.Save(firmwareVersion)
-		
+
 		// Execute the download
 		if err := firmwarePoller.DownloadFirmware(ctx, firmwareVersion); err != nil {
 			logging.Logf("[RETRY DOWNLOAD] Failed to download firmware %s: %v", firmwareVersion.Version, err)
@@ -289,26 +289,26 @@ func RetryFirmwareDownloadHandler(c *gin.Context) {
 // TriggerModelPollHandler triggers a manual model poll
 func TriggerModelPollHandler(c *gin.Context) {
 	db := database.GetDB()
-	
+
 	// Create a temporary model poller for manual polling
 	modelPoller := pollers.NewModelPoller(db)
-	
+
 	// Create a context with timeout for the manual poll
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	
+
 	// Execute the poll directly (not through the background service)
 	if err := modelPoller.Start(ctx); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to start model poll"})
 		return
 	}
-	
+
 	// Wait a moment for the poll to start, then stop it
 	time.Sleep(100 * time.Millisecond)
 	if err := modelPoller.Stop(); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to complete model poll"})
 		return
 	}
-	
+
 	c.JSON(http.StatusOK, gin.H{"message": "Model poll completed successfully"})
 }

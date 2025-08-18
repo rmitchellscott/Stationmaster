@@ -18,13 +18,13 @@ import (
 // ExportMetadata contains information about the export
 type ExportMetadata struct {
 	StationmasterVersion string    `json:"stationmaster_version"`
-	GitCommit           string    `json:"git_commit"`
-	ExportTimestamp     time.Time `json:"export_timestamp"`
-	DatabaseType        string    `json:"database_type"`
-	UsersExported       []string  `json:"users_exported"`
-	TotalUsers          int       `json:"total_users"`
-	TotalAPIKeys        int       `json:"total_api_keys"`
-	ExportedTables      []string  `json:"exported_tables"`
+	GitCommit            string    `json:"git_commit"`
+	ExportTimestamp      time.Time `json:"export_timestamp"`
+	DatabaseType         string    `json:"database_type"`
+	UsersExported        []string  `json:"users_exported"`
+	TotalUsers           int       `json:"total_users"`
+	TotalAPIKeys         int       `json:"total_api_keys"`
+	ExportedTables       []string  `json:"exported_tables"`
 }
 
 // ExportOptions configures what to include in the export
@@ -67,7 +67,7 @@ func (e *Exporter) Export(outputPath string, options ExportOptions) error {
 
 	// Create directory structure
 	dbDir := filepath.Join(tempDir, "database")
-	
+
 	if err := os.MkdirAll(dbDir, 0755); err != nil {
 		return fmt.Errorf("failed to create database directory: %w", err)
 	}
@@ -125,17 +125,17 @@ func (e *Exporter) exportDatabase(dbDir string, metadata *ExportMetadata, option
 
 	for _, model := range models {
 		tableName := getTableName(model)
-		
+
 		// Get all records for this model
 		var records []map[string]interface{}
-		
+
 		query := e.db
-		
+
 		// Filter by user ID if specified and model has UserID field
 		if len(options.UserIDs) > 0 && hasUserIDField(model) {
 			query = query.Where("user_id IN ?", options.UserIDs)
 		}
-		
+
 		if err := query.Model(model).Find(&records).Error; err != nil {
 			return fmt.Errorf("failed to export table %s: %w", tableName, err)
 		}
@@ -150,23 +150,23 @@ func (e *Exporter) exportDatabase(dbDir string, metadata *ExportMetadata, option
 	}
 
 	metadata.ExportedTables = exportedTables
-	
+
 	// Count total users and API keys for metadata
 	var userCount int64
 	var apiKeyCount int64
-	
+
 	// Count all users (not just exported ones)
 	if err := e.db.Model(&database.User{}).Count(&userCount).Error; err != nil {
 		fmt.Printf("[WARNING] Failed to count users for metadata: %v\n", err)
 	}
 	metadata.TotalUsers = int(userCount)
-	
+
 	// Count all API keys
 	if err := e.db.Model(&database.APIKey{}).Count(&apiKeyCount).Error; err != nil {
 		fmt.Printf("[WARNING] Failed to count API keys for metadata: %v\n", err)
 	}
 	metadata.TotalAPIKeys = int(apiKeyCount)
-	
+
 	return nil
 }
 

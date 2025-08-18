@@ -95,6 +95,41 @@ func RunMigrations(logPrefix string) error {
 				return tx.Where("name = ? AND type = ?", "Core Proxy", "core_proxy").Delete(&Plugin{}).Error
 			},
 		},
+		{
+			ID: "202501180000_add_manual_model_fields",
+			Migrate: func(tx *gorm.DB) error {
+				// Check if manual_model_override column already exists
+				if tx.Migrator().HasColumn(&Device{}, "manual_model_override") {
+					return nil // Columns already exist, skip
+				}
+
+				// For SQLite, we need to handle foreign keys carefully
+				var dbType string
+				if err := tx.Raw("SELECT sqlite_version()").Scan(&dbType); err == nil {
+					// SQLite - temporarily disable foreign keys
+					if err := tx.Exec("PRAGMA foreign_keys = OFF").Error; err != nil {
+						return fmt.Errorf("failed to disable foreign keys: %w", err)
+					}
+					defer tx.Exec("PRAGMA foreign_keys = ON")
+				}
+
+				// Add the manual_model_override column with default value of false
+				if err := tx.Exec("ALTER TABLE devices ADD COLUMN manual_model_override BOOLEAN DEFAULT FALSE").Error; err != nil {
+					return fmt.Errorf("failed to add manual_model_override column: %w", err)
+				}
+
+				// Add the reported_model_name column
+				if err := tx.Exec("ALTER TABLE devices ADD COLUMN reported_model_name VARCHAR(100)").Error; err != nil {
+					return fmt.Errorf("failed to add reported_model_name column: %w", err)
+				}
+
+				return nil
+			},
+			Rollback: func(tx *gorm.DB) error {
+				// SQLite doesn't support dropping columns easily, so we'll leave them
+				return nil
+			},
+		},
 	})
 
 	// Set initial schema if this is a fresh database

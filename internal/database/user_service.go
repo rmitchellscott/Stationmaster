@@ -73,18 +73,18 @@ func (s *UserService) CreateUser(username, email, password string, isAdmin bool)
 
 // AuthenticateUser validates user credentials and returns user if valid
 func (s *UserService) AuthenticateUser(username, password string) (*User, error) {
-        var user User
-        if err := s.db.Where("LOWER(username) = LOWER(?)", username).First(&user).Error; err != nil {
-                return nil, errors.New("invalid credentials")
-        }
+	var user User
+	if err := s.db.Where("LOWER(username) = LOWER(?)", username).First(&user).Error; err != nil {
+		return nil, errors.New("invalid credentials")
+	}
 
-        if !user.IsActive {
-                return nil, errors.New("account disabled")
-        }
+	if !user.IsActive {
+		return nil, errors.New("account disabled")
+	}
 
-        if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
-                return nil, errors.New("invalid credentials")
-        }
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
+		return nil, errors.New("invalid credentials")
+	}
 
 	// Update last login
 	now := time.Now()
@@ -221,7 +221,7 @@ func (s *UserService) GetUserStats(userID uuid.UUID) (map[string]interface{}, er
 func (s *UserService) CompleteOnboarding(userID uuid.UUID) error {
 	return s.db.Model(&User{}).Where("id = ?", userID).Updates(map[string]interface{}{
 		"onboarding_completed": true,
-		"updated_at":          time.Now(),
+		"updated_at":           time.Now(),
 	}).Error
 }
 

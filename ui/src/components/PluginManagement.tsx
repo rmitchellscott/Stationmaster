@@ -9,6 +9,16 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Alert,
   AlertDescription,
 } from "@/components/ui/alert";
@@ -66,6 +76,7 @@ interface UserPlugin {
   created_at: string;
   updated_at: string;
   plugin: Plugin;
+  is_used_in_playlists: boolean;
 }
 
 interface PluginManagementProps {
@@ -94,6 +105,12 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
   const [editInstanceName, setEditInstanceName] = useState("");
   const [editInstanceSettings, setEditInstanceSettings] = useState<Record<string, any>>({});
   const [updateLoading, setUpdateLoading] = useState(false);
+
+  // Delete confirmation dialog
+  const [deletePluginDialog, setDeletePluginDialog] = useState<{
+    isOpen: boolean;
+    plugin: UserPlugin | null;
+  }>({ isOpen: false, plugin: null });
 
   const fetchUserPlugins = async () => {
     try {
@@ -212,10 +229,6 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
   };
 
   const deleteUserPlugin = async (userPluginId: string) => {
-    if (!confirm("Are you sure you want to delete this plugin instance?")) {
-      return;
-    }
-
     try {
       setError(null);
       const response = await fetch(`/api/user-plugins/${userPluginId}`, {
@@ -383,7 +396,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                       <div>
                         <div>{userPlugin.name}</div>
                         <div className="text-sm text-muted-foreground lg:hidden">
-                          {userPlugin.plugin?.name || "Unknown Plugin"} • {userPlugin.is_active ? "Active" : "Inactive"}
+                          {userPlugin.plugin?.name || "Unknown Plugin"} • {userPlugin.is_used_in_playlists ? "Active" : "Unused"}
                         </div>
                       </div>
                     </TableCell>
@@ -393,10 +406,10 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                       </div>
                     </TableCell>
                     <TableCell className="hidden md:table-cell">
-                      {userPlugin.is_active ? (
+                      {userPlugin.is_used_in_playlists ? (
                         <Badge variant="outline">Active</Badge>
                       ) : (
-                        <Badge variant="secondary">Inactive</Badge>
+                        <Badge variant="secondary">Unused</Badge>
                       )}
                     </TableCell>
                     <TableCell className="hidden lg:table-cell">
@@ -433,7 +446,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => deleteUserPlugin(userPlugin.id)}
+                          onClick={() => setDeletePluginDialog({ isOpen: true, plugin: userPlugin })}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -668,6 +681,57 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Plugin Instance Confirmation Dialog */}
+      <AlertDialog
+        open={deletePluginDialog.isOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeletePluginDialog({ isOpen: false, plugin: null });
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-destructive" />
+              Delete Plugin Instance
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete the plugin instance "{deletePluginDialog.plugin?.name}"?
+              <br /><br />
+              This will:
+              <ul className="list-disc list-outside ml-6 mt-2 space-y-1">
+                <li>Permanently delete this plugin instance and its settings</li>
+                <li>Remove it from any playlists it's currently in</li>
+                <li>Stop displaying this content on devices</li>
+              </ul>
+              <br />
+              <strong className="text-destructive">
+                This action cannot be undone.
+              </strong>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              onClick={() => setDeletePluginDialog({ isOpen: false, plugin: null })}
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={async () => {
+                if (deletePluginDialog.plugin) {
+                  await deleteUserPlugin(deletePluginDialog.plugin.id);
+                  setDeletePluginDialog({ isOpen: false, plugin: null });
+                }
+              }}
+            >
+              Delete Instance
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

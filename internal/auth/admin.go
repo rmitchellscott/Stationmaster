@@ -93,13 +93,13 @@ func GetSystemStatusHandler(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"database": gin.H{
-			"total_users":    dbStats.TotalUsers,
-			"active_users":   dbStats.ActiveUsers,
+			"total_users":  dbStats.TotalUsers,
+			"active_users": dbStats.ActiveUsers,
 			"api_keys": gin.H{
 				"total":  dbStats.TotalAPIKeys,
 				"active": dbStats.ActiveAPIKeys,
 			},
-			"documents":      0, // Stationmaster doesn't have documents
+			"documents":       0, // Stationmaster doesn't have documents
 			"active_sessions": activeSessions,
 		},
 		"smtp": gin.H{
@@ -326,7 +326,7 @@ func GetBackupJobsHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"jobs": jobs,
+		"jobs":  jobs,
 		"total": len(jobs),
 	})
 }
@@ -409,7 +409,7 @@ func UploadRestoreFileHandler(c *gin.Context) {
 	filename := header.Filename
 	if !strings.HasSuffix(filename, ".tar.gz") && !strings.HasSuffix(filename, ".tgz") {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": fmt.Sprintf("Invalid file type. Please select a backup archive (.tar.gz or .tgz). Selected file: %s", filename),
+			"error":      fmt.Sprintf("Invalid file type. Please select a backup archive (.tar.gz or .tgz). Selected file: %s", filename),
 			"error_type": "backup_file_type",
 		})
 		return
@@ -552,7 +552,7 @@ func RestoreDatabaseHandler(c *gin.Context) {
 
 	// Create importer and restore
 	importer := export.NewImporter(database.DB, config.Get("DATA_DIR", "/data"))
-	
+
 	options := export.ImportOptions{
 		OverwriteDatabase: true,
 		OverwriteFiles:    true,

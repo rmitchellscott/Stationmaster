@@ -124,7 +124,7 @@ func LogoutHandler(c *gin.Context) {
 		OIDCLogoutHandler(c)
 		return
 	}
-	
+
 	// Regular logout for non-OIDC sessions
 	secure := !allowInsecure()
 	c.SetSameSite(http.SameSiteStrictMode)

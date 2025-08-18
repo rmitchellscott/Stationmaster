@@ -96,7 +96,7 @@ func (i *Importer) validateMetadata(metadata *ExportMetadata) error {
 	if metadata.ExportTimestamp.IsZero() {
 		return fmt.Errorf("invalid backup: missing export timestamp")
 	}
-	
+
 	// Could add version compatibility checks here
 	return nil
 }
@@ -183,19 +183,19 @@ func (i *Importer) importTable(jsonFile, tableName string, options ImportOptions
 // clearDatabase removes all existing data
 func (i *Importer) clearDatabase() error {
 	models := database.GetAllModels()
-	
+
 	// Delete in reverse order to handle foreign key constraints
 	for idx := len(models) - 1; idx >= 0; idx-- {
 		model := models[idx]
 		tableName := getTableName(model)
-		
+
 		// Use Unscoped() to permanently delete (not soft delete)
 		if err := i.db.Unscoped().Where("1 = 1").Delete(model).Error; err != nil {
 			return fmt.Errorf("failed to clear table %s: %w", tableName, err)
 		}
 		fmt.Printf("[IMPORT] Cleared table: %s\n", tableName)
 	}
-	
+
 	return nil
 }
 

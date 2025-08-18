@@ -123,7 +123,7 @@ func GetAPIKeysHandler(c *gin.Context) {
 	if err != nil {
 		maxKeysStr = "10" // Default fallback
 	}
-	
+
 	maxKeys, err := strconv.Atoi(maxKeysStr)
 	if err != nil {
 		maxKeys = 10
@@ -144,9 +144,9 @@ func GetAPIKeysHandler(c *gin.Context) {
 	}
 
 	response := map[string]interface{}{
-		"api_keys":        apiKeyResponses,
-		"max_api_keys":    maxKeys,
-		"current_count":   len(apiKeys),
+		"api_keys":      apiKeyResponses,
+		"max_api_keys":  maxKeys,
+		"current_count": len(apiKeys),
 	}
 
 	c.JSON(http.StatusOK, response)
@@ -359,7 +359,7 @@ func GetAllAPIKeysHandler(c *gin.Context) {
 	var total int64
 
 	query := database.DB.Model(&database.APIKey{})
-	
+
 	// Count total
 	if err := query.Count(&total).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to count API keys"})
@@ -397,10 +397,10 @@ func GetAllAPIKeysHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"api_keys":     response,
-		"total":        total,
-		"page":         page,
-		"limit":        limit,
-		"total_pages":  (total + int64(limit) - 1) / int64(limit),
+		"api_keys":    response,
+		"total":       total,
+		"page":        page,
+		"limit":       limit,
+		"total_pages": (total + int64(limit) - 1) / int64(limit),
 	})
 }

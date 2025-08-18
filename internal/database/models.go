@@ -202,6 +202,8 @@ type Device struct {
 	FriendlyID           string     `gorm:"size:10;not null;uniqueIndex" json:"friendly_id"`  // Generated short ID like "917F0B"
 	Name                 string     `gorm:"size:255" json:"name,omitempty"`                   // User-defined name, empty until claimed
 	ModelName            *string    `gorm:"size:100;index" json:"model_name,omitempty"`       // Device model identifier
+	ManualModelOverride  bool       `gorm:"default:false" json:"manual_model_override"`       // True if model was manually set by user
+	ReportedModelName    *string    `gorm:"size:100" json:"reported_model_name,omitempty"`    // Last model reported by device
 	APIKey               string     `gorm:"size:255;not null;index" json:"api_key"`
 	IsClaimed            bool       `gorm:"default:false" json:"is_claimed"`
 	FirmwareVersion      string     `gorm:"size:50" json:"firmware_version,omitempty"`
@@ -306,8 +308,8 @@ type PlaylistItem struct {
 	UserPluginID     uuid.UUID `gorm:"type:uuid;not null;index" json:"user_plugin_id"`
 	OrderIndex       int       `gorm:"not null" json:"order_index"`
 	IsVisible        bool      `gorm:"default:true" json:"is_visible"`
-	Importance       int       `gorm:"default:0" json:"importance"` // 0=normal, 1=important
-	DurationOverride *int      `json:"duration_override,omitempty"` // override default refresh rate
+	Importance       bool      `gorm:"default:false" json:"importance"` // false=normal, true=important
+	DurationOverride *int      `json:"duration_override,omitempty"`     // override default refresh rate
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`
 

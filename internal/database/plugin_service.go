@@ -88,7 +88,7 @@ func (ps *PluginService) CreateUserPlugin(userID, pluginID uuid.UUID, name strin
 // GetUserPluginsByUserID returns all plugin instances for a user
 func (ps *PluginService) GetUserPluginsByUserID(userID uuid.UUID) ([]UserPlugin, error) {
 	var userPlugins []UserPlugin
-	err := ps.db.Preload("Plugin").Where("user_id = ? AND is_active = ?", userID, true).Order("created_at DESC").Find(&userPlugins).Error
+	err := ps.db.Preload("Plugin").Preload("PlaylistItems").Where("user_id = ? AND is_active = ?", userID, true).Order("created_at DESC").Find(&userPlugins).Error
 	return userPlugins, err
 }
 
@@ -173,9 +173,9 @@ func (ps *PluginService) GetPluginStats() (map[string]interface{}, error) {
 	}
 
 	return map[string]interface{}{
-		"total_plugins":        totalPlugins,
-		"active_plugins":       activePlugins,
-		"total_user_plugins":   totalUserPlugins,
-		"active_user_plugins":  activeUserPlugins,
+		"total_plugins":       totalPlugins,
+		"active_plugins":      activePlugins,
+		"total_user_plugins":  totalUserPlugins,
+		"active_user_plugins": activeUserPlugins,
 	}, nil
 }

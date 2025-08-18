@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/rmitchellscott/stationmaster/internal/database"
 	"github.com/rmitchellscott/stationmaster/internal/logging"
+	"github.com/rmitchellscott/stationmaster/internal/sse"
 )
 
 // SetupHandler handles device setup requests from TRMNL devices
@@ -212,6 +213,22 @@ func DisplayHandler(c *gin.Context) {
 	device, err = deviceService.GetDeviceByAPIKey(accessToken)
 	if err != nil {
 		logging.Logf("[/api/display] Failed to refresh device data for %s: %v", device.MacAddress, err)
+	} else {
+		// Broadcast device status update to connected SSE clients
+		sseService := sse.GetSSEService()
+		sseService.BroadcastToDevice(device.ID, sse.Event{
+			Type: "device_status_updated",
+			Data: map[string]interface{}{
+				"device_id":        device.ID.String(),
+				"battery_voltage":  device.BatteryVoltage,
+				"rssi":             device.RSSI,
+				"firmware_version": device.FirmwareVersion,
+				"last_seen":        device.LastSeen,
+				"is_active":        device.IsActive,
+				"timestamp":        time.Now().UTC(),
+			},
+		})
+		logging.Logf("[SSE] Broadcasted device status update for device %s: battery=%.2f, rssi=%d", device.MacAddress, device.BatteryVoltage, device.RSSI)
 	}
 
 	// Get current playlist items for this device
@@ -480,15 +497,8 @@ func processActivePlugins(device *database.Device, activeItems []database.Playli
 	// Get the next item in rotation
 	item := activeItems[nextIndex]
 
-	// Update device's last playlist index for next rotation
-	db := database.GetDB()
-	deviceService := database.NewDeviceService(db)
-	if err := deviceService.UpdateLastPlaylistIndex(device.ID, nextIndex); err != nil {
-		// Log error but don't fail the request
-		// The rotation will still work, just might repeat an item next time
-	}
-
 	// Get the user plugin details
+	db := database.GetDB()
 	pluginService := database.NewPluginService(db)
 
 	userPlugin, err := pluginService.GetUserPluginByID(item.UserPluginID)
@@ -496,24 +506,50 @@ func processActivePlugins(device *database.Device, activeItems []database.Playli
 		return nil, nil, fmt.Errorf("failed to get user plugin: %w", err)
 	}
 
+	var response gin.H
+	var pluginErr error
+
 	// Handle different plugin types
 	switch userPlugin.Plugin.Type {
 	case "redirect":
-		response, err := processRedirectPlugin(userPlugin)
-		return response, &item, err
+		response, pluginErr = processRedirectPlugin(userPlugin)
 	case "alias":
-		response, err := processAliasPlugin(userPlugin)
-		return response, &item, err
+		response, pluginErr = processAliasPlugin(userPlugin)
 	case "core_proxy":
-		response, err := processCoreProxyPlugin(device, userPlugin)
-		return response, &item, err
+		response, pluginErr = processCoreProxyPlugin(device, userPlugin)
 	default:
 		// For other plugin types, return default response
-		return gin.H{
+		response = gin.H{
 			"image_url": getImageURLForDevice(device),
 			"filename":  "display.png",
-		}, &item, nil
+		}
 	}
+
+	// Only update the playlist index if plugin processing was successful
+	if pluginErr == nil {
+		deviceService := database.NewDeviceService(db)
+		if err := deviceService.UpdateLastPlaylistIndex(device.ID, nextIndex); err != nil {
+			// Log error but don't fail the request
+			// The rotation will still work, just might repeat an item next time
+			logging.Logf("[PLAYLIST] Failed to update last playlist index for device %s: %v", device.MacAddress, err)
+		} else {
+			// Broadcast playlist index change to connected SSE clients
+			sseService := sse.GetSSEService()
+			sseService.BroadcastToDevice(device.ID, sse.Event{
+				Type: "playlist_index_changed",
+				Data: map[string]interface{}{
+					"device_id":     device.ID.String(),
+					"current_index": nextIndex,
+					"current_item":  item,
+					"active_items":  activeItems,
+					"timestamp":     time.Now().UTC(),
+				},
+			})
+			logging.Logf("[SSE] Broadcasted playlist index change for device %s: index %d", device.MacAddress, nextIndex)
+		}
+	}
+
+	return response, &item, pluginErr
 }
 
 // processRedirectPlugin handles redirect plugin type by fetching JSON from external endpoint

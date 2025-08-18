@@ -17,32 +17,32 @@ type DatabaseStats struct {
 // GetDatabaseStats returns database statistics
 func GetDatabaseStats(db *gorm.DB) (*DatabaseStats, error) {
 	stats := &DatabaseStats{}
-	
+
 	// Count users
 	if err := db.Model(&User{}).Count(&stats.TotalUsers).Error; err != nil {
 		return nil, err
 	}
-	
+
 	// Count active users
 	if err := db.Model(&User{}).Where("is_active = ?", true).Count(&stats.ActiveUsers).Error; err != nil {
 		return nil, err
 	}
-	
+
 	// Count API keys
 	if err := db.Model(&APIKey{}).Count(&stats.TotalAPIKeys).Error; err != nil {
 		return nil, err
 	}
-	
+
 	// Count active API keys
 	if err := db.Model(&APIKey{}).Where("is_active = ?", true).Count(&stats.ActiveAPIKeys).Error; err != nil {
 		return nil, err
 	}
-	
+
 	// Count sessions
 	if err := db.Model(&UserSession{}).Count(&stats.TotalSessions).Error; err != nil {
 		return nil, err
 	}
-	
+
 	return stats, nil
 }
 
@@ -52,7 +52,7 @@ func CleanupOldData(db *gorm.DB, sessionDays, loginAttemptDays int) error {
 	if err := db.Where("expires_at < NOW()").Delete(&UserSession{}).Error; err != nil {
 		return err
 	}
-	
+
 	// Clean up old login attempts
 	if loginAttemptDays > 0 {
 		if err := db.Where("attempted_at < NOW() - INTERVAL ? DAY", loginAttemptDays).Delete(&LoginAttempt{}).Error; err != nil {
@@ -62,7 +62,7 @@ func CleanupOldData(db *gorm.DB, sessionDays, loginAttemptDays int) error {
 			}
 		}
 	}
-	
+
 	return nil
 }
 

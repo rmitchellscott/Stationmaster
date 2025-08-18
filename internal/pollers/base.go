@@ -10,13 +10,13 @@ import (
 
 // BasePoller provides common functionality for all pollers
 type BasePoller struct {
-	config    PollerConfig
-	running   bool
-	ctx       context.Context
-	cancel    context.CancelFunc
-	wg        sync.WaitGroup
-	mu        sync.RWMutex
-	pollFunc  func(ctx context.Context) error
+	config   PollerConfig
+	running  bool
+	ctx      context.Context
+	cancel   context.CancelFunc
+	wg       sync.WaitGroup
+	mu       sync.RWMutex
+	pollFunc func(ctx context.Context) error
 }
 
 // NewBasePoller creates a new base poller instance
@@ -133,7 +133,7 @@ func (p *BasePoller) executeWithRetry() {
 			return // Success
 		}
 
-		logging.Logf("[POLLER] %s attempt %d/%d failed: %v", 
+		logging.Logf("[POLLER] %s attempt %d/%d failed: %v",
 			p.config.Name, attempt+1, p.config.MaxRetries, err)
 
 		if attempt < p.config.MaxRetries-1 {

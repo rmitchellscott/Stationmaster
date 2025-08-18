@@ -26,6 +26,7 @@ import (
 	"github.com/rmitchellscott/stationmaster/internal/handlers"
 	"github.com/rmitchellscott/stationmaster/internal/logging"
 	"github.com/rmitchellscott/stationmaster/internal/pollers"
+	"github.com/rmitchellscott/stationmaster/internal/sse"
 	"github.com/rmitchellscott/stationmaster/internal/trmnl"
 	"github.com/rmitchellscott/stationmaster/internal/version"
 )
@@ -63,24 +64,31 @@ func main() {
 	// Initialize proxy auth if configured
 	auth.InitProxyAuth()
 
+	// Initialize SSE service
+	sse.InitializeSSEService()
+
 	// Initialize and start background pollers
 	pollerManager := pollers.NewManager()
-	
+
 	// Register pollers
 	db := database.GetDB()
 	firmwarePoller := pollers.NewFirmwarePoller(db)
 	modelPoller := pollers.NewModelPoller(db)
-	
+
 	pollerManager.Register(firmwarePoller)
 	pollerManager.Register(modelPoller)
-	
-	// Start pollers
+
+	// Start pollers and SSE keep-alive
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	
+
 	if err := pollerManager.Start(ctx); err != nil {
 		log.Fatalf("Failed to start pollers: %v", err)
 	}
+
+	// Start SSE keep-alive service
+	sseService := sse.GetSSEService()
+	go sseService.KeepAlive(ctx)
 
 	port := config.Get("PORT", "")
 	if port == "" {
@@ -146,7 +154,7 @@ func main() {
 	router.GET("/api/trmnl/devices/:deviceId/image", trmnl.DeviceImageHandler)
 	router.GET("/api/trmnl/firmware/:version/download", trmnl.FirmwareDownloadHandler)
 	router.POST("/api/trmnl/firmware/update-complete", trmnl.FirmwareUpdateCompleteHandler)
-	
+
 	// Public firmware downloads (no authentication required)
 	// Custom handler to serve firmware files
 	router.GET("/files/firmware/*filepath", func(c *gin.Context) {
@@ -227,90 +235,94 @@ func main() {
 		admin.POST("/cleanup", auth.CleanupDataHandler)         // POST /api/admin/cleanup - cleanup old data
 
 		// Backup & Restore endpoints
-		admin.POST("/backup/analyze", auth.AnalyzeBackupHandler)             // POST /api/admin/backup/analyze - analyze backup file
-		admin.POST("/backup-job", auth.CreateBackupJobHandler)               // POST /api/admin/backup-job - create background backup job
-		admin.GET("/backup-jobs", auth.GetBackupJobsHandler)                 // GET /api/admin/backup-jobs - get backup jobs
-		admin.GET("/backup-job/:id", auth.GetBackupJobHandler)               // GET /api/admin/backup-job/:id - get backup job
-		admin.DELETE("/backup-job/:id", auth.DeleteBackupJobHandler)         // DELETE /api/admin/backup-job/:id - delete backup job
-		admin.POST("/restore/upload", auth.UploadRestoreFileHandler)         // POST /api/admin/restore/upload - upload restore file
-		admin.GET("/restore/uploads", auth.GetRestoreUploadsHandler)         // GET /api/admin/restore/uploads - get pending uploads
+		admin.POST("/backup/analyze", auth.AnalyzeBackupHandler)              // POST /api/admin/backup/analyze - analyze backup file
+		admin.POST("/backup-job", auth.CreateBackupJobHandler)                // POST /api/admin/backup-job - create background backup job
+		admin.GET("/backup-jobs", auth.GetBackupJobsHandler)                  // GET /api/admin/backup-jobs - get backup jobs
+		admin.GET("/backup-job/:id", auth.GetBackupJobHandler)                // GET /api/admin/backup-job/:id - get backup job
+		admin.DELETE("/backup-job/:id", auth.DeleteBackupJobHandler)          // DELETE /api/admin/backup-job/:id - delete backup job
+		admin.POST("/restore/upload", auth.UploadRestoreFileHandler)          // POST /api/admin/restore/upload - upload restore file
+		admin.GET("/restore/uploads", auth.GetRestoreUploadsHandler)          // GET /api/admin/restore/uploads - get pending uploads
 		admin.DELETE("/restore/uploads/:id", auth.DeleteRestoreUploadHandler) // DELETE /api/admin/restore/uploads/:id - delete restore upload
-		admin.POST("/restore", auth.RestoreDatabaseHandler)                  // POST /api/admin/restore - restore from backup
+		admin.POST("/restore", auth.RestoreDatabaseHandler)                   // POST /api/admin/restore - restore from backup
 
 		// Admin device management
-		admin.GET("/devices", handlers.GetAllDevicesHandler)                 // GET /api/admin/devices - list all devices
-		admin.GET("/devices/stats", handlers.GetDeviceStatsHandler)          // GET /api/admin/devices/stats - get device statistics
-		admin.DELETE("/devices/:id/unlink", handlers.UnlinkDeviceHandler)    // DELETE /api/admin/devices/:id/unlink - unlink device
+		admin.GET("/devices", handlers.GetAllDevicesHandler)              // GET /api/admin/devices - list all devices
+		admin.GET("/devices/stats", handlers.GetDeviceStatsHandler)       // GET /api/admin/devices/stats - get device statistics
+		admin.DELETE("/devices/:id/unlink", handlers.UnlinkDeviceHandler) // DELETE /api/admin/devices/:id/unlink - unlink device
 
 		// Admin plugin management
-		admin.POST("/plugins", handlers.CreatePluginHandler)                 // POST /api/admin/plugins - create system plugin
-		admin.PUT("/plugins/:id", handlers.UpdatePluginHandler)              // PUT /api/admin/plugins/:id - update system plugin
-		admin.DELETE("/plugins/:id", handlers.DeletePluginHandler)           // DELETE /api/admin/plugins/:id - delete system plugin
-		admin.GET("/plugins/stats", handlers.GetPluginStatsHandler)          // GET /api/admin/plugins/stats - get plugin statistics
+		admin.POST("/plugins", handlers.CreatePluginHandler)        // POST /api/admin/plugins - create system plugin
+		admin.PUT("/plugins/:id", handlers.UpdatePluginHandler)     // PUT /api/admin/plugins/:id - update system plugin
+		admin.DELETE("/plugins/:id", handlers.DeletePluginHandler)  // DELETE /api/admin/plugins/:id - delete system plugin
+		admin.GET("/plugins/stats", handlers.GetPluginStatsHandler) // GET /api/admin/plugins/stats - get plugin statistics
 
 		// Firmware management endpoints
-		admin.GET("/firmware/versions", handlers.GetFirmwareVersionsHandler)           // GET /api/admin/firmware/versions - list firmware versions
-		admin.GET("/firmware/latest", handlers.GetLatestFirmwareVersionHandler)       // GET /api/admin/firmware/latest - get latest firmware version
-		admin.GET("/firmware/stats", handlers.GetFirmwareStatsHandler)                // GET /api/admin/firmware/stats - get firmware statistics
-		admin.GET("/firmware/status", handlers.GetFirmwareStatusHandler)              // GET /api/admin/firmware/status - get real-time download status
+		admin.GET("/firmware/versions", handlers.GetFirmwareVersionsHandler)              // GET /api/admin/firmware/versions - list firmware versions
+		admin.GET("/firmware/latest", handlers.GetLatestFirmwareVersionHandler)           // GET /api/admin/firmware/latest - get latest firmware version
+		admin.GET("/firmware/stats", handlers.GetFirmwareStatsHandler)                    // GET /api/admin/firmware/stats - get firmware statistics
+		admin.GET("/firmware/status", handlers.GetFirmwareStatusHandler)                  // GET /api/admin/firmware/status - get real-time download status
 		admin.POST("/firmware/versions/:id/retry", handlers.RetryFirmwareDownloadHandler) // POST /api/admin/firmware/versions/:id/retry - retry firmware download
-		admin.DELETE("/firmware/versions/:id", handlers.DeleteFirmwareVersionHandler) // DELETE /api/admin/firmware/versions/:id - delete firmware version
+		admin.DELETE("/firmware/versions/:id", handlers.DeleteFirmwareVersionHandler)     // DELETE /api/admin/firmware/versions/:id - delete firmware version
 
 		// Device model management endpoints
-		admin.GET("/device-models", handlers.GetDeviceModelsHandler)                  // GET /api/admin/device-models - list device models
+		admin.GET("/device-models", handlers.GetDeviceModelsHandler) // GET /api/admin/device-models - list device models
 
-		// Manual polling endpoints  
-		admin.POST("/firmware/poll", handlers.TriggerFirmwarePollHandler)             // POST /api/admin/firmware/poll - trigger manual firmware poll
-		admin.POST("/models/poll", handlers.TriggerModelPollHandler)                  // POST /api/admin/models/poll - trigger manual model poll
+		// Manual polling endpoints
+		admin.POST("/firmware/poll", handlers.TriggerFirmwarePollHandler) // POST /api/admin/firmware/poll - trigger manual firmware poll
+		admin.POST("/models/poll", handlers.TriggerModelPollHandler)      // POST /api/admin/models/poll - trigger manual model poll
 	}
 
 	// Device management endpoints
 	devices := protected.Group("/devices")
 	{
 		devices.GET("", handlers.GetDevicesHandler)                         // GET /api/devices - list user's devices
+		devices.GET("/models", handlers.GetDeviceModelOptionsHandler)       // GET /api/devices/models - list available device models
 		devices.POST("/claim", handlers.ClaimDeviceHandler)                 // POST /api/devices/claim - claim unclaimed device
 		devices.GET("/:id", handlers.GetDeviceHandler)                      // GET /api/devices/:id - get specific device
 		devices.PUT("/:id", handlers.UpdateDeviceHandler)                   // PUT /api/devices/:id - update device
 		devices.DELETE("/:id", handlers.DeleteDeviceHandler)                // DELETE /api/devices/:id - delete device
 		devices.GET("/:id/logs", handlers.GetDeviceLogsHandler)             // GET /api/devices/:id/logs - get device logs
+		devices.GET("/:id/events", handlers.DeviceEventsHandler)            // GET /api/devices/:id/events - SSE for device events
+		devices.GET("/:id/active-items", handlers.DeviceActiveItemsHandler) // GET /api/devices/:id/active-items - get schedule-filtered active items
 	}
 
 	// Plugin management endpoints
 	plugins := protected.Group("/plugins")
 	{
-		plugins.GET("", handlers.GetPluginsHandler)                         // GET /api/plugins - list available plugins
+		plugins.GET("", handlers.GetPluginsHandler) // GET /api/plugins - list available plugins
 	}
 
 	// User plugin management endpoints
 	userPlugins := protected.Group("/user-plugins")
 	{
-		userPlugins.GET("", handlers.GetUserPluginsHandler)                 // GET /api/user-plugins - list user's plugin instances
-		userPlugins.POST("", handlers.CreateUserPluginHandler)              // POST /api/user-plugins - create plugin instance
-		userPlugins.GET("/:id", handlers.GetUserPluginHandler)              // GET /api/user-plugins/:id - get plugin instance
-		userPlugins.PUT("/:id", handlers.UpdateUserPluginHandler)           // PUT /api/user-plugins/:id - update plugin instance
-		userPlugins.DELETE("/:id", handlers.DeleteUserPluginHandler)        // DELETE /api/user-plugins/:id - delete plugin instance
+		userPlugins.GET("", handlers.GetUserPluginsHandler)          // GET /api/user-plugins - list user's plugin instances
+		userPlugins.POST("", handlers.CreateUserPluginHandler)       // POST /api/user-plugins - create plugin instance
+		userPlugins.GET("/:id", handlers.GetUserPluginHandler)       // GET /api/user-plugins/:id - get plugin instance
+		userPlugins.PUT("/:id", handlers.UpdateUserPluginHandler)    // PUT /api/user-plugins/:id - update plugin instance
+		userPlugins.DELETE("/:id", handlers.DeleteUserPluginHandler) // DELETE /api/user-plugins/:id - delete plugin instance
 	}
 
 	// Playlist management endpoints
 	playlists := protected.Group("/playlists")
 	{
-		playlists.GET("", handlers.GetPlaylistsHandler)                     // GET /api/playlists - list user's playlists
-		playlists.POST("", handlers.CreatePlaylistHandler)                  // POST /api/playlists - create playlist
-		playlists.GET("/:id", handlers.GetPlaylistHandler)                  // GET /api/playlists/:id - get playlist with items
-		playlists.PUT("/:id", handlers.UpdatePlaylistHandler)               // PUT /api/playlists/:id - update playlist
-		playlists.DELETE("/:id", handlers.DeletePlaylistHandler)            // DELETE /api/playlists/:id - delete playlist
-		playlists.POST("/:id/items", handlers.AddPlaylistItemHandler)       // POST /api/playlists/:id/items - add item to playlist
-		playlists.PUT("/:id/reorder", handlers.ReorderPlaylistItemsHandler) // PUT /api/playlists/:id/reorder - reorder items
-		playlists.PUT("/items/:itemId", handlers.UpdatePlaylistItemHandler) // PUT /api/playlists/items/:itemId - update playlist item
-		playlists.DELETE("/items/:itemId", handlers.DeletePlaylistItemHandler) // DELETE /api/playlists/items/:itemId - delete playlist item
-		playlists.POST("/items/:itemId/schedules", handlers.AddScheduleHandler)      // POST /api/playlists/items/:itemId/schedules - add schedule
-		playlists.PUT("/schedules/:scheduleId", handlers.UpdateScheduleHandler)      // PUT /api/playlists/schedules/:scheduleId - update schedule
-		playlists.DELETE("/schedules/:scheduleId", handlers.DeleteScheduleHandler)   // DELETE /api/playlists/schedules/:scheduleId - delete schedule
+		playlists.GET("", handlers.GetPlaylistsHandler)                                // GET /api/playlists - list user's playlists
+		playlists.POST("", handlers.CreatePlaylistHandler)                             // POST /api/playlists - create playlist
+		playlists.GET("/:id", handlers.GetPlaylistHandler)                             // GET /api/playlists/:id - get playlist with items
+		playlists.PUT("/:id", handlers.UpdatePlaylistHandler)                          // PUT /api/playlists/:id - update playlist
+		playlists.DELETE("/:id", handlers.DeletePlaylistHandler)                       // DELETE /api/playlists/:id - delete playlist
+		playlists.POST("/:id/items", handlers.AddPlaylistItemHandler)                  // POST /api/playlists/:id/items - add item to playlist
+		playlists.PUT("/:id/reorder", handlers.ReorderPlaylistItemsHandler)            // PUT /api/playlists/:id/reorder - reorder items (legacy)
+		playlists.PUT("/:id/reorder-array", handlers.ReorderPlaylistItemsArrayHandler) // PUT /api/playlists/:id/reorder-array - reorder items by array
+		playlists.PUT("/items/:itemId", handlers.UpdatePlaylistItemHandler)            // PUT /api/playlists/items/:itemId - update playlist item
+		playlists.DELETE("/items/:itemId", handlers.DeletePlaylistItemHandler)         // DELETE /api/playlists/items/:itemId - delete playlist item
+		playlists.POST("/items/:itemId/schedules", handlers.AddScheduleHandler)        // POST /api/playlists/items/:itemId/schedules - add schedule
+		playlists.PUT("/schedules/:scheduleId", handlers.UpdateScheduleHandler)        // PUT /api/playlists/schedules/:scheduleId - update schedule
+		playlists.DELETE("/schedules/:scheduleId", handlers.DeleteScheduleHandler)     // DELETE /api/playlists/schedules/:scheduleId - delete schedule
 	}
 
 	// Dashboard endpoint (simple placeholder for now)
 	protected.GET("/dashboard", handlers.DashboardHandler)
-	
+
 	// User endpoints
 	protected.POST("/user/complete-onboarding", handlers.CompleteOnboardingHandler)
 
@@ -394,7 +406,7 @@ func main() {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
-	
+
 	logging.Logf("[SHUTDOWN] Shutting down server and pollers...")
 
 	// Stop pollers first

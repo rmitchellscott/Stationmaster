@@ -52,7 +52,7 @@ func MigrateToMultiUser() error {
 	}
 
 	logging.Logf("[STARTUP] Successfully created admin user")
-	
+
 	// Run database migrations
 	return RunMigrations("STARTUP")
 }

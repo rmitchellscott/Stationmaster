@@ -1,13 +1,18 @@
 package handlers
 
 import (
+	"errors"
+	"log"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/rmitchellscott/stationmaster/internal/auth"
 	"github.com/rmitchellscott/stationmaster/internal/database"
+	"github.com/rmitchellscott/stationmaster/internal/sse"
 	"github.com/rmitchellscott/stationmaster/internal/utils"
+	"gorm.io/gorm"
 )
 
 // GetPlaylistsHandler returns all playlists for the current user, optionally filtered by device
@@ -264,7 +269,7 @@ func AddPlaylistItemHandler(c *gin.Context) {
 
 	var req struct {
 		UserPluginID     uuid.UUID `json:"user_plugin_id" binding:"required"`
-		Importance       int       `json:"importance"`
+		Importance       bool      `json:"importance"`
 		DurationOverride *int      `json:"duration_override"`
 	}
 
@@ -307,6 +312,18 @@ func AddPlaylistItemHandler(c *gin.Context) {
 		return
 	}
 
+	// Broadcast playlist item added event
+	sseService := sse.GetSSEService()
+	sseService.BroadcastToDevice(playlist.DeviceID, sse.Event{
+		Type: "playlist_item_added",
+		Data: map[string]interface{}{
+			"device_id":     playlist.DeviceID.String(),
+			"playlist_id":   playlist.ID.String(),
+			"playlist_item": item,
+			"timestamp":     time.Now().UTC(),
+		},
+	})
+
 	c.JSON(http.StatusCreated, gin.H{"playlist_item": item})
 }
 
@@ -327,7 +344,7 @@ func UpdatePlaylistItemHandler(c *gin.Context) {
 
 	var req struct {
 		IsVisible        *bool `json:"is_visible"`
-		Importance       *int  `json:"importance"`
+		Importance       *bool `json:"importance"`
 		DurationOverride *int  `json:"duration_override"`
 	}
 
@@ -369,6 +386,24 @@ func UpdatePlaylistItemHandler(c *gin.Context) {
 		return
 	}
 
+	// Determine the event type based on what was updated
+	eventType := "playlist_item_updated"
+	if req.IsVisible != nil {
+		eventType = "playlist_item_visibility_changed"
+	}
+
+	// Broadcast playlist item update event
+	sseService := sse.GetSSEService()
+	sseService.BroadcastToDevice(playlist.DeviceID, sse.Event{
+		Type: eventType,
+		Data: map[string]interface{}{
+			"device_id":     playlist.DeviceID.String(),
+			"playlist_id":   playlist.ID.String(),
+			"playlist_item": item,
+			"timestamp":     time.Now().UTC(),
+		},
+	})
+
 	c.JSON(http.StatusOK, gin.H{"playlist_item": item})
 }
 
@@ -381,33 +416,74 @@ func DeletePlaylistItemHandler(c *gin.Context) {
 	userUUID := user.ID
 	itemIDStr := c.Param("itemId")
 
+	log.Printf("[DeletePlaylistItemHandler] User %s attempting to delete playlist item %s", userUUID.String(), itemIDStr)
+
 	itemID, err := uuid.Parse(itemIDStr)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid item ID"})
+		log.Printf("[DeletePlaylistItemHandler] Invalid item ID format: %s", itemIDStr)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid item ID format"})
 		return
 	}
 
 	db := database.GetDB()
 	playlistService := database.NewPlaylistService(db)
 
+	// Get the playlist item with detailed logging
 	item, err := playlistService.GetPlaylistItemByID(itemID)
 	if err != nil {
+		log.Printf("[DeletePlaylistItemHandler] Playlist item not found: %s, error: %v", itemID.String(), err)
 		c.JSON(http.StatusNotFound, gin.H{"error": "Playlist item not found"})
 		return
 	}
 
+	log.Printf("[DeletePlaylistItemHandler] Found playlist item %s in playlist %s", itemID.String(), item.PlaylistID.String())
+
 	// Verify ownership through playlist
 	playlist, err := playlistService.GetPlaylistByID(item.PlaylistID)
-	if err != nil || playlist.UserID != userUUID {
+	if err != nil {
+		log.Printf("[DeletePlaylistItemHandler] Failed to get playlist %s: %v", item.PlaylistID.String(), err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify playlist ownership"})
+		return
+	}
+
+	if playlist.UserID != userUUID {
+		log.Printf("[DeletePlaylistItemHandler] Access denied - user %s does not own playlist %s (owner: %s)", 
+			userUUID.String(), playlist.ID.String(), playlist.UserID.String())
 		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
 		return
 	}
 
+	log.Printf("[DeletePlaylistItemHandler] Ownership verified, proceeding with deletion")
+
+	// Attempt to delete the playlist item
 	err = playlistService.DeletePlaylistItem(itemID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete playlist item"})
+		log.Printf("[DeletePlaylistItemHandler] Failed to delete playlist item %s: %v", itemID.String(), err)
+		
+		// Provide more specific error messages
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Playlist item not found"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete playlist item: " + err.Error()})
+		}
 		return
 	}
+
+	log.Printf("[DeletePlaylistItemHandler] Successfully deleted playlist item %s", itemID.String())
+
+	// Broadcast playlist item removed event
+	sseService := sse.GetSSEService()
+	sseService.BroadcastToDevice(playlist.DeviceID, sse.Event{
+		Type: "playlist_item_removed",
+		Data: map[string]interface{}{
+			"device_id":   playlist.DeviceID.String(),
+			"playlist_id": playlist.ID.String(),
+			"item_id":     itemID.String(),
+			"timestamp":   time.Now().UTC(),
+		},
+	})
+
+	log.Printf("[DeletePlaylistItemHandler] Broadcast SSE event for item deletion")
 
 	c.JSON(http.StatusOK, gin.H{"message": "Playlist item deleted successfully"})
 }
@@ -471,6 +547,77 @@ func ReorderPlaylistItemsHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Playlist items reordered successfully"})
 }
 
+// ReorderPlaylistItemsArrayHandler updates the order of playlist items based on an ordered array
+func ReorderPlaylistItemsArrayHandler(c *gin.Context) {
+	user, ok := auth.RequireUser(c)
+	if !ok {
+		return
+	}
+	userUUID := user.ID
+	playlistIDStr := c.Param("id")
+
+	playlistID, err := uuid.Parse(playlistIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid playlist ID"})
+		return
+	}
+
+	var req struct {
+		ItemIDs []string `json:"item_ids" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	db := database.GetDB()
+	playlistService := database.NewPlaylistService(db)
+
+	// Verify playlist ownership
+	playlist, err := playlistService.GetPlaylistByID(playlistID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Playlist not found"})
+		return
+	}
+
+	if playlist.UserID != userUUID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
+		return
+	}
+
+	// Convert string IDs to UUIDs
+	orderedItemIDs := make([]uuid.UUID, len(req.ItemIDs))
+	for i, itemIDStr := range req.ItemIDs {
+		itemID, err := uuid.Parse(itemIDStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid item ID in order array"})
+			return
+		}
+		orderedItemIDs[i] = itemID
+	}
+
+	err = playlistService.ReorderPlaylistItemsByArray(playlistID, orderedItemIDs)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to reorder playlist items"})
+		return
+	}
+
+	// Broadcast playlist item reordered event
+	sseService := sse.GetSSEService()
+	sseService.BroadcastToDevice(playlist.DeviceID, sse.Event{
+		Type: "playlist_item_reordered",
+		Data: map[string]interface{}{
+			"device_id":        playlist.DeviceID.String(),
+			"playlist_id":      playlist.ID.String(),
+			"ordered_item_ids": req.ItemIDs,
+			"timestamp":        time.Now().UTC(),
+		},
+	})
+
+	c.JSON(http.StatusOK, gin.H{"message": "Playlist items reordered successfully"})
+}
+
 // Schedule handlers
 
 // AddScheduleHandler adds a schedule to a playlist item
@@ -504,7 +651,7 @@ func AddScheduleHandler(c *gin.Context) {
 	if req.Timezone == "" {
 		req.Timezone = "UTC"
 	}
-	
+
 	// Validate timezone
 	if err := utils.ValidateTimezone(req.Timezone); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid timezone: " + err.Error()})

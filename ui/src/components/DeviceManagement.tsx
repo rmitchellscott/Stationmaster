@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "@/components/AuthProvider";
+import { useDeviceEvents } from "@/hooks/useDeviceEvents";
 import {
   Dialog,
   DialogContent,
@@ -18,6 +19,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -80,6 +88,8 @@ interface Device {
   friendly_id: string;
   name?: string;
   model_name?: string;
+  manual_model_override: boolean;
+  reported_model_name?: string;
   api_key: string;
   is_claimed: boolean;
   firmware_version?: string;
@@ -124,6 +134,9 @@ export function DeviceManagement({ isOpen, onClose }: DeviceManagementProps) {
   const [editDevice, setEditDevice] = useState<Device | null>(null);
   const [editDeviceName, setEditDeviceName] = useState("");
   const [editRefreshRate, setEditRefreshRate] = useState("");
+  const [editModelName, setEditModelName] = useState<string>("");
+  const [deviceModels, setDeviceModels] = useState<DeviceModel[]>([]);
+  const [modelsLoading, setModelsLoading] = useState(false);
 
   // Device deletion
   const [deleteDevice, setDeleteDevice] = useState<Device | null>(null);
@@ -141,6 +154,77 @@ export function DeviceManagement({ isOpen, onClose }: DeviceManagementProps) {
     if (isOpen) {
       fetchDevices();
     }
+  }, [isOpen]);
+
+  // Real-time device updates
+  useEffect(() => {
+    if (!isOpen || devices.length === 0) return;
+
+    const eventSources: EventSource[] = [];
+    
+    // Create SSE connections for each device
+    devices.forEach(device => {
+      try {
+        const eventSource = new EventSource(`/api/devices/${device.id}/events`, {
+          withCredentials: true,
+        });
+
+        eventSource.onmessage = (event) => {
+          try {
+            const parsedEvent = JSON.parse(event.data);
+            
+            if (parsedEvent.type === 'device_status_updated') {
+              const data = parsedEvent.data;
+              
+              // Update the specific device in the devices array
+              setDevices(prevDevices => 
+                prevDevices.map(d => 
+                  d.id === data.device_id 
+                    ? {
+                        ...d,
+                        battery_voltage: data.battery_voltage,
+                        rssi: data.rssi,
+                        firmware_version: data.firmware_version,
+                        last_seen: data.last_seen,
+                        is_active: data.is_active,
+                      }
+                    : d
+                )
+              );
+            }
+          } catch (parseError) {
+            console.error(`[SSE] Failed to parse device event:`, parseError);
+          }
+        };
+
+        eventSource.onerror = (error) => {
+          console.error(`[SSE] Device ${device.id} event error:`, error);
+        };
+
+        eventSources.push(eventSource);
+      } catch (error) {
+        console.error(`[SSE] Failed to connect to device ${device.id}:`, error);
+      }
+    });
+
+    // Cleanup function
+    return () => {
+      eventSources.forEach(eventSource => {
+        eventSource.close();
+      });
+    };
+  }, [isOpen, devices.length]); // Only depend on devices.length to avoid infinite loops
+
+  // Live timestamp updates for "last seen"
+  useEffect(() => {
+    if (!isOpen) return;
+    
+    const interval = setInterval(() => {
+      // Force re-render to update relative timestamps
+      setDevices(prevDevices => [...prevDevices]);
+    }, 10000); // Update every 10 seconds
+
+    return () => clearInterval(interval);
   }, [isOpen]);
 
   const fetchDevices = async () => {
@@ -220,16 +304,23 @@ export function DeviceManagement({ isOpen, onClose }: DeviceManagementProps) {
     try {
       setError(null);
 
+      const requestBody: any = {
+        name: editDeviceName.trim(),
+        refresh_rate: refreshRate,
+      };
+
+      // Add model name if it has changed from the original
+      if (editModelName !== (editDevice.model_name || "")) {
+        requestBody.model_name = editModelName || null;
+      }
+
       const response = await fetch(`/api/devices/${editDevice.id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
         },
         credentials: "include",
-        body: JSON.stringify({
-          name: editDeviceName.trim(),
-          refresh_rate: refreshRate,
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       if (response.ok) {
@@ -239,6 +330,38 @@ export function DeviceManagement({ isOpen, onClose }: DeviceManagementProps) {
       } else {
         const errorData = await response.json();
         setError(errorData.error || "Failed to update device");
+      }
+    } catch (error) {
+      setError("Network error occurred");
+    }
+  };
+
+  const clearModelOverride = async () => {
+    if (!editDevice) return;
+
+    try {
+      setError(null);
+
+      const response = await fetch(`/api/devices/${editDevice.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+        body: JSON.stringify({
+          name: editDeviceName.trim(),
+          refresh_rate: parseInt(editRefreshRate),
+          clear_model_override: true,
+        }),
+      });
+
+      if (response.ok) {
+        setSuccessMessage("Device model override cleared!");
+        setEditDevice(null);
+        await fetchDevices();
+      } else {
+        const errorData = await response.json();
+        setError(errorData.error || "Failed to clear model override");
       }
     } catch (error) {
       setError("Network error occurred");
@@ -272,10 +395,36 @@ export function DeviceManagement({ isOpen, onClose }: DeviceManagementProps) {
     }
   };
 
+  const fetchDeviceModels = async () => {
+    try {
+      setModelsLoading(true);
+      const response = await fetch("/api/devices/models", {
+        credentials: "include",
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setDeviceModels(data.models || []);
+      } else {
+        console.error("Failed to fetch device models");
+      }
+    } catch (error) {
+      console.error("Error fetching device models:", error);
+    } finally {
+      setModelsLoading(false);
+    }
+  };
+
   const openEditDialog = (device: Device) => {
     setEditDevice(device);
     setEditDeviceName(device.name || "");
     setEditRefreshRate(device.refresh_rate.toString());
+    setEditModelName(device.model_name || "");
+    
+    // Fetch device models when opening edit dialog
+    if (deviceModels.length === 0) {
+      fetchDeviceModels();
+    }
   };
 
   const fetchDeviceLogs = async (device: Device, offset = 0) => {
@@ -734,6 +883,41 @@ export function DeviceManagement({ isOpen, onClose }: DeviceManagementProps) {
               />
               <p className="text-sm text-muted-foreground mt-1">
                 How often the device should check for new content (60-86400 seconds)
+              </p>
+            </div>
+            <div>
+              <Label htmlFor="edit-model-name">Device Model</Label>
+              <Select value={editModelName} onValueChange={setEditModelName}>
+                <SelectTrigger className="mt-2">
+                  <SelectValue placeholder={modelsLoading ? "Loading models..." : "Select a model (optional)"} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">No model selected</SelectItem>
+                  {deviceModels.map((model) => (
+                    <SelectItem key={model.model_name} value={model.model_name}>
+                      {model.display_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {editDevice && editDevice.manual_model_override && editDevice.reported_model_name && (
+                <div className="mt-2 p-2 bg-muted rounded text-sm">
+                  <p className="text-muted-foreground">
+                    Device reported model: {editDevice.reported_model_name}
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={clearModelOverride}
+                    className="mt-1"
+                  >
+                    Reset to Device Model
+                  </Button>
+                </div>
+              )}
+              <p className="text-sm text-muted-foreground mt-1">
+                Override the device model for display purposes. Leave empty for auto-detection.
               </p>
             </div>
           </div>

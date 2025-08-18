@@ -15,8 +15,8 @@ func ConfigHandler(c *gin.Context) {
 		"authEnabled":         true, // Stationmaster always requires authentication
 		"multiUserMode":       true, // Stationmaster always operates in multi-user mode
 		"registrationEnabled": config.Get("PUBLIC_REGISTRATION_ENABLED", "false") == "true",
-		"oidcEnabled":        config.Get("OIDC_ENABLED", "false") == "true",
-		"proxyAuthEnabled":   config.Get("PROXY_AUTH_ENABLED", "false") == "true",
+		"oidcEnabled":         config.Get("OIDC_ENABLED", "false") == "true",
+		"proxyAuthEnabled":    config.Get("PROXY_AUTH_ENABLED", "false") == "true",
 	})
 }
 
@@ -26,10 +26,10 @@ func DashboardHandler(c *gin.Context) {
 	if !ok {
 		return
 	}
-	
+
 	c.JSON(http.StatusOK, gin.H{
-		"message": "Welcome to Stationmaster",
-		"userID":  user.ID.String(),
+		"message":  "Welcome to Stationmaster",
+		"userID":   user.ID.String(),
 		"username": user.Username,
 	})
 }

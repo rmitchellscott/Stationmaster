@@ -10,12 +10,12 @@ func ValidateTimezone(timezone string) error {
 	if timezone == "" {
 		return fmt.Errorf("timezone cannot be empty")
 	}
-	
+
 	_, err := time.LoadLocation(timezone)
 	if err != nil {
 		return fmt.Errorf("invalid timezone: %s", timezone)
 	}
-	
+
 	return nil
 }
 
@@ -24,7 +24,7 @@ func GetValidTimezones() []string {
 	return []string{
 		"UTC",
 		"America/New_York",
-		"America/Chicago", 
+		"America/Chicago",
 		"America/Denver",
 		"America/Los_Angeles",
 		"America/Anchorage",
@@ -90,12 +90,12 @@ func ConvertTimeToTimezone(t time.Time, timezone string) (time.Time, error) {
 	if timezone == "" {
 		timezone = "UTC"
 	}
-	
+
 	loc, err := time.LoadLocation(timezone)
 	if err != nil {
 		return time.Time{}, fmt.Errorf("invalid timezone: %s", timezone)
 	}
-	
+
 	return t.In(loc), nil
 }
 
@@ -109,10 +109,10 @@ func NormalizeTimezone(timezone string) string {
 	if timezone == "" {
 		return "UTC"
 	}
-	
+
 	if IsValidTimezone(timezone) {
 		return timezone
 	}
-	
+
 	return "UTC"
 }

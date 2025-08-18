@@ -149,3 +149,12 @@ html.auth-check body {
     max-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 1rem);
   }
 }
+
+/* Sortable row styles - prevent text selection on iOS during drag and drop */
+.sortable-row {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}

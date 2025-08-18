@@ -40,7 +40,7 @@ func NewFilesystemBackend(dataDir string) *FilesystemBackend {
 // Put stores data in the filesystem
 func (f *FilesystemBackend) Put(ctx context.Context, key string, reader io.Reader) error {
 	fullPath := filepath.Join(f.dataDir, key)
-	
+
 	// Ensure directory exists
 	dir := filepath.Dir(fullPath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -66,7 +66,7 @@ func (f *FilesystemBackend) Put(ctx context.Context, key string, reader io.Reade
 // Get retrieves data from the filesystem
 func (f *FilesystemBackend) Get(ctx context.Context, key string) (io.ReadCloser, error) {
 	fullPath := filepath.Join(f.dataDir, key)
-	
+
 	file, err := os.Open(fullPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file %s: %w", fullPath, err)
@@ -78,7 +78,7 @@ func (f *FilesystemBackend) Get(ctx context.Context, key string) (io.ReadCloser,
 // Delete removes a file from the filesystem
 func (f *FilesystemBackend) Delete(ctx context.Context, key string) error {
 	fullPath := filepath.Join(f.dataDir, key)
-	
+
 	err := os.Remove(fullPath)
 	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to delete file %s: %w", fullPath, err)
@@ -90,9 +90,9 @@ func (f *FilesystemBackend) Delete(ctx context.Context, key string) error {
 // ListWithInfo lists files with the given prefix and returns their info
 func (f *FilesystemBackend) ListWithInfo(ctx context.Context, prefix string) ([]FileInfo, error) {
 	var files []FileInfo
-	
+
 	prefixPath := filepath.Join(f.dataDir, prefix)
-	
+
 	// If prefix is exact file, check if it exists
 	if info, err := os.Stat(prefixPath); err == nil && !info.IsDir() {
 		relPath, _ := filepath.Rel(f.dataDir, prefixPath)

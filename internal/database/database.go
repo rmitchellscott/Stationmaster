@@ -141,7 +141,7 @@ func initSQLite(config *DatabaseConfig) (*gorm.DB, error) {
 	if err := db.Exec("PRAGMA foreign_keys = ON").Error; err != nil {
 		return nil, err
 	}
-	
+
 	// Verify foreign keys are enabled
 	var fkEnabled int
 	if err := db.Raw("PRAGMA foreign_keys").Scan(&fkEnabled).Error; err != nil {
@@ -170,7 +170,6 @@ func runMigrations(logPrefix string) error {
 	logging.Logf("[%s] GORM auto-migration completed successfully", logPrefix)
 	return nil
 }
-
 
 // RunAutoMigrations runs GORM auto-migration for all models (public wrapper)
 func RunAutoMigrations(logPrefix string) error {

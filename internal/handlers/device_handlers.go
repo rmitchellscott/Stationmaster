@@ -1,14 +1,17 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/rmitchellscott/stationmaster/internal/auth"
 	"github.com/rmitchellscott/stationmaster/internal/database"
 	"github.com/rmitchellscott/stationmaster/internal/logging"
+	"github.com/rmitchellscott/stationmaster/internal/sse"
 )
 
 // GetDevicesHandler returns all devices for the current user
@@ -116,10 +119,12 @@ func UpdateDeviceHandler(c *gin.Context) {
 	}
 
 	var req struct {
-		Name                 string `json:"name"`
-		RefreshRate          int    `json:"refresh_rate"`
-		IsActive             *bool  `json:"is_active"`
-		AllowFirmwareUpdates *bool  `json:"allow_firmware_updates"`
+		Name                 string  `json:"name"`
+		RefreshRate          int     `json:"refresh_rate"`
+		IsActive             *bool   `json:"is_active"`
+		AllowFirmwareUpdates *bool   `json:"allow_firmware_updates"`
+		ModelName            *string `json:"model_name"`
+		ClearModelOverride   *bool   `json:"clear_model_override"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -154,6 +159,31 @@ func UpdateDeviceHandler(c *gin.Context) {
 	}
 	if req.AllowFirmwareUpdates != nil {
 		device.AllowFirmwareUpdates = *req.AllowFirmwareUpdates
+	}
+
+	// Handle model name updates
+	if req.ClearModelOverride != nil && *req.ClearModelOverride {
+		// Clear manual override - reset to device-reported model or empty
+		device.ManualModelOverride = false
+		if device.ReportedModelName != nil && *device.ReportedModelName != "" {
+			device.ModelName = device.ReportedModelName
+		} else {
+			device.ModelName = nil
+		}
+	} else if req.ModelName != nil {
+		// Validate the model exists if not empty
+		if *req.ModelName != "" {
+			if err := deviceService.ValidateDeviceModel(*req.ModelName); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+			device.ModelName = req.ModelName
+			device.ManualModelOverride = true
+		} else {
+			// Empty string means clear the model
+			device.ModelName = nil
+			device.ManualModelOverride = true
+		}
 	}
 
 	err = deviceService.UpdateDevice(device)
@@ -290,12 +320,12 @@ func GetDeviceLogsHandler(c *gin.Context) {
 	// Parse query parameters for pagination
 	limitStr := c.DefaultQuery("limit", "50")
 	offsetStr := c.DefaultQuery("offset", "0")
-	
+
 	limit, err := strconv.Atoi(limitStr)
 	if err != nil || limit <= 0 {
 		limit = 50
 	}
-	
+
 	offset, err := strconv.Atoi(offsetStr)
 	if err != nil || offset < 0 {
 		offset = 0
@@ -321,4 +351,191 @@ func GetDeviceLogsHandler(c *gin.Context) {
 		"limit":       limit,
 		"offset":      offset,
 	})
+}
+
+// DeviceEventsHandler handles SSE connections for device events
+func DeviceEventsHandler(c *gin.Context) {
+	user, ok := auth.RequireUser(c)
+	if !ok {
+		return
+	}
+	userUUID := user.ID
+	deviceIDStr := c.Param("id")
+
+	deviceID, err := uuid.Parse(deviceIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid device ID"})
+		return
+	}
+
+	db := database.GetDB()
+	deviceService := database.NewDeviceService(db)
+
+	device, err := deviceService.GetDeviceByID(deviceID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Device not found"})
+		return
+	}
+
+	// Verify ownership
+	if device.UserID == nil || *device.UserID != userUUID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
+		return
+	}
+
+	sseService := sse.GetSSEService()
+	client := sseService.AddClient(deviceID, userUUID, c.Writer)
+	if client == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to establish SSE connection"})
+		return
+	}
+
+	// Send initial device status
+	playlistService := database.NewPlaylistService(db)
+	activeItems, err := playlistService.GetActivePlaylistItemsForTime(deviceID, time.Now())
+	if err == nil && len(activeItems) > 0 {
+		currentIndex := device.LastPlaylistIndex
+		if currentIndex >= 0 && currentIndex < len(activeItems) {
+			sseService.BroadcastToDevice(deviceID, sse.Event{
+				Type: "playlist_index_changed",
+				Data: map[string]interface{}{
+					"device_id":     deviceID.String(),
+					"current_index": currentIndex,
+					"current_item":  activeItems[currentIndex],
+					"active_items":  activeItems,
+					"timestamp":     time.Now().UTC(),
+				},
+			})
+		}
+	}
+
+	// Keep connection alive until client disconnects
+	ctx, cancel := context.WithCancel(c.Request.Context())
+	defer cancel()
+
+	select {
+	case <-client.Done:
+		logging.Logf("[SSE] Client %s disconnected for device %s", client.ID, deviceID.String())
+	case <-ctx.Done():
+		logging.Logf("[SSE] Context cancelled for client %s on device %s", client.ID, deviceID.String())
+	}
+
+	sseService.RemoveClient(client.ID)
+}
+
+// DeviceActiveItemsHandler returns schedule-filtered active items for a device at a specific time
+func DeviceActiveItemsHandler(c *gin.Context) {
+	user, ok := auth.RequireUser(c)
+	if !ok {
+		return
+	}
+	userUUID := user.ID
+	deviceIDStr := c.Param("id")
+
+	deviceID, err := uuid.Parse(deviceIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid device ID"})
+		return
+	}
+
+	db := database.GetDB()
+	deviceService := database.NewDeviceService(db)
+
+	device, err := deviceService.GetDeviceByID(deviceID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Device not found"})
+		return
+	}
+
+	// Verify ownership
+	if device.UserID == nil || *device.UserID != userUUID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
+		return
+	}
+
+	// Parse query time parameter (optional)
+	queryTimeStr := c.Query("at")
+	var queryTime time.Time
+	if queryTimeStr != "" {
+		parsedTime, err := time.Parse(time.RFC3339, queryTimeStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid time format. Use RFC3339 format (e.g., 2024-01-15T10:30:00Z)"})
+			return
+		}
+		queryTime = parsedTime
+	} else {
+		queryTime = time.Now()
+	}
+
+	// Get active playlist items for the specified time
+	playlistService := database.NewPlaylistService(db)
+	activeItems, err := playlistService.GetActivePlaylistItemsForTime(deviceID, queryTime)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get active playlist items"})
+		return
+	}
+
+	// Get total visible items for comparison
+	playlist, err := playlistService.GetDefaultPlaylistForDevice(deviceID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get default playlist"})
+		return
+	}
+
+	allItems, err := playlistService.GetPlaylistItems(playlist.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get playlist items"})
+		return
+	}
+
+	visibleItems := make([]database.PlaylistItem, 0)
+	for _, item := range allItems {
+		if item.IsVisible {
+			visibleItems = append(visibleItems, item)
+		}
+	}
+
+	// Determine current index and currently showing item
+	var currentIndex int = -1
+	var currentlyShowing *database.PlaylistItem = nil
+
+	if len(activeItems) > 0 {
+		// Use the device's last playlist index to determine currently showing
+		if device.LastPlaylistIndex >= 0 && device.LastPlaylistIndex < len(activeItems) {
+			currentIndex = device.LastPlaylistIndex
+			currentlyShowing = &activeItems[currentIndex]
+		}
+	}
+
+	// Response
+	response := gin.H{
+		"device_id":           deviceID.String(),
+		"query_time":          queryTime.UTC(),
+		"current_index":       currentIndex,
+		"currently_showing":   currentlyShowing,
+		"active_items":        activeItems,
+		"total_visible_items": len(visibleItems),
+		"total_active_items":  len(activeItems),
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
+// GetDeviceModelOptionsHandler returns all available device models for user selection
+func GetDeviceModelOptionsHandler(c *gin.Context) {
+	_, ok := auth.RequireUser(c)
+	if !ok {
+		return
+	}
+
+	db := database.GetDB()
+	deviceService := database.NewDeviceService(db)
+
+	models, err := deviceService.GetAllDeviceModels()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch device models"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"models": models})
 }

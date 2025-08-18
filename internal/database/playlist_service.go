@@ -97,7 +97,7 @@ func (pls *PlaylistService) DeletePlaylist(playlistID uuid.UUID) error {
 }
 
 // AddItemToPlaylist adds a user plugin to a playlist
-func (pls *PlaylistService) AddItemToPlaylist(playlistID, userPluginID uuid.UUID, importance int, durationOverride *int) (*PlaylistItem, error) {
+func (pls *PlaylistService) AddItemToPlaylist(playlistID, userPluginID uuid.UUID, importance bool, durationOverride *int) (*PlaylistItem, error) {
 	// Get the next order index
 	var maxOrder int
 	pls.db.Model(&PlaylistItem{}).Where("playlist_id = ?", playlistID).Select("COALESCE(MAX(order_index), 0)").Scan(&maxOrder)
@@ -156,12 +156,83 @@ func (pls *PlaylistService) ReorderPlaylistItems(playlistID uuid.UUID, itemOrder
 	})
 }
 
-// DeletePlaylistItem deletes a playlist item and its schedules
+// ReorderPlaylistItemsByArray updates playlist items to match the provided order array
+func (pls *PlaylistService) ReorderPlaylistItemsByArray(playlistID uuid.UUID, orderedItemIDs []uuid.UUID) error {
+	return pls.db.Transaction(func(tx *gorm.DB) error {
+		// Update each item's order_index based on its position in the array
+		for i, itemID := range orderedItemIDs {
+			newOrderIndex := i + 1 // Start from 1
+			if err := tx.Model(&PlaylistItem{}).Where("id = ? AND playlist_id = ?", itemID, playlistID).Update("order_index", newOrderIndex).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// DeletePlaylistItem deletes a playlist item and its schedules, then compacts the order
 func (pls *PlaylistService) DeletePlaylistItem(itemID uuid.UUID) error {
 	return pls.db.Transaction(func(tx *gorm.DB) error {
-		// Delete playlist item will cascade to schedules
-		return tx.Delete(&PlaylistItem{}, "id = ?", itemID).Error
+		// First, verify the playlist item exists
+		var existingItem PlaylistItem
+		if err := tx.Where("id = ?", itemID).First(&existingItem).Error; err != nil {
+			log.Printf("[DeletePlaylistItem] Playlist item not found: %s, error: %v", itemID.String(), err)
+			return err
+		}
+
+		playlistID := existingItem.PlaylistID
+		log.Printf("[DeletePlaylistItem] Deleting item %s from playlist %s", itemID.String(), playlistID.String())
+
+		// Delete playlist item (schedules will cascade due to foreign key constraints)
+		result := tx.Delete(&PlaylistItem{}, "id = ?", itemID)
+		if result.Error != nil {
+			log.Printf("[DeletePlaylistItem] Failed to delete playlist item %s: %v", itemID.String(), result.Error)
+			return result.Error
+		}
+
+		// Verify the item was actually deleted
+		if result.RowsAffected == 0 {
+			log.Printf("[DeletePlaylistItem] No rows affected when deleting item %s", itemID.String())
+			return gorm.ErrRecordNotFound
+		}
+
+		log.Printf("[DeletePlaylistItem] Successfully deleted item %s, rows affected: %d", itemID.String(), result.RowsAffected)
+
+		// Compact the order for the playlist
+		if err := pls.compactPlaylistOrderInTx(tx, playlistID); err != nil {
+			log.Printf("[DeletePlaylistItem] Failed to compact order for playlist %s: %v", playlistID.String(), err)
+			return err
+		}
+
+		log.Printf("[DeletePlaylistItem] Successfully compacted order for playlist %s", playlistID.String())
+		return nil
 	})
+}
+
+// CompactPlaylistOrder renumbers all playlist items to have sequential order_index values (1, 2, 3...)
+func (pls *PlaylistService) CompactPlaylistOrder(playlistID uuid.UUID) error {
+	return pls.db.Transaction(func(tx *gorm.DB) error {
+		return pls.compactPlaylistOrderInTx(tx, playlistID)
+	})
+}
+
+// compactPlaylistOrderInTx compacts order within an existing transaction
+func (pls *PlaylistService) compactPlaylistOrderInTx(tx *gorm.DB, playlistID uuid.UUID) error {
+	// Get all items ordered by current order_index
+	var items []PlaylistItem
+	if err := tx.Where("playlist_id = ?", playlistID).Order("order_index ASC").Find(&items).Error; err != nil {
+		return err
+	}
+
+	// Update each item with a new sequential order_index
+	for i, item := range items {
+		newOrderIndex := i + 1 // Start from 1
+		if err := tx.Model(&item).Update("order_index", newOrderIndex).Error; err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // AddScheduleToPlaylistItem adds a schedule to a playlist item
@@ -250,7 +321,7 @@ func (pls *PlaylistService) GetActivePlaylistItemsForTime(deviceID uuid.UUID, cu
 
 			// Load the schedule's timezone with validation
 			scheduleTimezone := utils.NormalizeTimezone(schedule.Timezone)
-			
+
 			loc, err := time.LoadLocation(scheduleTimezone)
 			if err != nil {
 				log.Printf("[SCHEDULE DEBUG] Item %d, Schedule %d: Invalid timezone %s, falling back to UTC", i, j, scheduleTimezone)
@@ -302,6 +373,27 @@ func (pls *PlaylistService) GetActivePlaylistItemsForTime(deviceID uuid.UUID, cu
 		}
 	}
 
-	log.Printf("[SCHEDULE DEBUG] Final result: %d active items", len(activeItems))
+	log.Printf("[SCHEDULE DEBUG] Found %d active items before importance filtering", len(activeItems))
+
+	// Check if any important items are active
+	importantItems := make([]PlaylistItem, 0)
+	normalItems := make([]PlaylistItem, 0)
+
+	for _, item := range activeItems {
+		if item.Importance {
+			importantItems = append(importantItems, item)
+		} else {
+			normalItems = append(normalItems, item)
+		}
+	}
+
+	// If important items are active, only return important items
+	if len(importantItems) > 0 {
+		log.Printf("[SCHEDULE DEBUG] %d important items found - filtering out %d normal items", len(importantItems), len(normalItems))
+		return importantItems, nil
+	}
+
+	// If no important items, return all active items (normal behavior)
+	log.Printf("[SCHEDULE DEBUG] No important items found - returning all %d active items", len(activeItems))
 	return activeItems, nil
 }

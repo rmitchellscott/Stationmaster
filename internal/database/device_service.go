@@ -132,6 +132,8 @@ func (ds *DeviceService) UpdateDevice(device *Device) error {
 		"refresh_rate":           device.RefreshRate,
 		"is_active":              device.IsActive,
 		"allow_firmware_updates": device.AllowFirmwareUpdates,
+		"model_name":             device.ModelName,
+		"manual_model_override":  device.ManualModelOverride,
 	}
 	return ds.db.Model(device).Updates(updates).Error
 }
@@ -139,6 +141,30 @@ func (ds *DeviceService) UpdateDevice(device *Device) error {
 // UpdateRefreshRate updates only the refresh rate for a device (GORM-safe)
 func (ds *DeviceService) UpdateRefreshRate(deviceID uuid.UUID, refreshRate int) error {
 	return ds.db.Model(&Device{}).Where("id = ?", deviceID).Update("refresh_rate", refreshRate).Error
+}
+
+// ValidateDeviceModel checks if a device model exists in the database
+func (ds *DeviceService) ValidateDeviceModel(modelName string) error {
+	if modelName == "" {
+		return nil // Empty model name is valid (clears the model)
+	}
+	
+	var deviceModel DeviceModel
+	err := ds.db.Where("model_name = ? AND is_active = ?", modelName, true).First(&deviceModel).Error
+	if err != nil {
+		if err.Error() == "record not found" {
+			return fmt.Errorf("device model '%s' not found", modelName)
+		}
+		return err
+	}
+	return nil
+}
+
+// GetAllDeviceModels returns all active device models
+func (ds *DeviceService) GetAllDeviceModels() ([]DeviceModel, error) {
+	var models []DeviceModel
+	err := ds.db.Where("is_active = ?", true).Order("display_name ASC").Find(&models).Error
+	return models, err
 }
 
 // mapDeviceModelName maps device-reported model names to database model names
@@ -185,22 +211,31 @@ func (ds *DeviceService) UpdateDeviceStatus(macAddress string, firmwareVersion s
 			mappedModelName := mapDeviceModelName(modelName)
 			logging.Logf("[DEVICE STATUS] Model mapping: %s -> %s", modelName, mappedModelName)
 
-			// Check if device currently has a model_name
+			// Always update the reported model name
+			updateFields["reported_model_name"] = mappedModelName
+			selectFields = append(selectFields, "reported_model_name")
+
+			// Check if device currently has manual model override
 			var device Device
-			if err := tx.Select("model_name").Where("mac_address = ?", macAddress).First(&device).Error; err == nil {
-				if device.ModelName == nil || *device.ModelName == "" {
-					// Check if the mapped model exists in device_models table
-					var deviceModel DeviceModel
-					if err := tx.Where("model_name = ?", mappedModelName).First(&deviceModel).Error; err == nil {
-						// Model exists, safe to update
-						updateFields["model_name"] = mappedModelName
-						selectFields = append(selectFields, "model_name")
-						logging.Logf("[DEVICE STATUS] Will update model_name to: %s", mappedModelName)
+			if err := tx.Select("model_name", "manual_model_override").Where("mac_address = ?", macAddress).First(&device).Error; err == nil {
+				if !device.ManualModelOverride {
+					// Only update model_name if it's not manually overridden
+					if device.ModelName == nil || *device.ModelName == "" {
+						// Check if the mapped model exists in device_models table
+						var deviceModel DeviceModel
+						if err := tx.Where("model_name = ?", mappedModelName).First(&deviceModel).Error; err == nil {
+							// Model exists, safe to update
+							updateFields["model_name"] = mappedModelName
+							selectFields = append(selectFields, "model_name")
+							logging.Logf("[DEVICE STATUS] Will update model_name to: %s", mappedModelName)
+						} else {
+							logging.Logf("[DEVICE STATUS] Model %s not found in device_models table, skipping model update", mappedModelName)
+						}
 					} else {
-						logging.Logf("[DEVICE STATUS] Model %s not found in device_models table, skipping model update", mappedModelName)
+						logging.Logf("[DEVICE STATUS] Device already has model_name: %s, skipping", *device.ModelName)
 					}
 				} else {
-					logging.Logf("[DEVICE STATUS] Device already has model_name: %s, skipping", *device.ModelName)
+					logging.Logf("[DEVICE STATUS] Device has manual model override, not updating model_name")
 				}
 			}
 		}

@@ -163,14 +163,14 @@ func (w *Worker) processJob(job database.BackupJob) {
 	ctx := context.Background()
 	backend := storage.GetStorageBackend()
 	storageKey := fmt.Sprintf("backups/%s", filename)
-	
+
 	backupFile, err := os.Open(tempBackupPath)
 	if err != nil {
 		w.failJob(job, fmt.Sprintf("Failed to open backup file: %v", err))
 		return
 	}
 	defer backupFile.Close()
-	
+
 	if err := backend.Put(ctx, storageKey, backupFile); err != nil {
 		w.failJob(job, fmt.Sprintf("Failed to store backup: %v", err))
 		return

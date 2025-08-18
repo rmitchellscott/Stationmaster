@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import {
   Select,
   SelectContent,
@@ -14,6 +14,41 @@ interface DeviceSelectorProps {
   selectedDeviceId: string | null;
   onDeviceChange: (deviceId: string) => void;
   loading?: boolean;
+}
+
+// Live timestamp component
+function LiveTimestamp({ timestamp }: { timestamp: string | undefined }) {
+  const [, setTick] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTick(prev => prev + 1); // Force re-render
+    }, 10000); // Update every 10 seconds
+
+    return () => clearInterval(interval);
+  }, []);
+
+  if (!timestamp) return "Never";
+
+  const now = new Date();
+  const lastSeen = new Date(timestamp);
+  const diffMs = now.getTime() - lastSeen.getTime();
+  const diffSeconds = Math.floor(diffMs / 1000);
+  const diffMinutes = Math.floor(diffSeconds / 60);
+  const diffHours = Math.floor(diffMinutes / 60);
+  const diffDays = Math.floor(diffHours / 24);
+
+  if (diffSeconds < 60) {
+    return `${diffSeconds} seconds ago`;
+  } else if (diffMinutes < 60) {
+    return `${diffMinutes} minutes ago`;
+  } else if (diffHours < 24) {
+    return `${diffHours} hours ago`;
+  } else if (diffDays < 7) {
+    return `${diffDays} days ago`;
+  } else {
+    return lastSeen.toLocaleDateString();
+  }
 }
 
 export function DeviceSelector({ 
@@ -105,11 +140,7 @@ export function DeviceSelector({
       </Select>
       {selectedDevice && (
         <div className="text-xs text-muted-foreground">
-          ID: {selectedDevice.friendly_id} • Last seen: {
-            selectedDevice.last_seen 
-              ? new Date(selectedDevice.last_seen).toLocaleString()
-              : "Never"
-          }
+          ID: {selectedDevice.friendly_id} • Last seen: <LiveTimestamp timestamp={selectedDevice.last_seen} />
         </div>
       )}
     </div>

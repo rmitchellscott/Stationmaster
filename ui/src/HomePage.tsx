@@ -215,6 +215,65 @@ export default function HomePage() {
     }
   }, [isAuthenticated]);
 
+  // Real-time device updates
+  useEffect(() => {
+    if (!isAuthenticated || devices.length === 0) return;
+
+    const eventSources: EventSource[] = [];
+    
+    // Create SSE connections for each device
+    devices.forEach(device => {
+      try {
+        const eventSource = new EventSource(`/api/devices/${device.id}/events`, {
+          withCredentials: true,
+        });
+
+        eventSource.onmessage = (event) => {
+          try {
+            const parsedEvent = JSON.parse(event.data);
+            
+            if (parsedEvent.type === 'device_status_updated') {
+              const data = parsedEvent.data;
+              
+              // Update the specific device in the devices array
+              setDevices(prevDevices => 
+                prevDevices.map(d => 
+                  d.id === data.device_id 
+                    ? {
+                        ...d,
+                        battery_voltage: data.battery_voltage,
+                        rssi: data.rssi,
+                        firmware_version: data.firmware_version,
+                        last_seen: data.last_seen,
+                        is_active: data.is_active,
+                      }
+                    : d
+                )
+              );
+            }
+          } catch (parseError) {
+            console.error(`[SSE] Failed to parse device event:`, parseError);
+          }
+        };
+
+        eventSource.onerror = (error) => {
+          console.error(`[SSE] Device ${device.id} event error:`, error);
+        };
+
+        eventSources.push(eventSource);
+      } catch (error) {
+        console.error(`[SSE] Failed to connect to device ${device.id}:`, error);
+      }
+    });
+
+    // Cleanup function
+    return () => {
+      eventSources.forEach(eventSource => {
+        eventSource.close();
+      });
+    };
+  }, [isAuthenticated, devices.length]); // Only depend on devices.length to avoid infinite loops
+
   useEffect(() => {
     if (selectedDeviceId) {
       fetchPlaylistItems();

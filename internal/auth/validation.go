@@ -55,17 +55,17 @@ var usernameRegex = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{2,49}$`)
 // not to existing usernames during login or updates.
 func ValidateNewUsername(username string) error {
 	username = strings.TrimSpace(username)
-	
+
 	if len(username) < 3 {
 		return errors.New("backend.auth.username_too_short")
 	}
 	if len(username) > 50 {
 		return errors.New("backend.auth.username_too_long")
 	}
-	
+
 	if !usernameRegex.MatchString(username) {
 		return errors.New("backend.auth.username_invalid_format")
 	}
-	
+
 	return nil
 }

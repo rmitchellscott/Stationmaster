@@ -13,18 +13,18 @@ import (
 
 // BackupAnalysis contains information about a backup file
 type BackupAnalysis struct {
-	Valid              bool                   `json:"valid"`
-	Metadata           *ExportMetadata        `json:"metadata,omitempty"`
-	ErrorMessage       string                 `json:"error_message,omitempty"`
-	FileSize           int64                  `json:"file_size"`
-	CompressedSize     int64                  `json:"compressed_size"`
-	DatabaseTables     []TableInfo            `json:"database_tables,omitempty"`
-	HasDatabase        bool                   `json:"has_database"`
-	HasFilesystem      bool                   `json:"has_filesystem"`
-	AnalysisTimestamp  time.Time              `json:"analysis_timestamp"`
-	CompatibleVersion  bool                   `json:"compatible_version"`
-	RecommendedAction  string                 `json:"recommended_action"`
-	Warnings           []string               `json:"warnings,omitempty"`
+	Valid             bool            `json:"valid"`
+	Metadata          *ExportMetadata `json:"metadata,omitempty"`
+	ErrorMessage      string          `json:"error_message,omitempty"`
+	FileSize          int64           `json:"file_size"`
+	CompressedSize    int64           `json:"compressed_size"`
+	DatabaseTables    []TableInfo     `json:"database_tables,omitempty"`
+	HasDatabase       bool            `json:"has_database"`
+	HasFilesystem     bool            `json:"has_filesystem"`
+	AnalysisTimestamp time.Time       `json:"analysis_timestamp"`
+	CompatibleVersion bool            `json:"compatible_version"`
+	RecommendedAction string          `json:"recommended_action"`
+	Warnings          []string        `json:"warnings,omitempty"`
 }
 
 // TableInfo contains information about a database table in the backup
@@ -49,7 +49,7 @@ func AnalyzeBackup(backupPath string) (*BackupAnalysis, error) {
 		analysis.ErrorMessage = fmt.Sprintf("Failed to stat backup file: %v", err)
 		return analysis, nil
 	}
-	
+
 	analysis.CompressedSize = fileInfo.Size()
 	analysis.FileSize = fileInfo.Size() // For compressed files, this is the same
 
@@ -122,7 +122,7 @@ func analyzeArchiveContents(archivePath, tempDir string, analysis *BackupAnalysi
 
 			hasMetadata = true
 			analysis.Metadata = &metadata
-			
+
 			// Check version compatibility
 			analysis.CompatibleVersion = true // For now, assume all versions are compatible
 		}
@@ -132,7 +132,7 @@ func analyzeArchiveContents(archivePath, tempDir string, analysis *BackupAnalysi
 			analysis.HasDatabase = true
 		}
 
-		// Check for filesystem directory  
+		// Check for filesystem directory
 		if strings.HasPrefix(header.Name, "filesystem/") {
 			analysis.HasFilesystem = true
 		}
@@ -213,7 +213,7 @@ func analyzeDatabaseTables(dbDir string) ([]TableInfo, error) {
 
 	for _, file := range files {
 		tableName := strings.TrimSuffix(filepath.Base(file), ".json")
-		
+
 		// Read and count records
 		var records []interface{}
 		if err := readJSON(file, &records); err != nil {
@@ -288,7 +288,7 @@ func AnalyzeBackupFromExtractedDir(extractedDir string) (*BackupAnalysis, error)
 	dbDir := filepath.Join(extractedDir, "database")
 	if _, err := os.Stat(dbDir); err == nil {
 		analysis.HasDatabase = true
-		
+
 		// Analyze database tables
 		tables, err := analyzeDatabaseTables(dbDir)
 		if err != nil {

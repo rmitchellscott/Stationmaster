@@ -187,6 +187,23 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
     }
   };
 
+  const hasPluginInstanceChanges = () => {
+    if (!editUserPlugin) return false;
+    
+    // Parse original settings
+    let originalSettings = {};
+    try {
+      originalSettings = editUserPlugin.settings ? JSON.parse(editUserPlugin.settings) : {};
+    } catch (e) {
+      originalSettings = {};
+    }
+    
+    return (
+      editInstanceName.trim() !== editUserPlugin.name ||
+      JSON.stringify(editInstanceSettings) !== JSON.stringify(originalSettings)
+    );
+  };
+
   const updatePluginInstance = async () => {
     if (!editUserPlugin || !editInstanceName.trim()) {
       setError("Please provide a name for the plugin instance");
@@ -674,7 +691,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
             </Button>
             <Button
               onClick={updatePluginInstance}
-              disabled={updateLoading || !editInstanceName.trim()}
+              disabled={updateLoading || !editInstanceName.trim() || !hasPluginInstanceChanges()}
             >
               {updateLoading ? "Updating..." : "Update Instance"}
             </Button>

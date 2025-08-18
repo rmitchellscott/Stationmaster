@@ -10,6 +10,16 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Alert,
   AlertDescription,
 } from "@/components/ui/alert";
@@ -19,6 +29,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -33,6 +50,11 @@ import {
   TooltipContent,
 } from "@/components/ui/tooltip";
 import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import {
   Monitor,
   Edit,
   Trash2,
@@ -46,7 +68,27 @@ import {
   AlertTriangle,
   CheckCircle,
   FileText,
+  ChevronDown,
 } from "lucide-react";
+
+interface DeviceModel {
+  id: string;
+  model_name: string;
+  display_name: string;
+  description?: string;
+  screen_width: number;
+  screen_height: number;
+  color_depth: number;
+  bit_depth: number;
+  has_wifi: boolean;
+  has_battery: boolean;
+  has_buttons: number;
+  capabilities?: string;
+  min_firmware?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
 
 interface Device {
   id: string;
@@ -54,6 +96,9 @@ interface Device {
   mac_address: string;
   friendly_id: string;
   name?: string;
+  model_name?: string;
+  manual_model_override?: boolean;
+  reported_model_name?: string;
   api_key: string;
   is_claimed: boolean;
   firmware_version?: string;
@@ -65,6 +110,7 @@ interface Device {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  device_model?: DeviceModel;
 }
 
 interface DeviceLog {
@@ -94,10 +140,20 @@ export function DeviceManagementContent() {
   const [editDeviceName, setEditDeviceName] = useState("");
   const [editRefreshRate, setEditRefreshRate] = useState("");
   const [editAllowFirmwareUpdates, setEditAllowFirmwareUpdates] = useState(true);
+  const [editModelName, setEditModelName] = useState<string>("");
+  const [deviceModels, setDeviceModels] = useState<DeviceModel[]>([]);
+  const [modelsLoading, setModelsLoading] = useState(false);
 
   // Device deletion
   const [deleteDevice, setDeleteDevice] = useState<Device | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
+
+  // Model override confirmation
+  const [showModelOverrideDialog, setShowModelOverrideDialog] = useState(false);
+  const [pendingModelOverride, setPendingModelOverride] = useState<string>("");
+  
+  // Developer section collapsible state
+  const [isDeveloperSectionOpen, setIsDeveloperSectionOpen] = useState(false);
 
   // Device logs
   const [logsDevice, setLogsDevice] = useState<Device | null>(null);
@@ -173,6 +229,28 @@ export function DeviceManagementContent() {
     }
   };
 
+  const fetchDeviceModels = async () => {
+    try {
+      setModelsLoading(true);
+      const response = await fetch("/api/devices/models", {
+        credentials: "include",
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setDeviceModels(data.models || []);
+      } else {
+        console.error("Failed to fetch device models");
+        setDeviceModels([]); // Set empty array on error
+      }
+    } catch (error) {
+      console.error("Error fetching device models:", error);
+      setDeviceModels([]); // Set empty array on error
+    } finally {
+      setModelsLoading(false);
+    }
+  };
+
   const updateDevice = async () => {
     if (!editDevice || !editDeviceName.trim()) {
       setError("Please fill in all fields");
@@ -188,17 +266,25 @@ export function DeviceManagementContent() {
     try {
       setError(null);
 
+      const requestBody: any = {
+        name: editDeviceName.trim(),
+        refresh_rate: refreshRate,
+        allow_firmware_updates: editAllowFirmwareUpdates,
+      };
+
+      // Add model name if it has changed from the original
+      const originalModelName = editDevice.model_name || "none";
+      if (editModelName !== originalModelName) {
+        requestBody.model_name = editModelName === "none" ? null : editModelName;
+      }
+
       const response = await fetch(`/api/devices/${editDevice.id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
         },
         credentials: "include",
-        body: JSON.stringify({
-          name: editDeviceName.trim(),
-          refresh_rate: refreshRate,
-          allow_firmware_updates: editAllowFirmwareUpdates,
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       if (response.ok) {
@@ -208,6 +294,39 @@ export function DeviceManagementContent() {
       } else {
         const errorData = await response.json();
         setError(errorData.error || "Failed to update device");
+      }
+    } catch (error) {
+      setError("Network error occurred");
+    }
+  };
+
+  const clearModelOverride = async () => {
+    if (!editDevice) return;
+
+    try {
+      setError(null);
+
+      const response = await fetch(`/api/devices/${editDevice.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+        body: JSON.stringify({
+          name: editDeviceName.trim(),
+          refresh_rate: parseInt(editRefreshRate),
+          allow_firmware_updates: editAllowFirmwareUpdates,
+          clear_model_override: true,
+        }),
+      });
+
+      if (response.ok) {
+        setSuccessMessage("Device model override cleared!");
+        setEditDevice(null);
+        await fetchDevices();
+      } else {
+        const errorData = await response.json();
+        setError(errorData.error || "Failed to clear model override");
       }
     } catch (error) {
       setError("Network error occurred");
@@ -242,10 +361,33 @@ export function DeviceManagementContent() {
   };
 
   const openEditDialog = (device: Device) => {
-    setEditDevice(device);
-    setEditDeviceName(device.name || "");
-    setEditRefreshRate(device.refresh_rate.toString());
-    setEditAllowFirmwareUpdates(device.allow_firmware_updates ?? true);
+    try {
+      setEditDevice(device);
+      setEditDeviceName(device.name || "");
+      setEditRefreshRate(device.refresh_rate.toString());
+      setEditAllowFirmwareUpdates(device.allow_firmware_updates ?? true);
+      setEditModelName(device.model_name || "none");
+      
+      // Fetch device models when opening edit dialog
+      if (deviceModels.length === 0) {
+        fetchDeviceModels().catch(error => {
+          console.error("Failed to fetch device models:", error);
+        });
+      }
+    } catch (error) {
+      console.error("Error opening edit dialog:", error);
+      setError("Failed to open device edit dialog");
+    }
+  };
+
+  const hasDeviceChanges = () => {
+    if (!editDevice) return false;
+    return (
+      editDeviceName.trim() !== (editDevice.name || "") ||
+      editRefreshRate !== editDevice.refresh_rate.toString() ||
+      editAllowFirmwareUpdates !== (editDevice.allow_firmware_updates ?? true) ||
+      editModelName !== (editDevice.model_name || "none")
+    );
   };
 
   const fetchDeviceLogs = async (device: Device, offset = 0) => {
@@ -409,6 +551,34 @@ export function DeviceManagementContent() {
       tooltip: `Signal Quality: ${quality} (${rssi}dBm)`,
       color
     };
+  };
+
+  const getModelDisplayName = (modelName: string) => {
+    const model = deviceModels.find(m => m.model_name === modelName);
+    return model ? model.display_name : modelName;
+  };
+
+  const handleModelChange = (value: string) => {
+    if (!editDevice) return;
+    
+    // If user selects a different model than what device reports, show confirmation
+    if (value !== "none" && editDevice.reported_model_name && value !== editDevice.reported_model_name) {
+      setPendingModelOverride(value);
+      setShowModelOverrideDialog(true);
+    } else {
+      setEditModelName(value);
+    }
+  };
+
+  const confirmModelOverride = () => {
+    setEditModelName(pendingModelOverride);
+    setShowModelOverrideDialog(false);
+    setPendingModelOverride("");
+  };
+
+  const cancelModelOverride = () => {
+    setShowModelOverrideDialog(false);
+    setPendingModelOverride("");
   };
 
   return (
@@ -700,26 +870,163 @@ export function DeviceManagementContent() {
                 When enabled, device will automatically update to the latest firmware
               </p>
             </div>
-            <div>
-              <Label htmlFor="edit-mac-address">MAC Address</Label>
-              <Input
-                id="edit-mac-address"
-                type="text"
-                value={editDevice?.mac_address || ""}
-                readOnly
-                className="mt-2 font-mono text-sm"
-              />
-            </div>
-            <div>
-              <Label htmlFor="edit-api-key">API Key</Label>
-              <Input
-                id="edit-api-key"
-                type="text"
-                value={editDevice?.api_key || ""}
-                readOnly
-                className="mt-2 font-mono text-sm"
-              />
-            </div>
+            
+            {/* Developer Settings Collapsible Section */}
+            <Collapsible 
+              open={isDeveloperSectionOpen} 
+              onOpenChange={setIsDeveloperSectionOpen}
+            >
+              <CollapsibleTrigger asChild>
+                <Button
+                  variant="ghost"
+                  className="flex items-center justify-between w-full p-0 h-auto font-normal"
+                >
+                  <span className="text-sm font-medium">Developer Settings</span>
+                  <ChevronDown 
+                    className={`h-4 w-4 transition-transform duration-200 ${
+                      isDeveloperSectionOpen ? 'transform rotate-180' : ''
+                    }`} 
+                  />
+                </Button>
+              </CollapsibleTrigger>
+              
+              <CollapsibleContent className="space-y-4 pt-4">
+                <div>
+                  <Label htmlFor="edit-model-name">Device Model</Label>
+                  
+                  {editDevice && editDevice.reported_model_name && (
+                    <div className="mt-2 space-y-2">
+                      {editDevice.manual_model_override === true ? (
+                        <Alert variant="destructive">
+                          <AlertTriangle className="h-4 w-4" />
+                          <AlertDescription>
+                            <div className="space-y-2">
+                              <div>
+                                <div>Device reports: <span className="font-medium">{getModelDisplayName(editDevice.reported_model_name)}</span></div>
+                                <div>Currently set to: <span className="font-medium">{getModelDisplayName(editModelName)}</span></div>
+                              </div>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={clearModelOverride}
+                              >
+                                Use Device Model
+                              </Button>
+                            </div>
+                          </AlertDescription>
+                        </Alert>
+                      ) : (
+                        <Alert>
+                          <Monitor className="h-4 w-4" />
+                          <AlertDescription>
+                            Device Model: <span className="font-medium">{getModelDisplayName(editDevice.reported_model_name)}</span>
+                          </AlertDescription>
+                        </Alert>
+                      )}
+                    </div>
+                  )}
+                  
+                  <Select value={editModelName} onValueChange={handleModelChange}>
+                    <SelectTrigger className="mt-2">
+                      <SelectValue placeholder={modelsLoading ? "Loading models..." : "Select a model (optional)"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">
+                        {editDevice?.reported_model_name 
+                          ? `Use Device Model (${getModelDisplayName(editDevice.reported_model_name)})`
+                          : "Auto-Detect"}
+                      </SelectItem>
+                      {(deviceModels || []).map((model) => (
+                        <SelectItem key={model.model_name} value={model.model_name}>
+                          {model.display_name}
+                          {model.screen_width && model.screen_height && (
+                            <span className="text-muted-foreground ml-2">
+                              {model.screen_width}×{model.screen_height}
+                            </span>
+                          )}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Override only if your device is incorrectly reporting its model.
+                  </p>
+
+                  {/* Model Specifications Card */}
+                  {editModelName !== "none" && (() => {
+                    const selectedModel = deviceModels.find(m => m.model_name === editModelName);
+                    return selectedModel && (
+                      <Card className="mt-3">
+                        <CardContent className="pt-4">
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="text-muted-foreground">Display:</span>
+                              <span className="font-medium">
+                                {selectedModel.screen_width} × {selectedModel.screen_height}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="text-muted-foreground">Bit Depth:</span>
+                              <span>{selectedModel.bit_depth}-bit</span>
+                            </div>
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="text-muted-foreground">Features:</span>
+                              <div className="flex gap-2">
+                                {selectedModel.has_wifi && (
+                                  <Badge variant="secondary" className="text-xs">
+                                    <Wifi className="h-3 w-3 mr-1" />
+                                    WiFi
+                                  </Badge>
+                                )}
+                                {selectedModel.has_battery && (
+                                  <Badge variant="secondary" className="text-xs">
+                                    <Battery className="h-3 w-3 mr-1" />
+                                    Battery
+                                  </Badge>
+                                )}
+                                {selectedModel.has_buttons > 0 && (
+                                  <Badge variant="secondary" className="text-xs">
+                                    {selectedModel.has_buttons} Button{selectedModel.has_buttons > 1 ? 's' : ''}
+                                  </Badge>
+                                )}
+                              </div>
+                            </div>
+                            {selectedModel.description && (
+                              <div className="text-sm text-muted-foreground">
+                                {selectedModel.description}
+                              </div>
+                            )}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })()}
+                </div>
+                
+                <div>
+                  <Label htmlFor="edit-mac-address">MAC Address</Label>
+                  <Input
+                    id="edit-mac-address"
+                    type="text"
+                    value={editDevice?.mac_address || ""}
+                    readOnly
+                    className="mt-2 font-mono text-sm"
+                  />
+                </div>
+                
+                <div>
+                  <Label htmlFor="edit-api-key">API Key</Label>
+                  <Input
+                    id="edit-api-key"
+                    type="text"
+                    value={editDevice?.api_key || ""}
+                    readOnly
+                    className="mt-2 font-mono text-sm"
+                  />
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
           </div>
 
           <DialogFooter>
@@ -728,7 +1035,7 @@ export function DeviceManagementContent() {
             </Button>
             <Button
               onClick={updateDevice}
-              disabled={!editDeviceName.trim()}
+              disabled={!editDeviceName.trim() || !hasDeviceChanges()}
             >
               Update Device
             </Button>
@@ -894,6 +1201,47 @@ export function DeviceManagementContent() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Model Override Confirmation Dialog */}
+      <AlertDialog open={showModelOverrideDialog} onOpenChange={setShowModelOverrideDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-destructive" />
+              Override Device Model?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {editDevice && (
+                <div className="space-y-2">
+                  <p>
+                    Your device reports as <span className="font-medium">{getModelDisplayName(editDevice.reported_model_name || "")}</span>.
+                  </p>
+                  <p>
+                    You're trying to set it to <span className="font-medium">{getModelDisplayName(pendingModelOverride)}</span>.
+                  </p>
+                  <p className="text-destructive">
+                    This may cause display issues if the models have different screen sizes or capabilities.
+                  </p>
+                  <p>
+                    Only override if your device is incorrectly reporting its model.
+                  </p>
+                </div>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={cancelModelOverride}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={confirmModelOverride}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Override Model
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

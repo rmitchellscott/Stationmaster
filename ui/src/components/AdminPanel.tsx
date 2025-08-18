@@ -1593,6 +1593,18 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
     setPluginAuthor(plugin.author || "");
   };
 
+  const hasPluginChanges = () => {
+    if (!editPlugin) return false;
+    return (
+      pluginName.trim() !== editPlugin.name ||
+      pluginType.trim() !== editPlugin.type ||
+      pluginDescription.trim() !== editPlugin.description ||
+      pluginConfigSchema.trim() !== editPlugin.config_schema ||
+      pluginVersion.trim() !== editPlugin.version ||
+      pluginAuthor.trim() !== (editPlugin.author || "")
+    );
+  };
+
   const resetPluginForm = () => {
     setPluginName("");
     setPluginType("");
@@ -3847,7 +3859,7 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
             </Button>
             <Button
               onClick={updatePlugin}
-              disabled={!pluginName.trim() || !pluginType.trim()}
+              disabled={!pluginName.trim() || !pluginType.trim() || !hasPluginChanges()}
             >
               Update Plugin
             </Button>

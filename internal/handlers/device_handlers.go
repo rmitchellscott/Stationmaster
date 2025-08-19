@@ -125,6 +125,7 @@ func UpdateDeviceHandler(c *gin.Context) {
 		AllowFirmwareUpdates *bool   `json:"allow_firmware_updates"`
 		ModelName            *string `json:"model_name"`
 		ClearModelOverride   *bool   `json:"clear_model_override"`
+		IsSharable           *bool   `json:"is_sharable"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -159,6 +160,9 @@ func UpdateDeviceHandler(c *gin.Context) {
 	}
 	if req.AllowFirmwareUpdates != nil {
 		device.AllowFirmwareUpdates = *req.AllowFirmwareUpdates
+	}
+	if req.IsSharable != nil {
+		device.IsSharable = *req.IsSharable
 	}
 
 	// Handle model name updates
@@ -538,4 +542,216 @@ func GetDeviceModelOptionsHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"models": models})
+}
+
+// MirrorDeviceHandler mirrors another device's playlist to the current device
+func MirrorDeviceHandler(c *gin.Context) {
+	user, ok := auth.RequireUser(c)
+	if !ok {
+		return
+	}
+	userUUID := user.ID
+	deviceIDStr := c.Param("id")
+
+	deviceID, err := uuid.Parse(deviceIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid device ID"})
+		return
+	}
+
+	var req struct {
+		SourceFriendlyID string `json:"source_friendly_id" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	db := database.GetDB()
+	deviceService := database.NewDeviceService(db)
+
+	// Get and verify the target device (the one being set up to mirror)
+	device, err := deviceService.GetDeviceByID(deviceID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Device not found"})
+		return
+	}
+
+	// Verify ownership of target device
+	if device.UserID == nil || *device.UserID != userUUID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
+		return
+	}
+
+	// Find the source device by friendly ID
+	sourceDevice, err := deviceService.GetDeviceByFriendlyID(req.SourceFriendlyID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Source device not found"})
+		return
+	}
+
+	// Verify source device is sharable
+	if !sourceDevice.IsSharable {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Source device is not sharable"})
+		return
+	}
+
+	// Verify source device is claimed
+	if !sourceDevice.IsClaimed || sourceDevice.UserID == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Source device is not claimed"})
+		return
+	}
+
+	// Copy playlists from source to target device
+	playlistService := database.NewPlaylistService(db)
+	err = playlistService.CopyPlaylistItems(sourceDevice.ID, device.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to copy playlist items"})
+		return
+	}
+
+	// Update the target device to record the mirror relationship
+	now := time.Now()
+	device.MirrorSourceID = &sourceDevice.ID
+	device.MirrorSyncedAt = &now
+
+	err = deviceService.UpdateDevice(device)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update device"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":       "Device successfully mirrored",
+		"source_device": sourceDevice.Name,
+		"synced_at":     now,
+	})
+}
+
+// SyncMirrorHandler re-syncs the playlist from the source device
+func SyncMirrorHandler(c *gin.Context) {
+	user, ok := auth.RequireUser(c)
+	if !ok {
+		return
+	}
+	userUUID := user.ID
+	deviceIDStr := c.Param("id")
+
+	deviceID, err := uuid.Parse(deviceIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid device ID"})
+		return
+	}
+
+	db := database.GetDB()
+	deviceService := database.NewDeviceService(db)
+
+	// Get and verify the device
+	device, err := deviceService.GetDeviceByID(deviceID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Device not found"})
+		return
+	}
+
+	// Verify ownership
+	if device.UserID == nil || *device.UserID != userUUID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
+		return
+	}
+
+	// Verify device is currently mirroring
+	if device.MirrorSourceID == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Device is not mirroring another device"})
+		return
+	}
+
+	// Get the source device
+	sourceDevice, err := deviceService.GetDeviceByID(*device.MirrorSourceID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Source device not found"})
+		return
+	}
+
+	// Verify source device is still sharable
+	if !sourceDevice.IsSharable {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Source device is no longer sharable"})
+		return
+	}
+
+	// Re-copy playlists from source to target device
+	playlistService := database.NewPlaylistService(db)
+	err = playlistService.CopyPlaylistItems(sourceDevice.ID, device.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to sync playlist items"})
+		return
+	}
+
+	// Update the sync timestamp
+	now := time.Now()
+	device.MirrorSyncedAt = &now
+
+	err = deviceService.UpdateDevice(device)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update device"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":       "Device successfully synced",
+		"source_device": sourceDevice.Name,
+		"synced_at":     now,
+	})
+}
+
+// UnmirrorDeviceHandler stops mirroring and makes the device independent
+func UnmirrorDeviceHandler(c *gin.Context) {
+	user, ok := auth.RequireUser(c)
+	if !ok {
+		return
+	}
+	userUUID := user.ID
+	deviceIDStr := c.Param("id")
+
+	deviceID, err := uuid.Parse(deviceIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid device ID"})
+		return
+	}
+
+	db := database.GetDB()
+	deviceService := database.NewDeviceService(db)
+
+	// Get and verify the device
+	device, err := deviceService.GetDeviceByID(deviceID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Device not found"})
+		return
+	}
+
+	// Verify ownership
+	if device.UserID == nil || *device.UserID != userUUID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
+		return
+	}
+
+	// Verify device is currently mirroring
+	if device.MirrorSourceID == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Device is not mirroring another device"})
+		return
+	}
+
+	// Clear the mirror relationship (keep existing playlist items)
+	device.MirrorSourceID = nil
+	device.MirrorSyncedAt = nil
+
+	err = deviceService.UpdateDevice(device)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update device"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Device successfully unmirrored",
+	})
 }

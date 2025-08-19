@@ -214,12 +214,17 @@ type Device struct {
 	LastSeen             *time.Time `json:"last_seen,omitempty"`
 	LastPlaylistIndex    int        `gorm:"default:0" json:"last_playlist_index"` // Track last shown playlist item
 	IsActive             bool       `gorm:"default:true" json:"is_active"`
+	IsSharable           bool       `gorm:"default:false" json:"is_sharable"`              // Whether this device can be mirrored by others
+	MirrorSourceID       *uuid.UUID `gorm:"type:uuid;index" json:"mirror_source_id,omitempty"` // ID of device being mirrored (nullable)
+	MirrorSyncedAt       *time.Time `json:"mirror_synced_at,omitempty"`                   // Last time content was synced from source
 	CreatedAt            time.Time  `json:"created_at"`
 	UpdatedAt            time.Time  `json:"updated_at"`
 
 	// Associations
 	User        *User        `gorm:"foreignKey:UserID;constraint:OnDelete:SET NULL" json:"-"`
 	DeviceModel *DeviceModel `gorm:"references:ModelName;foreignKey:ModelName" json:"device_model,omitempty"`
+	// MirrorSource association removed to avoid circular foreign key constraints during migration
+	// Use MirrorSourceID field and fetch the source device manually when needed
 	// Playlists relationship defined in Playlist model to avoid circular constraints
 }
 

@@ -397,3 +397,132 @@ func (pls *PlaylistService) GetActivePlaylistItemsForTime(deviceID uuid.UUID, cu
 	log.Printf("[SCHEDULE DEBUG] No important items found - returning all %d active items", len(activeItems))
 	return activeItems, nil
 }
+
+// CopyPlaylistItems copies all playlist items from source device to target device
+func (pls *PlaylistService) CopyPlaylistItems(sourceDeviceID, targetDeviceID uuid.UUID) error {
+	// First, get the target device's user ID for the copied playlists
+	var targetDevice Device
+	if err := pls.db.First(&targetDevice, "id = ?", targetDeviceID).Error; err != nil {
+		return err
+	}
+
+	if targetDevice.UserID == nil {
+		return gorm.ErrRecordNotFound
+	}
+
+	// Get all playlists from source device
+	var sourcePlaylists []Playlist
+	if err := pls.db.Where("device_id = ?", sourceDeviceID).Find(&sourcePlaylists).Error; err != nil {
+		return err
+	}
+
+	// Begin transaction
+	return pls.db.Transaction(func(tx *gorm.DB) error {
+		// For each source playlist, copy it to the target device
+		for _, sourcePlaylist := range sourcePlaylists {
+			// Create corresponding playlist on target device if it doesn't exist
+			var existingPlaylist Playlist
+			playlistName := sourcePlaylist.Name
+			
+			// Check if playlist with same name already exists
+			err := tx.Where("device_id = ? AND name = ?", targetDeviceID, playlistName).First(&existingPlaylist).Error
+			if err != nil && err != gorm.ErrRecordNotFound {
+				return err
+			}
+
+			var targetPlaylist *Playlist
+			if err == gorm.ErrRecordNotFound {
+				// Create new playlist
+				targetPlaylist = &Playlist{
+					UserID:    *targetDevice.UserID,
+					DeviceID:  targetDeviceID,
+					Name:      playlistName,
+					IsDefault: sourcePlaylist.IsDefault,
+				}
+				if err := tx.Create(targetPlaylist).Error; err != nil {
+					return err
+				}
+			} else {
+				// Use existing playlist
+				targetPlaylist = &existingPlaylist
+			}
+
+			// Get all playlist items from source playlist
+			var sourceItems []PlaylistItem
+			if err := tx.Where("playlist_id = ?", sourcePlaylist.ID).Find(&sourceItems).Error; err != nil {
+				return err
+			}
+
+			// Delete existing items in target playlist to replace with source items
+			if err := tx.Where("playlist_id = ?", targetPlaylist.ID).Delete(&PlaylistItem{}).Error; err != nil {
+				return err
+			}
+
+			// Copy each playlist item
+			for _, sourceItem := range sourceItems {
+				log.Printf("[MIRROR] Copying item: UserPluginID=%s, IsVisible=%t, OrderIndex=%d", 
+					sourceItem.UserPluginID, sourceItem.IsVisible, sourceItem.OrderIndex)
+
+				// Create item with minimum required fields to avoid foreign key constraint errors
+				targetItem := PlaylistItem{
+					PlaylistID:   targetPlaylist.ID,
+					UserPluginID: sourceItem.UserPluginID,
+				}
+				if err := tx.Create(&targetItem).Error; err != nil {
+					log.Printf("[MIRROR] Error creating target item with required fields: %v", err)
+					return err
+				}
+
+				log.Printf("[MIRROR] Target item before update: IsVisible=%t", sourceItem.IsVisible)
+
+				// Use Updates to set remaining fields including false values
+				updates := map[string]interface{}{
+					"order_index":       sourceItem.OrderIndex,
+					"is_visible":        sourceItem.IsVisible,
+					"importance":        sourceItem.Importance,
+					"duration_override": sourceItem.DurationOverride,
+					"updated_at":        time.Now(),
+				}
+
+				if err := tx.Model(&targetItem).Updates(updates).Error; err != nil {
+					log.Printf("[MIRROR] Error updating target item: %v", err)
+					return err
+				}
+
+				// Verify the item was created correctly
+				var verifyItem PlaylistItem
+				if err := tx.First(&verifyItem, "id = ?", targetItem.ID).Error; err == nil {
+					log.Printf("[MIRROR] Created item verified: ID=%s, IsVisible=%t", verifyItem.ID, verifyItem.IsVisible)
+				} else {
+					log.Printf("[MIRROR] Error verifying created item: %v", err)
+				}
+
+				// Copy schedules associated with this playlist item
+				var sourceSchedules []Schedule
+				if err := tx.Where("playlist_item_id = ?", sourceItem.ID).Find(&sourceSchedules).Error; err != nil {
+					return err
+				}
+
+				for _, sourceSchedule := range sourceSchedules {
+					targetSchedule := Schedule{
+						PlaylistItemID: targetItem.ID,
+						Name:           sourceSchedule.Name,
+						DayMask:        sourceSchedule.DayMask,
+						StartTime:      sourceSchedule.StartTime,
+						EndTime:        sourceSchedule.EndTime,
+						Timezone:       sourceSchedule.Timezone,
+						IsActive:       sourceSchedule.IsActive,
+						CreatedAt:      time.Now(),
+						UpdatedAt:      time.Now(),
+					}
+
+					if err := tx.Create(&targetSchedule).Error; err != nil {
+						return err
+					}
+				}
+			}
+		}
+
+		return nil
+	})
+}

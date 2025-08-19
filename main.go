@@ -285,6 +285,9 @@ func main() {
 		devices.GET("/:id/logs", handlers.GetDeviceLogsHandler)             // GET /api/devices/:id/logs - get device logs
 		devices.GET("/:id/events", handlers.DeviceEventsHandler)            // GET /api/devices/:id/events - SSE for device events
 		devices.GET("/:id/active-items", handlers.DeviceActiveItemsHandler) // GET /api/devices/:id/active-items - get schedule-filtered active items
+		devices.POST("/:id/mirror", handlers.MirrorDeviceHandler)           // POST /api/devices/:id/mirror - mirror another device
+		devices.POST("/:id/sync-mirror", handlers.SyncMirrorHandler)        // POST /api/devices/:id/sync-mirror - sync from mirrored device
+		devices.DELETE("/:id/unmirror", handlers.UnmirrorDeviceHandler)     // DELETE /api/devices/:id/unmirror - stop mirroring
 	}
 
 	// Plugin management endpoints

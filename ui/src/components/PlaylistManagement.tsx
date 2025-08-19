@@ -393,7 +393,7 @@ function SortableTableRow({
     isDragging ? 'relative z-50' : '',
     !item.is_visible ? 'opacity-60' : '',
     !isActive && item.is_visible ? 'opacity-75' : '',
-    item.is_sleep_mode ? 'bg-slate-50 dark:bg-slate-900/50' : '', // Special styling for sleep mode
+    item.is_sleep_mode ? 'bg-muted/50' : '', // Special styling for sleep mode
   ].filter(Boolean).join(' ');
 
   return (

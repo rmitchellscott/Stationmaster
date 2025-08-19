@@ -156,6 +156,7 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
   const [editIsSharable, setEditIsSharable] = useState(false);
   const [deviceModels, setDeviceModels] = useState<DeviceModel[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
+  const [editDialogError, setEditDialogError] = useState<string | null>(null);
 
   // Sleep mode settings
   const [editSleepEnabled, setEditSleepEnabled] = useState(false);
@@ -280,18 +281,18 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
 
   const updateDevice = async () => {
     if (!editDevice || !editDeviceName.trim()) {
-      setError("Please fill in all fields");
+      setEditDialogError("Please fill in all fields");
       return;
     }
 
     const refreshRate = parseInt(editRefreshRate);
     if (isNaN(refreshRate) || refreshRate < 60 || refreshRate > 86400) {
-      setError("Refresh rate must be between 60 and 86400 seconds");
+      setEditDialogError("Refresh rate must be between 60 and 86400 seconds");
       return;
     }
 
     try {
-      setError(null);
+      setEditDialogError(null);
 
       const requestBody: any = {
         name: editDeviceName.trim(),
@@ -327,10 +328,10 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
         onUpdate?.(); // Notify parent component to refresh device list
       } else {
         const errorData = await response.json();
-        setError(errorData.error || "Failed to update device");
+        setEditDialogError(errorData.error || "Failed to update device");
       }
     } catch (error) {
-      setError("Network error occurred");
+      setEditDialogError("Network error occurred");
     }
   };
 
@@ -338,7 +339,7 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
     if (!editDevice) return;
 
     try {
-      setError(null);
+      setEditDialogError(null);
 
       const response = await fetch(`/api/devices/${editDevice.id}`, {
         method: "PUT",
@@ -360,10 +361,10 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
         await fetchDevices();
       } else {
         const errorData = await response.json();
-        setError(errorData.error || "Failed to clear model override");
+        setEditDialogError(errorData.error || "Failed to clear model override");
       }
     } catch (error) {
-      setError("Network error occurred");
+      setEditDialogError("Network error occurred");
     }
   };
 
@@ -410,6 +411,9 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
       setEditSleepEndTime(device.sleep_end_time || "06:00");
       setEditSleepShowScreen(device.sleep_show_screen ?? true);
       
+      // Clear any previous dialog errors
+      setEditDialogError(null);
+      
       // Fetch device models when opening edit dialog
       if (deviceModels.length === 0) {
         fetchDeviceModels().catch(error => {
@@ -418,7 +422,7 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
       }
     } catch (error) {
       console.error("Error opening edit dialog:", error);
-      setError("Failed to open device edit dialog");
+      setEditDialogError("Failed to open device edit dialog");
     }
   };
 
@@ -630,13 +634,13 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
 
   const mirrorDevice = async () => {
     if (!editDevice || !mirrorSourceFriendlyId.trim()) {
-      setError("Please enter a device ID");
+      setEditDialogError("Please enter a device ID");
       return;
     }
 
     try {
       setMirrorLoading(true);
-      setError(null);
+      setEditDialogError(null);
 
       const response = await fetch(`/api/devices/${editDevice.id}/mirror`, {
         method: "POST",
@@ -669,10 +673,10 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
         }
       } else {
         const errorData = await response.json();
-        setError(errorData.error || "Failed to mirror device");
+        setEditDialogError(errorData.error || "Failed to mirror device");
       }
     } catch (error) {
-      setError("Network error occurred");
+      setEditDialogError("Network error occurred");
     } finally {
       setMirrorLoading(false);
     }
@@ -681,7 +685,7 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
   const syncMirror = async (device: Device) => {
     try {
       setSyncLoading(true);
-      setError(null);
+      setEditDialogError(null);
 
       const response = await fetch(`/api/devices/${device.id}/sync-mirror`, {
         method: "POST",
@@ -708,10 +712,10 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
         }
       } else {
         const errorData = await response.json();
-        setError(errorData.error || "Failed to sync device");
+        setEditDialogError(errorData.error || "Failed to sync device");
       }
     } catch (error) {
-      setError("Network error occurred");
+      setEditDialogError("Network error occurred");
     } finally {
       setSyncLoading(false);
     }
@@ -719,7 +723,7 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
 
   const unmirrorDevice = async (device: Device) => {
     try {
-      setError(null);
+      setEditDialogError(null);
 
       const response = await fetch(`/api/devices/${device.id}/unmirror`, {
         method: "DELETE",
@@ -746,10 +750,10 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
         }
       } else {
         const errorData = await response.json();
-        setError(errorData.error || "Failed to unmirror device");
+        setEditDialogError(errorData.error || "Failed to unmirror device");
       }
     } catch (error) {
-      setError("Network error occurred");
+      setEditDialogError("Network error occurred");
     }
   };
 
@@ -818,7 +822,7 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
                           <div className="flex items-center gap-2">
                             <span className="font-medium">{device.name || "Unnamed Device"}</span>
                             {device.is_sharable && (
-                              <Badge variant="secondary" className="text-xs">
+                              <Badge variant="outline" className="text-xs">
                                 Sharable
                               </Badge>
                             )}
@@ -1024,8 +1028,11 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
       </Dialog>
 
       {/* Edit Device Dialog */}
-      <Dialog open={!!editDevice} onOpenChange={() => setEditDevice(null)}>
-        <DialogContent className="sm:max-w-md mobile-dialog-content overflow-y-auto !top-[0vh] !translate-y-0 sm:!top-[6vh]">
+      <Dialog open={!!editDevice} onOpenChange={() => {
+        setEditDevice(null);
+        setEditDialogError(null);
+      }}>
+        <DialogContent className="sm:max-w-lg md:max-w-2xl lg:max-w-4xl xl:max-w-5xl max-h-[85vh] mobile-dialog-content overflow-y-auto !top-[0vh] !translate-y-0 sm:!top-[6vh]">
           <DialogHeader>
             <DialogTitle>Edit Device</DialogTitle>
             <DialogDescription>
@@ -1033,222 +1040,220 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
             </DialogDescription>
           </DialogHeader>
           
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="edit-device-name">Device Name</Label>
-              <Input
-                id="edit-device-name"
-                value={editDeviceName}
-                onChange={(e) => setEditDeviceName(e.target.value)}
-                placeholder="e.g., Kitchen Display"
-                className="mt-2"
-              />
-            </div>
-            <div>
-              <Label className="text-sm">Device Model</Label>
-              <div className="mt-1 text-sm">
-                {editDevice?.device_model?.display_name || editDevice?.reported_model_name || editDevice?.model_name || "Unknown"}
-              </div>
-            </div>
-            <div>
-              <Label htmlFor="edit-refresh-rate">Refresh Rate (seconds)</Label>
-              <Input
-                id="edit-refresh-rate"
-                type="number"
-                min="60"
-                max="86400"
-                value={editRefreshRate}
-                onChange={(e) => setEditRefreshRate(e.target.value)}
-                className="mt-2"
-              />
-              <p className="text-sm text-muted-foreground mt-1">
-                How often the device should check for new content (60-86400 seconds)
-              </p>
-            </div>
-            <div>
-              <div className="flex items-center space-x-2">
-                <Switch
-                  id="edit-allow-firmware-updates"
-                  checked={editAllowFirmwareUpdates}
-                  onCheckedChange={setEditAllowFirmwareUpdates}
+          {editDialogError && (
+            <Alert variant="destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>{editDialogError}</AlertDescription>
+            </Alert>
+          )}
+          
+          <div className="space-y-6 md:grid md:grid-cols-2 md:gap-6 md:space-y-0">
+            {/* Left Column - Basic Settings */}
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="edit-device-name">Device Name</Label>
+                <Input
+                  id="edit-device-name"
+                  value={editDeviceName}
+                  onChange={(e) => setEditDeviceName(e.target.value)}
+                  placeholder="e.g., Kitchen Display"
+                  className="mt-2"
                 />
-                <Label htmlFor="edit-allow-firmware-updates">
-                  Allow automatic firmware updates
-                </Label>
               </div>
-              <p className="text-sm text-muted-foreground mt-1">
-                When enabled, device will automatically update to the latest firmware
-              </p>
-            </div>
-
-            {/* Sleep Mode Section */}
-            <div className="pt-3 border-t border-border/50 space-y-4">
               <div>
-                <Label className="text-sm font-medium">Sleep Mode</Label>
-                <div className="mt-2 space-y-3">
-                  <div className="flex items-center space-x-2">
-                    <Switch
-                      id="edit-sleep-enabled"
-                      checked={editSleepEnabled}
-                      onCheckedChange={setEditSleepEnabled}
-                    />
-                    <Label htmlFor="edit-sleep-enabled">
-                      Enable sleep mode
-                    </Label>
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    Reduce screen refreshes during inactive periods to save battery
-                  </p>
-
-                  {editSleepEnabled && (
-                    <div className="space-y-3 pl-6 border-l-2 border-border">
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <Label htmlFor="edit-sleep-start-time" className="text-sm">Start Time</Label>
-                          <Input
-                            id="edit-sleep-start-time"
-                            type="time"
-                            value={editSleepStartTime}
-                            onChange={(e) => setEditSleepStartTime(e.target.value)}
-                            className="mt-1"
-                          />
-                        </div>
-                        <div>
-                          <Label htmlFor="edit-sleep-end-time" className="text-sm">End Time</Label>
-                          <Input
-                            id="edit-sleep-end-time"
-                            type="time"
-                            value={editSleepEndTime}
-                            onChange={(e) => setEditSleepEndTime(e.target.value)}
-                            className="mt-1"
-                          />
-                        </div>
-                      </div>
-
-
-                      <div className="flex items-center space-x-2">
-                        <Switch
-                          id="edit-sleep-show-screen"
-                          checked={editSleepShowScreen}
-                          onCheckedChange={setEditSleepShowScreen}
-                        />
-                        <Label htmlFor="edit-sleep-show-screen" className="text-sm">
-                          Show sleep screen
-                        </Label>
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        When enabled, display sleep image instead of last content during sleep period
-                      </p>
-
-                      {editSleepStartTime && editSleepEndTime && (
-                        <div className="p-3 bg-muted/30 rounded-md">
-                          <div className="text-xs font-medium text-muted-foreground">Schedule Preview</div>
-                          <div className="text-sm mt-1">
-                            Sleep from <span className="font-mono">{editSleepStartTime}</span> to{" "}
-                            <span className="font-mono">{editSleepEndTime}</span> (in your timezone)
-                          </div>
-                          {editSleepStartTime > editSleepEndTime && (
-                            <div className="text-xs text-muted-foreground mt-1">
-                              This schedule crosses midnight
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )}
+                <Label className="text-sm">Device Model</Label>
+                <div className="mt-1 text-sm">
+                  {editDevice?.device_model?.display_name || editDevice?.reported_model_name || editDevice?.model_name || "Unknown"}
                 </div>
+              </div>
+              <div>
+                <Label htmlFor="edit-refresh-rate">Refresh Rate (seconds)</Label>
+                <Input
+                  id="edit-refresh-rate"
+                  type="number"
+                  min="60"
+                  max="86400"
+                  value={editRefreshRate}
+                  onChange={(e) => setEditRefreshRate(e.target.value)}
+                  className="mt-2"
+                />
+                <p className="text-sm text-muted-foreground mt-1">
+                  How often the device should check for new content (60-86400 seconds)
+                </p>
+              </div>
+              <div>
+                <div className="flex items-center space-x-2">
+                  <Switch
+                    id="edit-allow-firmware-updates"
+                    checked={editAllowFirmwareUpdates}
+                    onCheckedChange={setEditAllowFirmwareUpdates}
+                  />
+                  <Label htmlFor="edit-allow-firmware-updates">
+                    Allow automatic firmware updates
+                  </Label>
+                </div>
+                <p className="text-sm text-muted-foreground mt-1">
+                  When enabled, device will automatically update to the latest firmware
+                </p>
               </div>
             </div>
 
-            {/* Visibility Section */}
-            <div className="pt-3 border-t border-border/50 space-y-4">
-              <div>
-                <Label className="text-sm font-medium">Visibility</Label>
-                <div className="mt-2">
-                  <div className="flex items-center space-x-2">
-                    <Switch
-                      id="edit-is-sharable"
-                      checked={editIsSharable}
-                      onCheckedChange={setEditIsSharable}
-                    />
-                    <Label htmlFor="edit-is-sharable">
-                      Sharable
-                    </Label>
-                  </div>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Allow other devices to mirror this device's playlist
-                  </p>
-                  {editIsSharable && editDevice && (
-                    <div className="mt-3 p-3 bg-muted/30 rounded-md">
-                      <Label className="text-xs text-muted-foreground">Device ID for Mirroring</Label>
-                      <div className="mt-1 font-mono text-lg font-bold text-primary">
-                        {editDevice.friendly_id}
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Share this 6-digit ID with others who want to mirror this device
-                      </p>
+            {/* Right Column - Advanced Settings */}
+            <div className="space-y-4">
+              {/* Sleep Mode Section */}
+              <div className="space-y-4">
+                <div>
+                  <Label className="text-sm font-medium">Sleep Mode</Label>
+                  <div className="mt-2 space-y-3">
+                    <div className="flex items-center space-x-2">
+                      <Switch
+                        id="edit-sleep-enabled"
+                        checked={editSleepEnabled}
+                        onCheckedChange={setEditSleepEnabled}
+                      />
+                      <Label htmlFor="edit-sleep-enabled">
+                        Enable sleep mode
+                      </Label>
                     </div>
-                  )}
-                </div>
-              </div>
+                    <p className="text-sm text-muted-foreground">
+                      Reduce screen refreshes during inactive periods to save battery
+                    </p>
 
-              {/* Mirroring Section */}
-              <div>
-                <Label className="text-sm font-medium">Mirroring</Label>
-                <div className="mt-2 space-y-3">
-                  {editDevice?.mirror_source_id ? (
-                    <div className="space-y-2">
-                      <div className="p-3 bg-blue-50 dark:bg-blue-950/30 rounded-md">
-                        <div className="flex items-center justify-between">
+                    {editSleepEnabled && (
+                      <div className="space-y-3 pl-6 border-l-2 border-border">
+                        <div className="grid grid-cols-2 gap-3">
                           <div>
-                            <div className="text-sm font-medium">Currently Mirroring</div>
-                            <div className="text-xs text-muted-foreground">
-                              Last synced: {editDevice.mirror_synced_at ? new Date(editDevice.mirror_synced_at).toLocaleString() : "Never"}
+                            <Label htmlFor="edit-sleep-start-time" className="text-sm">Start Time</Label>
+                            <Input
+                              id="edit-sleep-start-time"
+                              type="time"
+                              value={editSleepStartTime}
+                              onChange={(e) => setEditSleepStartTime(e.target.value)}
+                              className="mt-1"
+                            />
+                          </div>
+                          <div>
+                            <Label htmlFor="edit-sleep-end-time" className="text-sm">End Time</Label>
+                            <Input
+                              id="edit-sleep-end-time"
+                              type="time"
+                              value={editSleepEndTime}
+                              onChange={(e) => setEditSleepEndTime(e.target.value)}
+                              className="mt-1"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="flex items-center space-x-2">
+                          <Switch
+                            id="edit-sleep-show-screen"
+                            checked={editSleepShowScreen}
+                            onCheckedChange={setEditSleepShowScreen}
+                          />
+                          <Label htmlFor="edit-sleep-show-screen" className="text-sm">
+                            Show sleep screen
+                          </Label>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          When enabled, display sleep image instead of last content during sleep period
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Visibility Section */}
+              <div className="pt-3 border-t border-border/50 space-y-4">
+                <div>
+                  <Label className="text-sm font-medium">Visibility</Label>
+                  <div className="mt-2">
+                    <div className="flex items-center space-x-2">
+                      <Switch
+                        id="edit-is-sharable"
+                        checked={editIsSharable}
+                        onCheckedChange={setEditIsSharable}
+                      />
+                      <Label htmlFor="edit-is-sharable">
+                        Sharable
+                      </Label>
+                    </div>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Allow other devices to mirror this device's playlist
+                    </p>
+                    {editIsSharable && editDevice && (
+                      <div className="mt-3 p-3 bg-muted/50 rounded-md">
+                        <Label className="text-xs text-muted-foreground">Device ID for Mirroring</Label>
+                        <div className="mt-1 font-mono text-lg font-bold text-primary">
+                          {editDevice.friendly_id}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Share this 6-digit ID with others who want to mirror this device
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Mirroring Section */}
+                <div>
+                  <Label className="text-sm font-medium">Mirroring</Label>
+                  <div className="mt-2 space-y-3">
+                    {editDevice?.mirror_source_id ? (
+                      <div className="space-y-2">
+                        <div className="p-3 bg-muted/30 rounded-md">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <div className="text-sm font-medium">Currently Mirroring</div>
+                              <div className="text-xs text-muted-foreground">
+                                Last synced: {editDevice.mirror_synced_at ? new Date(editDevice.mirror_synced_at).toLocaleString() : "Never"}
+                              </div>
                             </div>
                           </div>
                         </div>
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => editDevice && syncMirror(editDevice)}
+                            disabled={syncLoading}
+                          >
+                            {syncLoading ? "Syncing..." : "Sync Screens"}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => editDevice && unmirrorDevice(editDevice)}
+                          >
+                            Stop Mirroring
+                          </Button>
+                        </div>
                       </div>
-                      <div className="flex gap-2">
+                    ) : (
+                      <div>
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => editDevice && syncMirror(editDevice)}
-                          disabled={syncLoading}
+                          onClick={() => setShowMirrorDialog(true)}
                         >
-                          {syncLoading ? "Syncing..." : "Sync Screens"}
+                          Mirror Another Device
                         </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => editDevice && unmirrorDevice(editDevice)}
-                        >
-                          Stop Mirroring
-                        </Button>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Copy playlist from another sharable device
+                        </p>
                       </div>
-                    </div>
-                  ) : (
-                    <div>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setShowMirrorDialog(true)}
-                      >
-                        Mirror Another Device
-                      </Button>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Copy playlist from another sharable device
-                      </p>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
             
-            {/* Developer Settings Collapsible Section */}
-            <Collapsible 
-              open={isDeveloperSectionOpen} 
-              onOpenChange={setIsDeveloperSectionOpen}
-            >
+            {/* Developer Settings */}
+            <div className="md:col-span-2 pt-3 border-t border-border/50">
+              <Collapsible 
+                open={isDeveloperSectionOpen} 
+                onOpenChange={setIsDeveloperSectionOpen}
+              >
               <CollapsibleTrigger asChild>
                 <Button
                   variant="ghost"
@@ -1263,84 +1268,88 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
                 </Button>
               </CollapsibleTrigger>
               
-              <CollapsibleContent className="space-y-4 pt-4">
-                <div>
-                  <Label htmlFor="edit-model-name">Model Override</Label>
-                  
-                  <Select value={editModelName} onValueChange={handleModelChange}>
-                    <SelectTrigger className="mt-2">
-                      <SelectValue placeholder={modelsLoading ? "Loading models..." : "Select a model (optional)"} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">
-                        {editDevice?.reported_model_name 
-                          ? `Use Device Model (${getModelDisplayName(editDevice.reported_model_name)})`
-                          : "Auto-Detect"}
-                      </SelectItem>
-                      {(deviceModels || []).map((model) => (
-                        <SelectItem key={model.model_name} value={model.model_name}>
-                          {model.display_name}
-                          {model.screen_width && model.screen_height && (
-                            <span className="text-muted-foreground ml-2">
-                              {model.screen_width}×{model.screen_height}
-                            </span>
-                          )}
+              <CollapsibleContent className="space-y-4 pt-4 md:grid md:grid-cols-2 md:gap-6 md:space-y-0">
+                {/* Left Column - Model Configuration */}
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="edit-model-name">Model Override</Label>
+                    
+                    <Select value={editModelName} onValueChange={handleModelChange}>
+                      <SelectTrigger className="mt-2">
+                        <SelectValue placeholder={modelsLoading ? "Loading models..." : "Select a model (optional)"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">
+                          {editDevice?.reported_model_name 
+                            ? `Use Device Model (${getModelDisplayName(editDevice.reported_model_name)})`
+                            : "Auto-Detect"}
                         </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Override only if your device is incorrectly reporting its model.
-                  </p>
+                        {(deviceModels || []).map((model) => (
+                          <SelectItem key={model.model_name} value={model.model_name}>
+                            {model.display_name}
+                            {model.screen_width && model.screen_height && (
+                              <span className="text-muted-foreground ml-2">
+                                {model.screen_width}×{model.screen_height}
+                              </span>
+                            )}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Override only if your device is incorrectly reporting its model.
+                    </p>
 
-                  {/* Model Specifications */}
-                  {(() => {
-                    const selectedModel = editModelName === "none" 
-                      ? deviceModels.find(m => m.model_name === (editDevice?.reported_model_name || editDevice?.model_name))
-                      : deviceModels.find(m => m.model_name === editModelName);
-                    return selectedModel && (
-                      <div className="mt-3 pt-3 border-t border-border/50">
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="text-muted-foreground">Display:</span>
-                            <span className="font-medium">
-                              {selectedModel.screen_width} × {selectedModel.screen_height} ({selectedModel.bit_depth}-bit)
-                            </span>
-                          </div>
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="text-muted-foreground">Features:</span>
-                            <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                              {selectedModel.has_wifi && (
-                                <span className="flex items-center gap-1">
-                                  <Wifi className="h-3 w-3" />
-                                  WiFi
-                                </span>
-                              )}
-                              {selectedModel.has_battery && (
-                                <span className="flex items-center gap-1">
-                                  <Battery className="h-3 w-3" />
-                                  Battery
-                                </span>
-                              )}
-                              {selectedModel.has_buttons > 0 && (
-                                <span>
-                                  {selectedModel.has_buttons} Button{selectedModel.has_buttons > 1 ? 's' : ''}
-                                </span>
-                              )}
+                    {/* Model Specifications */}
+                    {(() => {
+                      const selectedModel = editModelName === "none" 
+                        ? deviceModels.find(m => m.model_name === (editDevice?.reported_model_name || editDevice?.model_name))
+                        : deviceModels.find(m => m.model_name === editModelName);
+                      return selectedModel && (
+                        <div className="mt-3 pt-3 border-t border-border/50">
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="text-muted-foreground">Display:</span>
+                              <span className="font-medium">
+                                {selectedModel.screen_width} × {selectedModel.screen_height} ({selectedModel.bit_depth}-bit)
+                              </span>
                             </div>
-                          </div>
-                          {selectedModel.description && (
-                            <div className="text-xs text-muted-foreground pt-1">
-                              {selectedModel.description}
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="text-muted-foreground">Features:</span>
+                              <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                                {selectedModel.has_wifi && (
+                                  <span className="flex items-center gap-1">
+                                    <Wifi className="h-3 w-3" />
+                                    WiFi
+                                  </span>
+                                )}
+                                {selectedModel.has_battery && (
+                                  <span className="flex items-center gap-1">
+                                    <Battery className="h-3 w-3" />
+                                    Battery
+                                  </span>
+                                )}
+                                {selectedModel.has_buttons > 0 && (
+                                  <span>
+                                    {selectedModel.has_buttons} Button{selectedModel.has_buttons > 1 ? 's' : ''}
+                                  </span>
+                                )}
+                              </div>
                             </div>
-                          )}
+                            {selectedModel.description && (
+                              <div className="text-xs text-muted-foreground pt-1">
+                                {selectedModel.description}
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })()}
+                      );
+                    })()}
+                  </div>
                 </div>
                 
-                <div className="pt-3 border-t border-border/50 space-y-3">
+                {/* Right Column - Device Credentials */}
+                <div className="space-y-4 md:pt-0 pt-3 md:border-t-0 border-t border-border/50">
                   <div>
                     <Label htmlFor="edit-mac-address" className="text-xs text-muted-foreground">MAC Address</Label>
                     <Input
@@ -1364,11 +1373,15 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
                   </div>
                 </div>
               </CollapsibleContent>
-            </Collapsible>
+              </Collapsible>
+            </div>
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditDevice(null)}>
+            <Button variant="outline" onClick={() => {
+              setEditDevice(null);
+              setEditDialogError(null);
+            }}>
               Cancel
             </Button>
             <Button

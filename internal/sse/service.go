@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"sync"
 	"time"
@@ -70,7 +69,6 @@ func (s *Service) AddClient(deviceID, userID uuid.UUID, w http.ResponseWriter) *
 	s.clients[clientID] = client
 	s.mu.Unlock()
 
-	log.Printf("[SSE] Client connected: %s for device %s", clientID, deviceID.String())
 
 	// Send initial connection event
 	s.sendToClient(client, Event{
@@ -92,7 +90,6 @@ func (s *Service) RemoveClient(clientID string) {
 	if client, exists := s.clients[clientID]; exists {
 		close(client.Done)
 		delete(s.clients, clientID)
-		log.Printf("[SSE] Client disconnected: %s", clientID)
 	}
 }
 
@@ -124,7 +121,6 @@ func (s *Service) BroadcastToUser(userID uuid.UUID, event Event) {
 func (s *Service) sendToClient(client *Client, event Event) {
 	eventData, err := json.Marshal(event)
 	if err != nil {
-		log.Printf("[SSE] Failed to marshal event: %v", err)
 		return
 	}
 

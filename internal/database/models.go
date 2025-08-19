@@ -214,7 +214,7 @@ type Device struct {
 	LastSeen             *time.Time `json:"last_seen,omitempty"`
 	LastPlaylistIndex    int        `gorm:"default:0" json:"last_playlist_index"` // Track last shown playlist item
 	IsActive             bool       `gorm:"default:true" json:"is_active"`
-	IsSharable           bool       `gorm:"default:false" json:"is_sharable"`              // Whether this device can be mirrored by others
+	IsShareable          bool       `gorm:"default:false" json:"is_shareable"`             // Whether this device can be mirrored by others
 	MirrorSourceID       *uuid.UUID `gorm:"type:uuid;index" json:"mirror_source_id,omitempty"` // ID of device being mirrored (nullable)
 	MirrorSyncedAt       *time.Time `json:"mirror_synced_at,omitempty"`                   // Last time content was synced from source
 	SleepEnabled         bool       `gorm:"default:false" json:"sleep_enabled"`               // Whether sleep mode is active

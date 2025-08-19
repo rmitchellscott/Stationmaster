@@ -169,8 +169,6 @@ func (ds *DeviceService) GetDeviceByID(deviceID uuid.UUID) (*Device, error) {
 		return nil, err
 	}
 	
-	logging.Logf("[DEVICE FETCH] Loaded device %s with sleep settings: enabled=%v, start=%s, end=%s, show_screen=%v", 
-		device.ID, device.SleepEnabled, device.SleepStartTime, device.SleepEndTime, device.SleepShowScreen)
 	
 	return &device, nil
 }
@@ -215,7 +213,7 @@ func (ds *DeviceService) UpdateDevice(device *Device) error {
 		"allow_firmware_updates":    device.AllowFirmwareUpdates,
 		"model_name":                device.ModelName,
 		"manual_model_override":     device.ManualModelOverride,
-		"is_sharable":               device.IsSharable,
+		"is_shareable":              device.IsShareable,
 		"mirror_source_id":          device.MirrorSourceID,
 		"mirror_synced_at":          device.MirrorSyncedAt,
 		"sleep_enabled":             device.SleepEnabled,
@@ -291,8 +289,6 @@ func (ds *DeviceService) UpdateLastPlaylistIndex(deviceID uuid.UUID, index int) 
 func (ds *DeviceService) UpdateDeviceStatus(macAddress string, firmwareVersion string, batteryVoltage float64, rssi int, modelName string) error {
 	now := time.Now()
 
-	logging.Logf("[DEVICE STATUS] Updating device %s: fw=%s, battery=%.2f, rssi=%d, model=%s",
-		macAddress, firmwareVersion, batteryVoltage, rssi, modelName)
 
 	// Use explicit transaction to ensure commit
 	return ds.db.Transaction(func(tx *gorm.DB) error {
@@ -309,7 +305,6 @@ func (ds *DeviceService) UpdateDeviceStatus(macAddress string, firmwareVersion s
 		if modelName != "" {
 			// Map device model name to database model name
 			mappedModelName := mapDeviceModelName(modelName)
-			logging.Logf("[DEVICE STATUS] Model mapping: %s -> %s", modelName, mappedModelName)
 
 			// Always update the reported model name
 			updateFields["reported_model_name"] = mappedModelName
@@ -327,16 +322,12 @@ func (ds *DeviceService) UpdateDeviceStatus(macAddress string, firmwareVersion s
 							// Model exists, safe to update
 							updateFields["model_name"] = mappedModelName
 							selectFields = append(selectFields, "model_name")
-							logging.Logf("[DEVICE STATUS] Will update model_name to: %s", mappedModelName)
 						} else {
-							logging.Logf("[DEVICE STATUS] Model %s not found in device_models table, skipping model update", mappedModelName)
-						}
+							}
 					} else {
-						logging.Logf("[DEVICE STATUS] Device already has model_name: %s, skipping", *device.ModelName)
-					}
+						}
 				} else {
-					logging.Logf("[DEVICE STATUS] Device has manual model override, not updating model_name")
-				}
+					}
 			}
 		}
 
@@ -346,16 +337,13 @@ func (ds *DeviceService) UpdateDeviceStatus(macAddress string, firmwareVersion s
 			Updates(updateFields)
 
 		if result.Error != nil {
-			logging.Logf("[DEVICE STATUS] Update failed for %s: %v", macAddress, result.Error)
 			return result.Error
 		}
 
 		if result.RowsAffected == 0 {
-			logging.Logf("[DEVICE STATUS] No rows affected for %s - device not found", macAddress)
 			return fmt.Errorf("no rows affected - device not found")
 		}
 
-		logging.Logf("[DEVICE STATUS] Successfully updated %d rows for device %s", result.RowsAffected, macAddress)
 		return nil
 	})
 }

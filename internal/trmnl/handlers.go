@@ -239,7 +239,6 @@ func DisplayHandler(c *gin.Context) {
 				"timestamp":        time.Now().UTC(),
 			},
 		})
-		logging.Logf("[SSE] Broadcasted device status update for device %s: battery=%.2f, rssi=%d", device.MacAddress, device.BatteryVoltage, device.RSSI)
 	}
 
 	// Get current playlist items for this device
@@ -332,10 +331,6 @@ func DisplayHandler(c *gin.Context) {
 		
 		// Handle sleep mode for fallback response
 		inSleepPeriod := isInSleepPeriod(device, userTimezone)
-		if debugMode || device.SleepEnabled {
-			logging.Logf("[SLEEP] Device %s sleep check (fallback): enabled=%v, timezone=%s, in_sleep=%v", 
-				device.MacAddress, device.SleepEnabled, userTimezone, inSleepPeriod)
-		}
 		
 		if inSleepPeriod {
 			refreshRate = calculateSecondsUntilSleepEnd(device, userTimezone)
@@ -346,8 +341,6 @@ func DisplayHandler(c *gin.Context) {
 				filename = "sleep"
 			}
 			
-			logging.Logf("[SLEEP] Device %s is in sleep period (fallback), refresh rate set to %d seconds, show_screen=%v", 
-				device.MacAddress, refreshRate, device.SleepShowScreen)
 		}
 
 		response = gin.H{
@@ -375,10 +368,6 @@ func DisplayHandler(c *gin.Context) {
 
 	// Handle sleep mode - override refresh rate and image if in sleep period
 	inSleepPeriod := isInSleepPeriod(device, userTimezone)
-	if debugMode || device.SleepEnabled {
-		logging.Logf("[SLEEP] Device %s sleep check: enabled=%v, timezone=%s, in_sleep=%v", 
-			device.MacAddress, device.SleepEnabled, userTimezone, inSleepPeriod)
-	}
 	
 	if inSleepPeriod {
 		sleepRefreshRate := calculateSecondsUntilSleepEnd(device, userTimezone)
@@ -390,8 +379,6 @@ func DisplayHandler(c *gin.Context) {
 			response["filename"] = "sleep"
 		}
 		
-		logging.Logf("[SLEEP] Device %s is in sleep period, refresh rate set to %d seconds, show_screen=%v", 
-			device.MacAddress, sleepRefreshRate, device.SleepShowScreen)
 	}
 
 	// Always add firmware update info to response
@@ -662,8 +649,6 @@ func processActivePlugins(device *database.Device, activeItems []database.Playli
 					},
 				},
 			})
-			logging.Logf("[SSE] Broadcasted playlist index change for device %s: index %d, sleep_enabled=%v, currently_sleeping=%v", 
-				device.MacAddress, nextIndex, device.SleepEnabled, currentlySleeping)
 		}
 	}
 
@@ -1317,7 +1302,6 @@ func isInSleepPeriod(device *database.Device, userTimezone string) bool {
 	// Parse timezone
 	loc, err := time.LoadLocation(userTimezone)
 	if err != nil {
-		logging.Logf("[SLEEP] Invalid timezone %s for device %s, using UTC", userTimezone, device.MacAddress)
 		loc = time.UTC
 	}
 
@@ -1327,13 +1311,11 @@ func isInSleepPeriod(device *database.Device, userTimezone string) bool {
 	// Parse sleep start and end times
 	startTime, err := parseSleepTime(device.SleepStartTime, now)
 	if err != nil {
-		logging.Logf("[SLEEP] Invalid start time %s for device %s: %v", device.SleepStartTime, device.MacAddress, err)
 		return false
 	}
 	
 	endTime, err := parseSleepTime(device.SleepEndTime, now)
 	if err != nil {
-		logging.Logf("[SLEEP] Invalid end time %s for device %s: %v", device.SleepEndTime, device.MacAddress, err)
 		return false
 	}
 
@@ -1356,7 +1338,6 @@ func calculateSecondsUntilSleepEnd(device *database.Device, userTimezone string)
 	// Parse timezone
 	loc, err := time.LoadLocation(userTimezone)
 	if err != nil {
-		logging.Logf("[SLEEP] Invalid timezone %s for device %s, using UTC", userTimezone, device.MacAddress)
 		loc = time.UTC
 	}
 
@@ -1366,14 +1347,12 @@ func calculateSecondsUntilSleepEnd(device *database.Device, userTimezone string)
 	// Parse sleep end time
 	endTime, err := parseSleepTime(device.SleepEndTime, now)
 	if err != nil {
-		logging.Logf("[SLEEP] Invalid end time %s for device %s: %v", device.SleepEndTime, device.MacAddress, err)
 		return device.RefreshRate
 	}
 
 	// Parse sleep start time to handle periods that cross midnight
 	startTime, err := parseSleepTime(device.SleepStartTime, now)
 	if err != nil {
-		logging.Logf("[SLEEP] Invalid start time %s for device %s: %v", device.SleepStartTime, device.MacAddress, err)
 		return device.RefreshRate
 	}
 

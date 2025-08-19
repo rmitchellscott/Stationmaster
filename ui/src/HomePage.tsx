@@ -268,17 +268,14 @@ export default function HomePage() {
               );
             }
           } catch (parseError) {
-            console.error(`[SSE] Failed to parse device event:`, parseError);
           }
         };
 
         eventSource.onerror = (error) => {
-          console.error(`[SSE] Device ${device.id} event error:`, error);
         };
 
         eventSources.push(eventSource);
       } catch (error) {
-        console.error(`[SSE] Failed to connect to device ${device.id}:`, error);
       }
     });
 

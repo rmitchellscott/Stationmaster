@@ -483,7 +483,6 @@ func DeletePlaylistItemHandler(c *gin.Context) {
 		},
 	})
 
-	log.Printf("[DeletePlaylistItemHandler] Broadcast SSE event for item deletion")
 
 	c.JSON(http.StatusOK, gin.H{"message": "Playlist item deleted successfully"})
 }

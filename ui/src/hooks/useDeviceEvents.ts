@@ -91,7 +91,6 @@ export function useDeviceEvents(deviceId: string): DeviceEventsHookResult {
       });
 
       eventSource.onopen = () => {
-        console.log(`[SSE] Connected to device ${deviceId} events`);
         setState(prev => ({
           ...prev,
           connected: true,
@@ -100,7 +99,6 @@ export function useDeviceEvents(deviceId: string): DeviceEventsHookResult {
       };
 
       eventSource.onerror = (error) => {
-        console.error(`[SSE] Error for device ${deviceId}:`, error);
         setState(prev => ({
           ...prev,
           connected: false,
@@ -110,7 +108,6 @@ export function useDeviceEvents(deviceId: string): DeviceEventsHookResult {
         // Attempt to reconnect after 5 seconds unless manually disconnected
         if (!isManuallyDisconnectedRef.current) {
           reconnectTimeoutRef.current = setTimeout(() => {
-            console.log(`[SSE] Attempting to reconnect to device ${deviceId}...`);
             connect();
           }, 5000);
         }
@@ -119,7 +116,6 @@ export function useDeviceEvents(deviceId: string): DeviceEventsHookResult {
       eventSource.onmessage = (event) => {
         try {
           const parsedEvent: DeviceEvent = JSON.parse(event.data);
-          console.log(`[SSE] Received event for device ${deviceId}:`, parsedEvent);
 
           setState(prev => ({
             ...prev,
@@ -147,16 +143,13 @@ export function useDeviceEvents(deviceId: string): DeviceEventsHookResult {
               ...prev,
               sleepConfig: data.sleep_config || null,
             }));
-            console.log(`[SSE] Device settings updated for device ${deviceId}:`, data.sleep_config);
           }
         } catch (parseError) {
-          console.error(`[SSE] Failed to parse event data for device ${deviceId}:`, parseError);
         }
       };
 
       eventSourceRef.current = eventSource;
     } catch (connectionError) {
-      console.error(`[SSE] Failed to connect to device ${deviceId}:`, connectionError);
       setState(prev => ({
         ...prev,
         connected: false,

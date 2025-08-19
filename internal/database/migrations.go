@@ -298,6 +298,66 @@ func RunMigrations(logPrefix string) error {
 				return tx.Exec("DROP INDEX IF EXISTS idx_device_default_playlist").Error
 			},
 		},
+		{
+			ID: "202508190001_rename_is_sharable_to_is_shareable",
+			Migrate: func(tx *gorm.DB) error {
+				logging.Logf("[MIGRATION] Renaming is_sharable column to is_shareable")
+				
+				// Check if the old column exists and new column doesn't
+				hasOldColumn := tx.Migrator().HasColumn(&Device{}, "is_sharable")
+				hasNewColumn := tx.Migrator().HasColumn(&Device{}, "is_shareable")
+				
+				if !hasOldColumn && hasNewColumn {
+					// Migration already completed
+					logging.Logf("[MIGRATION] Column already renamed, skipping")
+					return nil
+				}
+				
+				if !hasOldColumn {
+					// Neither column exists, create the new one
+					if err := tx.Exec("ALTER TABLE devices ADD COLUMN is_shareable BOOLEAN DEFAULT FALSE").Error; err != nil {
+						return fmt.Errorf("failed to add is_shareable column: %w", err)
+					}
+					logging.Logf("[MIGRATION] Created new is_shareable column")
+					return nil
+				}
+				
+				// For SQLite, we need to handle this carefully since it doesn't support column renames directly
+				var dbType string
+				if err := tx.Raw("SELECT sqlite_version()").Scan(&dbType); err == nil {
+					// SQLite - we need to:
+					// 1. Add new column
+					// 2. Copy data
+					// 3. Drop old column (SQLite doesn't support this easily, so we'll leave it)
+					
+					// Add new column
+					if err := tx.Exec("ALTER TABLE devices ADD COLUMN is_shareable BOOLEAN DEFAULT FALSE").Error; err != nil {
+						return fmt.Errorf("failed to add is_shareable column: %w", err)
+					}
+					
+					// Copy data from old column to new column
+					if err := tx.Exec("UPDATE devices SET is_shareable = is_sharable").Error; err != nil {
+						return fmt.Errorf("failed to copy data to is_shareable column: %w", err)
+					}
+					
+					logging.Logf("[MIGRATION] Successfully added is_shareable column and copied data")
+				} else {
+					// For other databases that support column rename
+					if err := tx.Exec("ALTER TABLE devices RENAME COLUMN is_sharable TO is_shareable").Error; err != nil {
+						return fmt.Errorf("failed to rename column: %w", err)
+					}
+					logging.Logf("[MIGRATION] Successfully renamed column is_sharable to is_shareable")
+				}
+				
+				return nil
+			},
+			Rollback: func(tx *gorm.DB) error {
+				// For rollback, we would need to rename back, but this is complex with SQLite
+				// Since this is a cosmetic change (correcting spelling), we'll leave the new column
+				logging.Logf("[MIGRATION ROLLBACK] Leaving is_shareable column (SQLite limitations)")
+				return nil
+			},
+		},
 	})
 
 	// Set initial schema if this is a fresh database

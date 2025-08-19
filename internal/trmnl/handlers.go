@@ -936,3 +936,158 @@ func FirmwareUpdateCompleteHandler(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid status, must be 'success' or 'failed'"})
 	}
 }
+
+// CurrentScreenHandler handles current screen requests without advancing playlist
+// GET /api/current_screen with Access-Token header only
+func CurrentScreenHandler(c *gin.Context) {
+	startTime := time.Now()
+	debugMode := os.Getenv("DEBUG") != ""
+
+	if debugMode {
+		logging.Logf("[/api/current_screen] Request from %s %s %s", c.ClientIP(), c.Request.Method, c.Request.URL.Path)
+	}
+
+	// Extract Access-Token header only (simpler auth than /api/display)
+	accessToken := c.GetHeader("Access-Token")
+
+	if debugMode {
+		logging.Logf("[/api/current_screen] Access-Token: %s", accessToken)
+	}
+
+	if accessToken == "" {
+		if debugMode {
+			logging.Logf("[/api/current_screen] Authentication failed: Missing access token")
+		}
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Missing access token"})
+		return
+	}
+
+	db := database.GetDB()
+	deviceService := database.NewDeviceService(db)
+
+	// Get device by API key
+	device, err := deviceService.GetDeviceByAPIKey(accessToken)
+	if err != nil {
+		if debugMode {
+			logging.Logf("[/api/current_screen] Authentication failed: Invalid access token '%s' - %v", accessToken, err)
+		}
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid access token"})
+		return
+	}
+
+	if debugMode {
+		logging.Logf("[/api/current_screen] Authentication successful for device %s (friendly_id: %s)", device.MacAddress, device.FriendlyID)
+	}
+
+	// Get current playlist items for this device
+	playlistService := database.NewPlaylistService(db)
+	activeItems, err := playlistService.GetActivePlaylistItemsForTime(device.ID, time.Now())
+	if err != nil {
+		if debugMode {
+			logging.Logf("[/api/current_screen] No playlist items found for device %s: %v", device.MacAddress, err)
+		}
+		activeItems = []database.PlaylistItem{}
+	}
+
+	// Determine device status
+	status := 200
+	if !device.IsClaimed {
+		status = 202
+	}
+
+	// Process current plugin without advancing playlist
+	response, err := processCurrentPlugin(device, activeItems)
+	if err != nil {
+		// Fall back to default response if plugin processing fails
+		if debugMode {
+			logging.Logf("[/api/current_screen] No active plugins for device %s, using default response (status: %d)", device.MacAddress, status)
+		}
+
+		// For unclaimed devices (status 202), provide setup image
+		imageURL := getImageURLForDevice(device)
+		filename := time.Now().Format("2006-01-02T15:04:05")
+
+		if status == 202 {
+			imageURL = "https://usetrmnl.com/images/setup/setup-logo.bmp"
+			filename = "empty_state"
+		}
+
+		response = gin.H{
+			"status":       status,
+			"image_url":    imageURL,
+			"filename":     filename,
+			"refresh_rate": device.RefreshRate,
+			"rendered_at":  nil,
+		}
+	} else {
+		// Ensure required fields are set when plugins succeed
+		response["status"] = status
+		response["rendered_at"] = nil
+
+		// Set refresh rate if not provided by plugin
+		if _, exists := response["refresh_rate"]; !exists {
+			response["refresh_rate"] = device.RefreshRate
+		}
+	}
+
+	if debugMode {
+		responseBytes, _ := json.Marshal(response)
+		logging.Logf("[/api/current_screen] Response to device %s: %s", device.MacAddress, string(responseBytes))
+
+		duration := time.Since(startTime)
+		logging.Logf("[/api/current_screen] Request processing time: %v", duration)
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
+// processCurrentPlugin processes the current playlist item without advancing the index
+func processCurrentPlugin(device *database.Device, activeItems []database.PlaylistItem) (gin.H, error) {
+	if len(activeItems) == 0 {
+		return nil, fmt.Errorf("no active playlist items")
+	}
+
+	// Get the current item based on existing LastPlaylistIndex (don't advance)
+	currentIndex := device.LastPlaylistIndex
+	if currentIndex < 0 || currentIndex >= len(activeItems) {
+		currentIndex = 0 // Default to first item if index is invalid
+	}
+
+	item := activeItems[currentIndex]
+
+	// Get the user plugin details
+	db := database.GetDB()
+	pluginService := database.NewPluginService(db)
+
+	userPlugin, err := pluginService.GetUserPluginByID(item.UserPluginID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user plugin: %w", err)
+	}
+
+	var response gin.H
+	var pluginErr error
+
+	// Handle different plugin types (same logic as processActivePlugins but without index update)
+	switch userPlugin.Plugin.Type {
+	case "redirect":
+		response, pluginErr = processRedirectPlugin(userPlugin)
+	case "alias":
+		response, pluginErr = processAliasPlugin(userPlugin)
+	case "core_proxy":
+		response, pluginErr = processCoreProxyPlugin(device, userPlugin)
+	default:
+		response = gin.H{
+			"image_url": getImageURLForDevice(device),
+			"filename":  "display.png",
+		}
+	}
+
+	// Apply duration override if no refresh_rate was provided by plugin
+	if pluginErr == nil {
+		if _, exists := response["refresh_rate"]; !exists && item.DurationOverride != nil {
+			response["refresh_rate"] = *item.DurationOverride
+		}
+	}
+
+	return response, pluginErr
+}

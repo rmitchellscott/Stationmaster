@@ -278,6 +278,29 @@ func (ds *DeviceService) DeleteDevice(deviceID uuid.UUID) error {
 	})
 }
 
+// UnclaimDevice removes a device from a user account making it available for reclaiming
+func (ds *DeviceService) UnclaimDevice(deviceID uuid.UUID) error {
+	return ds.db.Transaction(func(tx *gorm.DB) error {
+		// First delete all playlists associated with this device
+		if err := tx.Where("device_id = ?", deviceID).Delete(&Playlist{}).Error; err != nil {
+			return fmt.Errorf("failed to delete playlists: %w", err)
+		}
+
+		// Update device to unclaimed state while preserving the device itself
+		updates := map[string]interface{}{
+			"user_id":    nil,
+			"is_claimed": false,
+			"name":       "",
+		}
+		
+		if err := tx.Model(&Device{}).Where("id = ?", deviceID).Updates(updates).Error; err != nil {
+			return fmt.Errorf("failed to unclaim device: %w", err)
+		}
+
+		return nil
+	})
+}
+
 // UnlinkDevice removes a device from a user account (admin operation)
 func (ds *DeviceService) UnlinkDevice(deviceID uuid.UUID) error {
 	return ds.db.Transaction(func(tx *gorm.DB) error {

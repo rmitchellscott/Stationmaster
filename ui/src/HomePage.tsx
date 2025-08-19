@@ -63,8 +63,21 @@ export default function HomePage() {
         // Handle device selection persistence
         const storedDeviceId = getStoredDeviceId();
         const storedDeviceExists = fetchedDevices.some((d: Device) => d.id === storedDeviceId);
+        const currentlySelectedExists = selectedDeviceId ? fetchedDevices.some((d: Device) => d.id === selectedDeviceId) : false;
         
-        if (storedDeviceId && storedDeviceExists) {
+        // Check if currently selected device still exists (handles unlinking during session)
+        if (selectedDeviceId && !currentlySelectedExists) {
+          // Currently selected device was unlinked, need to select a new one
+          if (fetchedDevices.length > 0) {
+            const firstDeviceId = fetchedDevices[0].id;
+            setSelectedDeviceId(firstDeviceId);
+            storeDeviceId(firstDeviceId);
+          } else {
+            // No devices left
+            setSelectedDeviceId(null);
+            storeDeviceId(null);
+          }
+        } else if (storedDeviceId && storedDeviceExists) {
           // Use stored device if it still exists
           setSelectedDeviceId(storedDeviceId);
         } else if (!selectedDeviceId && fetchedDevices.length > 0) {
@@ -79,6 +92,9 @@ export default function HomePage() {
             const firstDeviceId = fetchedDevices[0].id;
             setSelectedDeviceId(firstDeviceId);
             storeDeviceId(firstDeviceId);
+          } else {
+            // No devices available
+            setSelectedDeviceId(null);
           }
         }
       }
@@ -378,7 +394,7 @@ export default function HomePage() {
               </TabsContent>
               
               <TabsContent value="devices" className="mt-6">
-                <DeviceManagementContent />
+                <DeviceManagementContent onUpdate={fetchDevices} />
               </TabsContent>
             </Tabs>
           </CardContent>

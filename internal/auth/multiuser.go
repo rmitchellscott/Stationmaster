@@ -22,6 +22,7 @@ type RegisterRequest struct {
 	Username string `json:"username" binding:"required,min=3,max=50"`
 	Email    string `json:"email" binding:"required,email"`
 	Password string `json:"password" binding:"required,min=8"`
+	Timezone string `json:"timezone,omitempty"`
 }
 
 // PasswordResetRequest represents a password reset request
@@ -105,7 +106,7 @@ func PublicRegisterHandler(c *gin.Context) {
 	firstUser := userCount == 0
 
 	userService := database.NewUserService(database.DB)
-	newUser, err := userService.CreateUser(req.Username, req.Email, req.Password, firstUser)
+	newUser, err := userService.CreateUser(req.Username, req.Email, req.Password, firstUser, req.Timezone)
 	if err != nil {
 		if strings.Contains(err.Error(), "already exists") {
 			c.JSON(http.StatusConflict, gin.H{"error": "User with this username or email already exists"})
@@ -175,7 +176,7 @@ func RegisterHandler(c *gin.Context) {
 	// Admin can always create users regardless of registration_enabled setting
 
 	userService := database.NewUserService(database.DB)
-	newUser, err := userService.CreateUser(req.Username, req.Email, req.Password, false)
+	newUser, err := userService.CreateUser(req.Username, req.Email, req.Password, false, req.Timezone)
 	if err != nil {
 		if strings.Contains(err.Error(), "already exists") {
 			c.JSON(http.StatusConflict, gin.H{"error": "User with this username or email already exists"})

@@ -378,6 +378,9 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
   const [newUsername, setNewUsername] = useState("");
   const [newEmail, setNewEmail] = useState("");
   const [newPassword, setNewPassword] = useState("");
+  
+  // Detect browser timezone for new users
+  const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
   const [registrationEnabled, setRegistrationEnabled] = useState(false);
   const [maxApiKeys, setMaxApiKeys] = useState("10");
@@ -878,6 +881,7 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
           username: newUsername,
           email: newEmail,
           password: newPassword,
+          timezone: browserTimezone,
         }),
       });
 

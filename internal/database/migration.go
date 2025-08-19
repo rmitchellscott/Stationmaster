@@ -2,6 +2,7 @@ package database
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/rmitchellscott/stationmaster/internal/config"
 	"github.com/rmitchellscott/stationmaster/internal/logging"
@@ -40,8 +41,12 @@ func MigrateToMultiUser() error {
 
 	logging.Logf("[STARTUP] Creating initial admin user: %s", username)
 
-	// Create the admin user using the service method
-	_, err := userService.CreateUser(username, email, password, true)
+	// Create the admin user using the service method (use system timezone for server-created accounts)
+	systemTimezone := "UTC" // Default to UTC for server-created admin users
+	if tz := time.Now().Location().String(); tz != "" && tz != "Local" {
+		systemTimezone = tz
+	}
+	_, err := userService.CreateUser(username, email, password, true, systemTimezone)
 	if err != nil {
 		// Check if user already exists
 		if existingUser, authErr := userService.AuthenticateUser(username, password); authErr == nil && existingUser != nil {

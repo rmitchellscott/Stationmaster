@@ -624,7 +624,7 @@ export function DeviceManagementContent() {
           </Card>
         ) : (
           <Card>
-            <CardContent className="p-0">
+            <CardContent>
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -841,6 +841,12 @@ export function DeviceManagementContent() {
               />
             </div>
             <div>
+              <Label className="text-sm">Device Model</Label>
+              <div className="mt-1 text-sm">
+                {editDevice?.device_model?.display_name || editDevice?.reported_model_name || editDevice?.model_name || "Unknown"}
+              </div>
+            </div>
+            <div>
               <Label htmlFor="edit-refresh-rate">Refresh Rate (seconds)</Label>
               <Input
                 id="edit-refresh-rate"
@@ -892,40 +898,7 @@ export function DeviceManagementContent() {
               
               <CollapsibleContent className="space-y-4 pt-4">
                 <div>
-                  <Label htmlFor="edit-model-name">Device Model</Label>
-                  
-                  {editDevice && editDevice.reported_model_name && (
-                    <div className="mt-2 space-y-2">
-                      {editDevice.manual_model_override === true ? (
-                        <Alert variant="destructive">
-                          <AlertTriangle className="h-4 w-4" />
-                          <AlertDescription>
-                            <div className="space-y-2">
-                              <div>
-                                <div>Device reports: <span className="font-medium">{getModelDisplayName(editDevice.reported_model_name)}</span></div>
-                                <div>Currently set to: <span className="font-medium">{getModelDisplayName(editModelName)}</span></div>
-                              </div>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                onClick={clearModelOverride}
-                              >
-                                Use Device Model
-                              </Button>
-                            </div>
-                          </AlertDescription>
-                        </Alert>
-                      ) : (
-                        <Alert>
-                          <Monitor className="h-4 w-4" />
-                          <AlertDescription>
-                            Device Model: <span className="font-medium">{getModelDisplayName(editDevice.reported_model_name)}</span>
-                          </AlertDescription>
-                        </Alert>
-                      )}
-                    </div>
-                  )}
+                  <Label htmlFor="edit-model-name">Model Override</Label>
                   
                   <Select value={editModelName} onValueChange={handleModelChange}>
                     <SelectTrigger className="mt-2">
@@ -953,77 +926,75 @@ export function DeviceManagementContent() {
                     Override only if your device is incorrectly reporting its model.
                   </p>
 
-                  {/* Model Specifications Card */}
-                  {editModelName !== "none" && (() => {
-                    const selectedModel = deviceModels.find(m => m.model_name === editModelName);
+                  {/* Model Specifications */}
+                  {(() => {
+                    const selectedModel = editModelName === "none" 
+                      ? deviceModels.find(m => m.model_name === (editDevice?.reported_model_name || editDevice?.model_name))
+                      : deviceModels.find(m => m.model_name === editModelName);
                     return selectedModel && (
-                      <Card className="mt-3">
-                        <CardContent className="pt-4">
-                          <div className="space-y-3">
-                            <div className="flex items-center justify-between text-sm">
-                              <span className="text-muted-foreground">Display:</span>
-                              <span className="font-medium">
-                                {selectedModel.screen_width} × {selectedModel.screen_height}
-                              </span>
-                            </div>
-                            <div className="flex items-center justify-between text-sm">
-                              <span className="text-muted-foreground">Bit Depth:</span>
-                              <span>{selectedModel.bit_depth}-bit</span>
-                            </div>
-                            <div className="flex items-center justify-between text-sm">
-                              <span className="text-muted-foreground">Features:</span>
-                              <div className="flex gap-2">
-                                {selectedModel.has_wifi && (
-                                  <Badge variant="secondary" className="text-xs">
-                                    <Wifi className="h-3 w-3 mr-1" />
-                                    WiFi
-                                  </Badge>
-                                )}
-                                {selectedModel.has_battery && (
-                                  <Badge variant="secondary" className="text-xs">
-                                    <Battery className="h-3 w-3 mr-1" />
-                                    Battery
-                                  </Badge>
-                                )}
-                                {selectedModel.has_buttons > 0 && (
-                                  <Badge variant="secondary" className="text-xs">
-                                    {selectedModel.has_buttons} Button{selectedModel.has_buttons > 1 ? 's' : ''}
-                                  </Badge>
-                                )}
-                              </div>
-                            </div>
-                            {selectedModel.description && (
-                              <div className="text-sm text-muted-foreground">
-                                {selectedModel.description}
-                              </div>
-                            )}
+                      <div className="mt-3 pt-3 border-t border-border/50">
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-muted-foreground">Display:</span>
+                            <span className="font-medium">
+                              {selectedModel.screen_width} × {selectedModel.screen_height} ({selectedModel.bit_depth}-bit)
+                            </span>
                           </div>
-                        </CardContent>
-                      </Card>
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-muted-foreground">Features:</span>
+                            <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                              {selectedModel.has_wifi && (
+                                <span className="flex items-center gap-1">
+                                  <Wifi className="h-3 w-3" />
+                                  WiFi
+                                </span>
+                              )}
+                              {selectedModel.has_battery && (
+                                <span className="flex items-center gap-1">
+                                  <Battery className="h-3 w-3" />
+                                  Battery
+                                </span>
+                              )}
+                              {selectedModel.has_buttons > 0 && (
+                                <span>
+                                  {selectedModel.has_buttons} Button{selectedModel.has_buttons > 1 ? 's' : ''}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          {selectedModel.description && (
+                            <div className="text-xs text-muted-foreground pt-1">
+                              {selectedModel.description}
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     );
                   })()}
                 </div>
                 
-                <div>
-                  <Label htmlFor="edit-mac-address">MAC Address</Label>
-                  <Input
-                    id="edit-mac-address"
-                    type="text"
-                    value={editDevice?.mac_address || ""}
-                    readOnly
-                    className="mt-2 font-mono text-sm"
-                  />
-                </div>
-                
-                <div>
-                  <Label htmlFor="edit-api-key">API Key</Label>
-                  <Input
-                    id="edit-api-key"
-                    type="text"
-                    value={editDevice?.api_key || ""}
-                    readOnly
-                    className="mt-2 font-mono text-sm"
-                  />
+                <div className="pt-3 border-t border-border/50 space-y-3">
+                  <div>
+                    <Label htmlFor="edit-mac-address" className="text-xs text-muted-foreground">MAC Address</Label>
+                    <Input
+                      id="edit-mac-address"
+                      type="text"
+                      value={editDevice?.mac_address || ""}
+                      readOnly
+                      className="mt-1 font-mono text-sm bg-muted/30"
+                    />
+                  </div>
+                  
+                  <div>
+                    <Label htmlFor="edit-api-key" className="text-xs text-muted-foreground">API Key</Label>
+                    <Input
+                      id="edit-api-key"
+                      type="text"
+                      value={editDevice?.api_key || ""}
+                      readOnly
+                      className="mt-1 font-mono text-sm bg-muted/30"
+                    />
+                  </div>
                 </div>
               </CollapsibleContent>
             </Collapsible>

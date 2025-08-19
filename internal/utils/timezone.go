@@ -13,7 +13,7 @@ func ValidateTimezone(timezone string) error {
 
 	_, err := time.LoadLocation(timezone)
 	if err != nil {
-		return fmt.Errorf("invalid timezone: %s", timezone)
+		return fmt.Errorf("%s", timezone)
 	}
 
 	return nil

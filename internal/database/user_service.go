@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/rmitchellscott/stationmaster/internal/utils"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
@@ -41,7 +42,7 @@ func InvalidateUserCache(userID uuid.UUID) error {
 }
 
 // CreateUser creates a new user with hashed password
-func (s *UserService) CreateUser(username, email, password string, isAdmin bool) (*User, error) {
+func (s *UserService) CreateUser(username, email, password string, isAdmin bool, timezone ...string) (*User, error) {
 	var existingUser User
 	if err := s.db.Where("LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?)", username, email).First(&existingUser).Error; err == nil {
 		return nil, errors.New("user with this username or email already exists")
@@ -53,11 +54,18 @@ func (s *UserService) CreateUser(username, email, password string, isAdmin bool)
 		return nil, fmt.Errorf("failed to hash password: %w", err)
 	}
 
+	// Handle timezone parameter
+	userTimezone := "UTC"
+	if len(timezone) > 0 && timezone[0] != "" {
+		userTimezone = utils.NormalizeTimezone(timezone[0])
+	}
+
 	user := &User{
 		ID:        uuid.New(),
 		Username:  username,
 		Email:     email,
 		Password:  string(hashedPassword),
+		Timezone:  userTimezone,
 		IsAdmin:   isAdmin,
 		IsActive:  true,
 		CreatedAt: time.Now(),

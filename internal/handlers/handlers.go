@@ -11,11 +11,21 @@ import (
 
 // ConfigHandler returns application configuration for the frontend
 func ConfigHandler(c *gin.Context) {
+	oidcEnabled := auth.IsOIDCEnabled()
+	oidcSsoOnly := auth.IsOIDCSsoOnlyEnabled()
+	oidcButtonText := ""
+	if oidcEnabled {
+		oidcButtonText = auth.GetOIDCButtonText()
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"authEnabled":      true, // Stationmaster always requires authentication
 		"multiUserMode":    true, // Stationmaster always operates in multi-user mode
-		"oidcEnabled":      config.Get("OIDC_ENABLED", "false") == "true",
+		"oidcEnabled":      oidcEnabled,
+		"oidcSsoOnly":      oidcSsoOnly,
+		"oidcButtonText":   oidcButtonText,
 		"proxyAuthEnabled": config.Get("PROXY_AUTH_ENABLED", "false") == "true",
+		"oidcGroupBasedAdmin": auth.IsOIDCGroupBasedAdminEnabled(),
 	})
 }
 

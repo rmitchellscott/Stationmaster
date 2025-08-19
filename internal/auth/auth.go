@@ -65,6 +65,12 @@ type LoginRequest struct {
 }
 
 func LoginHandler(c *gin.Context) {
+	// Check if OIDC SSO-only mode is enabled
+	if IsOIDCSsoOnlyEnabled() {
+		c.JSON(http.StatusForbidden, gin.H{"error": "backend.auth.sso_only"})
+		return
+	}
+
 	// rate limit by client IP
 	ip := c.ClientIP()
 	if !getLoginLimiter(ip).Allow() {

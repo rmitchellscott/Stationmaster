@@ -327,7 +327,6 @@ interface SortableTableRowProps {
   onScheduleClick: (item: PlaylistItem) => void;
   onVisibilityToggle: (item: PlaylistItem) => void;
   onRemove: (itemId: string) => void;
-  onCurrentItemChangeAnimated?: () => void;
 }
 
 function SortableTableRow({ 
@@ -345,7 +344,6 @@ function SortableTableRow({
   onScheduleClick, 
   onVisibilityToggle, 
   onRemove,
-  onCurrentItemChangeAnimated
 }: SortableTableRowProps) {
   const {
     attributes,
@@ -387,24 +385,14 @@ function SortableTableRow({
     ? timeTravelActiveItems.some(activeItem => activeItem.id === item.id)
     : isItemCurrentlyActive(item, userTimezone);
 
-  // Trigger animation completion callback
-  React.useEffect(() => {
-    if (isChangingToCurrent && onCurrentItemChangeAnimated) {
-      const timer = setTimeout(() => {
-        onCurrentItemChangeAnimated();
-      }, 600); // Match animation duration
-      return () => clearTimeout(timer);
-    }
-  }, [isChangingToCurrent, onCurrentItemChangeAnimated]);
 
-  // Create animation classes
+  // Create styling classes
   const animationClasses = [
     'sortable-row',
     'transition-all duration-300',
     isDragging ? 'relative z-50' : '',
     !item.is_visible ? 'opacity-60' : '',
     !isActive && item.is_visible ? 'opacity-75' : '',
-    isChangingToCurrent ? 'animate-pulse' : '',
     item.is_sleep_mode ? 'bg-slate-50 dark:bg-slate-900/50' : '', // Special styling for sleep mode
   ].filter(Boolean).join(' ');
 
@@ -1429,7 +1417,6 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
                             setDeleteItemDialog({ isOpen: true, item });
                           }
                         }}
-                        onCurrentItemChangeAnimated={deviceEvents.clearCurrentItemChanged}
                         />
                       );
                     })}

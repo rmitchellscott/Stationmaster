@@ -389,7 +389,7 @@ function SortableTableRow({
   // Create styling classes
   const animationClasses = [
     'sortable-row',
-    'transition-all duration-300',
+    'transition-transform duration-300', // Only transition transform for drag-and-drop
     isDragging ? 'relative z-50' : '',
     !item.is_visible ? 'opacity-60' : '',
     !isActive && item.is_visible ? 'opacity-75' : '',
@@ -1079,6 +1079,15 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
   const toggleItemVisibility = async (item: PlaylistItem) => {
     try {
       setError(null);
+      
+      // Optimistic UI update - update local state immediately
+      const updatedItems = playlistItems.map(playlistItem => 
+        playlistItem.id === item.id 
+          ? { ...playlistItem, is_visible: !playlistItem.is_visible }
+          : playlistItem
+      );
+      setPlaylistItems(updatedItems);
+      
       const response = await fetch(`/api/playlists/items/${item.id}`, {
         method: "PUT",
         headers: {
@@ -1089,13 +1098,17 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
           is_visible: !item.is_visible,
         }),
       });
-      if (response.ok) {
-        await fetchPlaylistItems();
-      } else {
+      
+      if (!response.ok) {
+        // Revert optimistic update on failure
+        setPlaylistItems(playlistItems);
         const errorData = await response.json();
         setError(errorData.error || "Failed to update item visibility");
       }
+      // Note: No need to fetch fresh data on success since we already updated optimistically
     } catch (error) {
+      // Revert optimistic update on network error
+      setPlaylistItems(playlistItems);
       setError("Network error occurred");
     }
   };

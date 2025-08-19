@@ -658,7 +658,7 @@ export function UserSettings({ isOpen, onClose }: UserSettingsProps) {
 
                     <div>
                       <Label htmlFor="timezone">Timezone</Label>
-                      <Popover modal={false} open={timezoneOpen} onOpenChange={setTimezoneOpen}>
+                      <Popover modal={true} open={timezoneOpen} onOpenChange={setTimezoneOpen}>
                         <PopoverTrigger asChild>
                           <Button
                             variant="outline"
@@ -686,31 +686,19 @@ export function UserSettings({ isOpen, onClose }: UserSettingsProps) {
                           </Button>
                         </PopoverTrigger>
                         <PopoverContent 
-                          className="w-96 p-0"
+                          className="w-96 p-0 mobile-dialog-content sm:w-96 !top-[0vh] !translate-y-0 sm:!top-auto sm:!translate-y-0"
+                          side="bottom"
+                          align="start"
                           onOpenAutoFocus={(e) => {
                             // Prevent auto-focus issues on iOS
                             if (typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent)) {
                               e.preventDefault();
                             }
                           }}
-                          onWheel={(e) => {
-                            e.stopPropagation();
-                          }}
-                          onWheelCapture={(e) => {
-                            e.stopPropagation();
-                          }}
                         >
                           <Command>
                             <CommandInput placeholder="Search timezones..." className="h-8" />
-                            <CommandList 
-                              className="max-h-[400px] overflow-y-scroll overscroll-contain scroll-smooth"
-                              onWheel={(e) => {
-                                e.stopPropagation();
-                              }}
-                              onWheelCapture={(e) => {
-                                e.stopPropagation();
-                              }}
-                            >
+                            <CommandList>
                               <CommandEmpty>No timezone found.</CommandEmpty>
                               {(() => {
                                 const { common, other } = getGroupedTimezones();
@@ -720,7 +708,7 @@ export function UserSettings({ isOpen, onClose }: UserSettingsProps) {
                                     {common.map((tz) => (
                                       <CommandItem
                                         key={tz.value}
-                                        value={`${tz.label} ${tz.time} ${tz.abbr}`}
+                                        value={tz.label}
                                         onSelect={() => {
                                           setTimezone(tz.value);
                                           setTimezoneOpen(false);
@@ -740,7 +728,7 @@ export function UserSettings({ isOpen, onClose }: UserSettingsProps) {
                                     {other.map((tz) => (
                                       <CommandItem
                                         key={tz.value}
-                                        value={`${tz.label} ${tz.time} ${tz.abbr}`}
+                                        value={tz.label}
                                         onSelect={() => {
                                           setTimezone(tz.value);
                                           setTimezoneOpen(false);
@@ -1013,9 +1001,9 @@ export function UserSettings({ isOpen, onClose }: UserSettingsProps) {
                                   <Badge
                                     variant={
                                       status === "active"
-                                        ? "success"
+                                        ? "default"
                                         : status === "expired"
-                                          ? "default"
+                                          ? "destructive"
                                           : "secondary"
                                     }
                                     className="min-w-16 max-w-32 justify-center text-center whitespace-nowrap"

@@ -187,7 +187,7 @@ const isItemCurrentlyActive = (item: PlaylistItem, userTimezone: string): boolea
   });
 };
 
-const formatScheduleSummary = (schedules: any[]): string => {
+const formatScheduleSummary = (schedules: any[], userTimezone?: string): string => {
   if (!schedules || schedules.length === 0) {
     return "Always active";
   }
@@ -220,6 +220,7 @@ const formatScheduleSummary = (schedules: any[]): string => {
     const utcDate = new Date(utcDateTime);
     
     const localTime = utcDate.toLocaleTimeString('en-GB', { 
+      timeZone: userTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone,
       hour12: false, 
       hour: '2-digit', 
       minute: '2-digit'
@@ -242,9 +243,17 @@ const formatScheduleSummary = (schedules: any[]): string => {
 
   const timeRange = `${formatTime12(startTimeLocal)} - ${formatTime12(endTimeLocal)}`;
   
+  // Get timezone abbreviation for display
+  const timezoneAbbr = userTimezone ? 
+    new Intl.DateTimeFormat('en', { timeZoneName: 'short', timeZone: userTimezone })
+      .formatToParts(new Date())
+      .find(part => part.type === 'timeZoneName')?.value || '' : '';
+  
+  const timeWithTz = timezoneAbbr ? `${timeRange} ${timezoneAbbr}` : timeRange;
+  
   return activSchedules.length > 1 ? 
-    `${dayText} ${timeRange} +${activSchedules.length - 1} more` :
-    `${dayText} ${timeRange}`;
+    `${dayText} ${timeWithTz} +${activSchedules.length - 1} more` :
+    `${dayText} ${timeWithTz}`;
 };
 
 interface SortableTableRowProps {
@@ -412,7 +421,7 @@ function SortableTableRow({
       </TableCell>
       <TableCell className="hidden lg:table-cell">
         <div className="text-sm">
-          {formatScheduleSummary(item.schedules || [])}
+          {formatScheduleSummary(item.schedules || [], userTimezone)}
         </div>
       </TableCell>
       <TableCell className="text-right">
@@ -559,8 +568,10 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
     const utcDateTime = `${today}T${utcTime}Z`;
     const utcDate = new Date(utcDateTime);
     
-    // Convert to local time using the browser's timezone
+    // Convert to user's configured timezone (or browser timezone as fallback)
+    const userTimezone = getUserTimezone();
     const localTime = utcDate.toLocaleTimeString('en-GB', { 
+      timeZone: userTimezone,
       hour12: false, 
       hour: '2-digit', 
       minute: '2-digit'
@@ -907,6 +918,16 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
 
   const saveSchedules = async () => {
     if (!scheduleItem) return;
+
+    // Warn if user doesn't have timezone configured
+    if (!user?.timezone) {
+      const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const confirm = window.confirm(
+        `Your timezone preference is not set. Times will be interpreted as ${userTimezone}. ` +
+        `Would you like to continue? (You can set your timezone in User Settings)`
+      );
+      if (!confirm) return;
+    }
 
     try {
       setScheduleLoading(true);

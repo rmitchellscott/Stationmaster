@@ -19,6 +19,9 @@ export function RegisterForm() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   const [registrationEnabled, setRegistrationEnabled] = useState(false);
+  
+  // Detect browser timezone
+  const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
   useEffect(() => {
     const checkRegistrationStatus = async () => {
@@ -71,7 +74,7 @@ export function RegisterForm() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ username, email, password }),
+        body: JSON.stringify({ username, email, password, timezone: browserTimezone }),
         credentials: "include",
       });
 

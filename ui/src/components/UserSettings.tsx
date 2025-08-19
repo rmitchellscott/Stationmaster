@@ -34,6 +34,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  Command,
+  CommandInput,
+  CommandList,
+  CommandEmpty,
+  CommandItem,
+} from "@/components/ui/command";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
@@ -46,13 +54,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Settings,
   Key,
@@ -98,6 +99,7 @@ export function UserSettings({ isOpen, onClose }: UserSettingsProps) {
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [timezone, setTimezone] = useState("");
+  const [timezoneOpen, setTimezoneOpen] = useState(false);
   
   // Original values for change tracking
   const [originalValues, setOriginalValues] = useState({
@@ -105,6 +107,66 @@ export function UserSettings({ isOpen, onClose }: UserSettingsProps) {
     email: "",
     timezone: ""
   });
+
+  // Grouped timezone data for better UX
+  const getGroupedTimezones = () => {
+    const commonTimezones = [
+      'UTC',
+      'America/New_York',
+      'America/Chicago', 
+      'America/Denver',
+      'America/Los_Angeles',
+      'Europe/London',
+      'Europe/Paris',
+      'Europe/Berlin',
+      'Asia/Tokyo',
+      'Asia/Shanghai',
+      'Australia/Sydney'
+    ];
+
+    const allTimezones = Intl.supportedValuesOf('timeZone');
+    const now = new Date();
+    
+    const formatTimezone = (tz: string) => {
+      try {
+        const time = now.toLocaleTimeString('en-US', {
+          timeZone: tz,
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true
+        });
+        const abbr = now.toLocaleDateString('en', {
+          timeZone: tz,
+          timeZoneName: 'short'
+        }).split(', ').pop() || '';
+        
+        return {
+          value: tz,
+          label: tz.replace(/_/g, ' '),
+          time: time,
+          abbr: abbr
+        };
+      } catch {
+        return {
+          value: tz,
+          label: tz.replace(/_/g, ' '),
+          time: '',
+          abbr: ''
+        };
+      }
+    };
+
+    const commonFormatted = commonTimezones.map(formatTimezone);
+    const otherTimezones = allTimezones
+      .filter(tz => !commonTimezones.includes(tz))
+      .map(formatTimezone)
+      .sort((a, b) => a.label.localeCompare(b.label));
+
+    return {
+      common: commonFormatted,
+      other: otherTimezones
+    };
+  };
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -596,21 +658,111 @@ export function UserSettings({ isOpen, onClose }: UserSettingsProps) {
 
                     <div>
                       <Label htmlFor="timezone">Timezone</Label>
-                      <Select
-                        value={timezone}
-                        onValueChange={setTimezone}
-                      >
-                        <SelectTrigger className="mt-2">
-                          <SelectValue placeholder="Select timezone..." />
-                        </SelectTrigger>
-                        <SelectContent className="max-h-[200px]">
-                          {Intl.supportedValuesOf('timeZone').map((tz) => (
-                            <SelectItem key={tz} value={tz}>
-                              {tz.replace(/_/g, ' ')}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <Popover modal={false} open={timezoneOpen} onOpenChange={setTimezoneOpen}>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="outline"
+                            role="combobox"
+                            aria-expanded={timezoneOpen}
+                            className="mt-2 w-full justify-between"
+                          >
+                            {timezone ? 
+                              `${timezone.replace(/_/g, ' ')} ${(() => {
+                                try {
+                                  const now = new Date();
+                                  const time = now.toLocaleTimeString('en-US', {
+                                    timeZone: timezone,
+                                    hour: 'numeric',
+                                    minute: '2-digit',
+                                    hour12: true
+                                  });
+                                  return `(${time})`;
+                                } catch {
+                                  return '';
+                                }
+                              })()} ` : 
+                              "Select timezone..."
+                            }
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent 
+                          className="w-96 p-0"
+                          onOpenAutoFocus={(e) => {
+                            // Prevent auto-focus issues on iOS
+                            if (typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent)) {
+                              e.preventDefault();
+                            }
+                          }}
+                          onWheel={(e) => {
+                            e.stopPropagation();
+                          }}
+                          onWheelCapture={(e) => {
+                            e.stopPropagation();
+                          }}
+                        >
+                          <Command>
+                            <CommandInput placeholder="Search timezones..." className="h-8" />
+                            <CommandList 
+                              className="max-h-[400px] overflow-y-scroll overscroll-contain scroll-smooth"
+                              onWheel={(e) => {
+                                e.stopPropagation();
+                              }}
+                              onWheelCapture={(e) => {
+                                e.stopPropagation();
+                              }}
+                            >
+                              <CommandEmpty>No timezone found.</CommandEmpty>
+                              {(() => {
+                                const { common, other } = getGroupedTimezones();
+                                return (
+                                  <>
+                                    {/* Common timezones with star indicator */}
+                                    {common.map((tz) => (
+                                      <CommandItem
+                                        key={tz.value}
+                                        value={`${tz.label} ${tz.time} ${tz.abbr}`}
+                                        onSelect={() => {
+                                          setTimezone(tz.value);
+                                          setTimezoneOpen(false);
+                                        }}
+                                        className="cursor-pointer"
+                                        style={{ pointerEvents: 'auto' }}
+                                      >
+                                        <div className="flex items-center justify-between w-full">
+                                          <span>{tz.label}</span>
+                                          <span className="text-sm text-muted-foreground">
+                                            {tz.time} {tz.abbr}
+                                          </span>
+                                        </div>
+                                      </CommandItem>
+                                    ))}
+                                    {/* All other timezones */}
+                                    {other.map((tz) => (
+                                      <CommandItem
+                                        key={tz.value}
+                                        value={`${tz.label} ${tz.time} ${tz.abbr}`}
+                                        onSelect={() => {
+                                          setTimezone(tz.value);
+                                          setTimezoneOpen(false);
+                                        }}
+                                        className="cursor-pointer"
+                                        style={{ pointerEvents: 'auto' }}
+                                      >
+                                        <div className="flex items-center justify-between w-full">
+                                          <span>{tz.label}</span>
+                                          <span className="text-sm text-muted-foreground">
+                                            {tz.time} {tz.abbr}
+                                          </span>
+                                        </div>
+                                      </CommandItem>
+                                    ))}
+                                  </>
+                                );
+                              })()}
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
                       <p className="text-xs text-muted-foreground mt-1">
                         Used for schedule displays and timezone-aware features.
                       </p>

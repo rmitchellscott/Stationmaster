@@ -162,6 +162,15 @@ func UpdateDeviceHandler(c *gin.Context) {
 		device.AllowFirmwareUpdates = *req.AllowFirmwareUpdates
 	}
 	if req.IsSharable != nil {
+		// If device is being set to not sharable, clear any mirrored devices
+		if !*req.IsSharable && device.IsSharable {
+			playlistService := database.NewPlaylistService(db)
+			err := playlistService.ClearMirroredPlaylistsForSourceDevice(device.ID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to clear mirrored devices"})
+				return
+			}
+		}
 		device.IsSharable = *req.IsSharable
 	}
 
@@ -741,7 +750,15 @@ func UnmirrorDeviceHandler(c *gin.Context) {
 		return
 	}
 
-	// Clear the mirror relationship (keep existing playlist items)
+	// Clear mirrored playlist items
+	playlistService := database.NewPlaylistService(db)
+	err = playlistService.ClearMirroredPlaylists(device.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to clear mirrored playlists"})
+		return
+	}
+
+	// Clear the mirror relationship
 	device.MirrorSourceID = nil
 	device.MirrorSyncedAt = nil
 

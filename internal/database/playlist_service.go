@@ -120,11 +120,28 @@ func (pls *PlaylistService) AddItemToPlaylist(playlistID, userPluginID uuid.UUID
 
 // GetPlaylistItems returns all items in a playlist with their associated data
 func (pls *PlaylistService) GetPlaylistItems(playlistID uuid.UUID) ([]PlaylistItem, error) {
+	log.Printf("[PLAYLIST QUERY] Querying playlist items for playlist ID: %s", playlistID.String())
+	
 	var items []PlaylistItem
 	err := pls.db.Preload("UserPlugin").Preload("UserPlugin.Plugin").Preload("Schedules").
 		Where("playlist_id = ?", playlistID).
 		Order("order_index ASC").
 		Find(&items).Error
+		
+	log.Printf("[PLAYLIST QUERY] Query completed. Found %d items. Error: %v", len(items), err)
+	
+	for i, item := range items {
+		log.Printf("[PLAYLIST QUERY] Item %d: ID=%s, UserPluginID=%s, IsVisible=%t, OrderIndex=%d, Schedules=%d", 
+			i, item.ID.String(), item.UserPluginID.String(), item.IsVisible, item.OrderIndex, len(item.Schedules))
+		
+		if item.UserPlugin.ID != uuid.Nil {
+			log.Printf("[PLAYLIST QUERY] Item %d UserPlugin: ID=%s, Name=%s, UserID=%s", 
+				i, item.UserPlugin.ID.String(), item.UserPlugin.Name, item.UserPlugin.UserID.String())
+		} else {
+			log.Printf("[PLAYLIST QUERY] Item %d UserPlugin: NOT LOADED or NULL", i)
+		}
+	}
+	
 	return items, err
 }
 
@@ -235,6 +252,125 @@ func (pls *PlaylistService) compactPlaylistOrderInTx(tx *gorm.DB, playlistID uui
 	return nil
 }
 
+// ConsolidateDevicePlaylists ensures each device has exactly one default playlist
+// Merges multiple playlists into a single default playlist per device
+func (pls *PlaylistService) ConsolidateDevicePlaylists() error {
+	log.Printf("[CONSOLIDATE] Starting playlist consolidation for all devices")
+	
+	// Get all devices
+	var devices []Device
+	if err := pls.db.Find(&devices).Error; err != nil {
+		return err
+	}
+	
+	consolidatedCount := 0
+	for _, device := range devices {
+		if err := pls.consolidatePlaylistsForDevice(device.ID); err != nil {
+			log.Printf("[CONSOLIDATE] Error consolidating playlists for device %s: %v", device.ID.String(), err)
+			return err
+		}
+		consolidatedCount++
+	}
+	
+	log.Printf("[CONSOLIDATE] Successfully consolidated playlists for %d devices", consolidatedCount)
+	return nil
+}
+
+// consolidatePlaylistsForDevice merges all playlists for a single device into one default playlist
+func (pls *PlaylistService) consolidatePlaylistsForDevice(deviceID uuid.UUID) error {
+	// Get all playlists for this device
+	var playlists []Playlist
+	if err := pls.db.Where("device_id = ?", deviceID).Find(&playlists).Error; err != nil {
+		return err
+	}
+	
+	if len(playlists) <= 1 {
+		// Device has 0 or 1 playlist, ensure it's marked as default
+		if len(playlists) == 1 && !playlists[0].IsDefault {
+			playlists[0].IsDefault = true
+			if err := pls.db.Save(&playlists[0]).Error; err != nil {
+				return err
+			}
+			log.Printf("[CONSOLIDATE] Marked single playlist as default for device %s", deviceID.String())
+		}
+		return nil
+	}
+	
+	log.Printf("[CONSOLIDATE] Device %s has %d playlists, consolidating...", deviceID.String(), len(playlists))
+	
+	return pls.db.Transaction(func(tx *gorm.DB) error {
+		// Find or create the target default playlist
+		var targetPlaylist *Playlist
+		for i := range playlists {
+			if playlists[i].IsDefault {
+				targetPlaylist = &playlists[i]
+				break
+			}
+		}
+		
+		// If no default playlist exists, use the first one
+		if targetPlaylist == nil {
+			targetPlaylist = &playlists[0]
+			targetPlaylist.IsDefault = true
+			if err := tx.Save(targetPlaylist).Error; err != nil {
+				return err
+			}
+		}
+		
+		log.Printf("[CONSOLIDATE] Using playlist '%s' as target default for device %s", 
+			targetPlaylist.Name, deviceID.String())
+		
+		// Collect all items from all playlists and move them to the target playlist
+		orderIndex := 1
+		playlistsToDelete := []uuid.UUID{}
+		
+		for _, playlist := range playlists {
+			if playlist.ID == targetPlaylist.ID {
+				continue // Skip the target playlist
+			}
+			
+			// Get all items from this playlist
+			var items []PlaylistItem
+			if err := tx.Where("playlist_id = ?", playlist.ID).Find(&items).Error; err != nil {
+				return err
+			}
+			
+			log.Printf("[CONSOLIDATE] Moving %d items from playlist '%s' to default playlist", 
+				len(items), playlist.Name)
+			
+			// Move each item to the target playlist
+			for _, item := range items {
+				// Update the item to belong to the target playlist with new order
+				updates := map[string]interface{}{
+					"playlist_id": targetPlaylist.ID,
+					"order_index": orderIndex,
+					"updated_at":  time.Now(),
+				}
+				
+				if err := tx.Model(&item).Updates(updates).Error; err != nil {
+					return err
+				}
+				orderIndex++
+			}
+			
+			// Mark this playlist for deletion
+			playlistsToDelete = append(playlistsToDelete, playlist.ID)
+		}
+		
+		// Delete the empty playlists
+		for _, playlistID := range playlistsToDelete {
+			if err := tx.Delete(&Playlist{}, "id = ?", playlistID).Error; err != nil {
+				return err
+			}
+		}
+		
+		log.Printf("[CONSOLIDATE] Deleted %d extra playlists for device %s", 
+			len(playlistsToDelete), deviceID.String())
+		
+		return nil
+	})
+}
+
 // AddScheduleToPlaylistItem adds a schedule to a playlist item
 func (pls *PlaylistService) AddScheduleToPlaylistItem(playlistItemID uuid.UUID, name string, dayMask int, startTime, endTime, timezone string, isActive bool) (*Schedule, error) {
 	schedule := &Schedule{
@@ -273,17 +409,26 @@ func (pls *PlaylistService) DeleteSchedule(scheduleID uuid.UUID) error {
 
 // GetActivePlaylistItemsForTime returns playlist items that should be active at a given time
 func (pls *PlaylistService) GetActivePlaylistItemsForTime(deviceID uuid.UUID, currentTime time.Time) ([]PlaylistItem, error) {
+	log.Printf("[SCHEDULE DEBUG] Starting GetActivePlaylistItemsForTime for device %s", deviceID.String())
+	
 	// Get the default playlist for the device
 	playlist, err := pls.GetDefaultPlaylistForDevice(deviceID)
 	if err != nil {
+		log.Printf("[SCHEDULE DEBUG] Error getting default playlist for device %s: %v", deviceID.String(), err)
 		return nil, err
 	}
+	
+	log.Printf("[SCHEDULE DEBUG] Found default playlist for device %s: %s (ID: %s)", 
+		deviceID.String(), playlist.Name, playlist.ID.String())
 
 	// Get all playlist items with their schedules
 	items, err := pls.GetPlaylistItems(playlist.ID)
 	if err != nil {
+		log.Printf("[SCHEDULE DEBUG] Error getting playlist items for playlist %s: %v", playlist.ID.String(), err)
 		return nil, err
 	}
+	
+	log.Printf("[SCHEDULE DEBUG] Raw query returned %d items from GetPlaylistItems", len(items))
 
 	// Filter items that match the current time
 	var activeItems []PlaylistItem
@@ -410,58 +555,65 @@ func (pls *PlaylistService) CopyPlaylistItems(sourceDeviceID, targetDeviceID uui
 		return gorm.ErrRecordNotFound
 	}
 
-	// Get all playlists from source device
+	// Get the target device's default playlist (or create one if it doesn't exist)
+	var targetPlaylist Playlist
+	err := pls.db.Where("device_id = ? AND is_default = ?", targetDeviceID, true).First(&targetPlaylist).Error
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			// Create a default playlist for the target device
+			targetPlaylist = Playlist{
+				UserID:    *targetDevice.UserID,
+				DeviceID:  targetDeviceID,
+				Name:      "Default Playlist",
+				IsDefault: true,
+			}
+			if err := pls.db.Create(&targetPlaylist).Error; err != nil {
+				return err
+			}
+			log.Printf("[MIRROR] Created default playlist for target device %s", targetDeviceID.String())
+		} else {
+			return err
+		}
+	}
+
+	log.Printf("[MIRROR] Using target device default playlist: %s (ID: %s)", 
+		targetPlaylist.Name, targetPlaylist.ID.String())
+
+	// Get all playlists from source device to copy their items
 	var sourcePlaylists []Playlist
 	if err := pls.db.Where("device_id = ?", sourceDeviceID).Find(&sourcePlaylists).Error; err != nil {
 		return err
 	}
 
+	log.Printf("[MIRROR] Starting to copy items from %d source playlists to target device %s", 
+		len(sourcePlaylists), targetDeviceID.String())
+
 	// Begin transaction
 	return pls.db.Transaction(func(tx *gorm.DB) error {
-		// For each source playlist, copy it to the target device
-		for _, sourcePlaylist := range sourcePlaylists {
-			// Create corresponding playlist on target device if it doesn't exist
-			var existingPlaylist Playlist
-			playlistName := sourcePlaylist.Name
-			
-			// Check if playlist with same name already exists
-			err := tx.Where("device_id = ? AND name = ?", targetDeviceID, playlistName).First(&existingPlaylist).Error
-			if err != nil && err != gorm.ErrRecordNotFound {
-				return err
-			}
+		// Clear existing items in target playlist
+		if err := tx.Where("playlist_id = ?", targetPlaylist.ID).Delete(&PlaylistItem{}).Error; err != nil {
+			return err
+		}
+		log.Printf("[MIRROR] Cleared existing items from target playlist")
 
-			var targetPlaylist *Playlist
-			if err == gorm.ErrRecordNotFound {
-				// Create new playlist
-				targetPlaylist = &Playlist{
-					UserID:    *targetDevice.UserID,
-					DeviceID:  targetDeviceID,
-					Name:      playlistName,
-					IsDefault: sourcePlaylist.IsDefault,
-				}
-				if err := tx.Create(targetPlaylist).Error; err != nil {
-					return err
-				}
-			} else {
-				// Use existing playlist
-				targetPlaylist = &existingPlaylist
-			}
+		// Copy items from all source playlists into the single target default playlist
+		orderIndex := 1
+		for playlistIndex, sourcePlaylist := range sourcePlaylists {
+			log.Printf("[MIRROR] Processing source playlist %d/%d: %s (ID: %s)", 
+				playlistIndex+1, len(sourcePlaylists), sourcePlaylist.Name, sourcePlaylist.ID.String())
 
 			// Get all playlist items from source playlist
 			var sourceItems []PlaylistItem
 			if err := tx.Where("playlist_id = ?", sourcePlaylist.ID).Find(&sourceItems).Error; err != nil {
 				return err
 			}
+			
+			log.Printf("[MIRROR] Found %d items in source playlist %s", len(sourceItems), sourcePlaylist.Name)
 
-			// Delete existing items in target playlist to replace with source items
-			if err := tx.Where("playlist_id = ?", targetPlaylist.ID).Delete(&PlaylistItem{}).Error; err != nil {
-				return err
-			}
-
-			// Copy each playlist item
-			for _, sourceItem := range sourceItems {
-				log.Printf("[MIRROR] Copying item: UserPluginID=%s, IsVisible=%t, OrderIndex=%d", 
-					sourceItem.UserPluginID, sourceItem.IsVisible, sourceItem.OrderIndex)
+			// Copy each playlist item to the target default playlist
+			for itemIndex, sourceItem := range sourceItems {
+				log.Printf("[MIRROR] Copying item %d/%d: UserPluginID=%s, IsVisible=%t, OrderIndex=%d", 
+					itemIndex+1, len(sourceItems), sourceItem.UserPluginID, sourceItem.IsVisible, sourceItem.OrderIndex)
 
 				// Create item with minimum required fields to avoid foreign key constraint errors
 				targetItem := PlaylistItem{
@@ -476,13 +628,15 @@ func (pls *PlaylistService) CopyPlaylistItems(sourceDeviceID, targetDeviceID uui
 				log.Printf("[MIRROR] Target item before update: IsVisible=%t", sourceItem.IsVisible)
 
 				// Use Updates to set remaining fields including false values
+				// Use a sequential order index across all source playlists
 				updates := map[string]interface{}{
-					"order_index":       sourceItem.OrderIndex,
+					"order_index":       orderIndex,
 					"is_visible":        sourceItem.IsVisible,
 					"importance":        sourceItem.Importance,
 					"duration_override": sourceItem.DurationOverride,
 					"updated_at":        time.Now(),
 				}
+				orderIndex++ // Increment for next item
 
 				if err := tx.Model(&targetItem).Updates(updates).Error; err != nil {
 					log.Printf("[MIRROR] Error updating target item: %v", err)
@@ -502,8 +656,12 @@ func (pls *PlaylistService) CopyPlaylistItems(sourceDeviceID, targetDeviceID uui
 				if err := tx.Where("playlist_item_id = ?", sourceItem.ID).Find(&sourceSchedules).Error; err != nil {
 					return err
 				}
+				
+				log.Printf("[MIRROR] Found %d schedules for item %s", len(sourceSchedules), sourceItem.ID.String())
 
-				for _, sourceSchedule := range sourceSchedules {
+				for scheduleIndex, sourceSchedule := range sourceSchedules {
+					log.Printf("[MIRROR] Copying schedule %d/%d: %s (Active: %t, Days: %d)", 
+						scheduleIndex+1, len(sourceSchedules), sourceSchedule.Name, sourceSchedule.IsActive, sourceSchedule.DayMask)
 					targetSchedule := Schedule{
 						PlaylistItemID: targetItem.ID,
 						Name:           sourceSchedule.Name,
@@ -517,9 +675,40 @@ func (pls *PlaylistService) CopyPlaylistItems(sourceDeviceID, targetDeviceID uui
 					}
 
 					if err := tx.Create(&targetSchedule).Error; err != nil {
+						log.Printf("[MIRROR] Error creating schedule: %v", err)
 						return err
 					}
+					log.Printf("[MIRROR] Successfully created schedule %s with ID %s", targetSchedule.Name, targetSchedule.ID.String())
 				}
+			}
+		}
+		
+		log.Printf("[MIRROR] Successfully completed mirroring transaction from %s to %s", 
+			sourceDeviceID.String(), targetDeviceID.String())
+
+		return nil
+	})
+}
+
+// ClearMirroredPlaylists removes all playlist items from a device that was mirroring
+func (pls *PlaylistService) ClearMirroredPlaylists(deviceID uuid.UUID) error {
+	return pls.db.Transaction(func(tx *gorm.DB) error {
+		// Get all playlists for this device
+		var playlists []Playlist
+		if err := tx.Where("device_id = ?", deviceID).Find(&playlists).Error; err != nil {
+			return err
+		}
+
+		// For each playlist, delete all playlist items and their schedules
+		for _, playlist := range playlists {
+			// Delete schedules for all playlist items in this playlist
+			if err := tx.Where("playlist_item_id IN (SELECT id FROM playlist_items WHERE playlist_id = ?)", playlist.ID).Delete(&Schedule{}).Error; err != nil {
+				return err
+			}
+			
+			// Delete all playlist items
+			if err := tx.Where("playlist_id = ?", playlist.ID).Delete(&PlaylistItem{}).Error; err != nil {
+				return err
 			}
 		}
 

@@ -621,6 +621,18 @@ export function DeviceManagementContent() {
         setShowMirrorDialog(false);
         setMirrorSourceFriendlyId("");
         await fetchDevices();
+        
+        // Update the editDevice state to reflect the new mirroring status
+        const updatedDevices = await fetch("/api/devices", {
+          credentials: "include",
+        });
+        if (updatedDevices.ok) {
+          const deviceData = await updatedDevices.json();
+          const updatedDevice = deviceData.devices.find((d: Device) => d.id === editDevice.id);
+          if (updatedDevice) {
+            setEditDevice(updatedDevice);
+          }
+        }
       } else {
         const errorData = await response.json();
         setError(errorData.error || "Failed to mirror device");
@@ -646,6 +658,20 @@ export function DeviceManagementContent() {
         const data = await response.json();
         setSuccessMessage(data.message);
         await fetchDevices();
+        
+        // Update the editDevice state to reflect the new sync timestamp
+        if (editDevice && editDevice.id === device.id) {
+          const updatedDevices = await fetch("/api/devices", {
+            credentials: "include",
+          });
+          if (updatedDevices.ok) {
+            const deviceData = await updatedDevices.json();
+            const updatedDevice = deviceData.devices.find((d: Device) => d.id === device.id);
+            if (updatedDevice) {
+              setEditDevice(updatedDevice);
+            }
+          }
+        }
       } else {
         const errorData = await response.json();
         setError(errorData.error || "Failed to sync device");
@@ -670,6 +696,20 @@ export function DeviceManagementContent() {
         const data = await response.json();
         setSuccessMessage(data.message);
         await fetchDevices();
+        
+        // Update the editDevice state to reflect the removed mirroring status
+        if (editDevice && editDevice.id === device.id) {
+          const updatedDevices = await fetch("/api/devices", {
+            credentials: "include",
+          });
+          if (updatedDevices.ok) {
+            const deviceData = await updatedDevices.json();
+            const updatedDevice = deviceData.devices.find((d: Device) => d.id === device.id);
+            if (updatedDevice) {
+              setEditDevice(updatedDevice);
+            }
+          }
+        }
       } else {
         const errorData = await response.json();
         setError(errorData.error || "Failed to unmirror device");

@@ -233,6 +233,12 @@ func DisplayHandler(c *gin.Context) {
 
 	// Get current playlist items for this device
 	playlistService := database.NewPlaylistService(db)
+	
+	logging.Logf("[/api/display] Querying playlist items for device %s (friendly_id: %s, user_id: %s, claimed: %t)", 
+		device.MacAddress, device.FriendlyID, 
+		func() string { if device.UserID != nil { return device.UserID.String() } else { return "nil" } }(), 
+		device.IsClaimed)
+	
 	activeItems, err := playlistService.GetActivePlaylistItemsForTime(device.ID, time.Now())
 	if err != nil {
 		if debugMode {
@@ -240,6 +246,8 @@ func DisplayHandler(c *gin.Context) {
 		}
 		// For unclaimed devices or devices without playlists, use empty activeItems slice
 		activeItems = []database.PlaylistItem{}
+	} else {
+		logging.Logf("[/api/display] Successfully retrieved %d active items for device %s", len(activeItems), device.MacAddress)
 	}
 
 	// Note: We no longer update the device's refresh rate in the database

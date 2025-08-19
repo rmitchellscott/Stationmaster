@@ -267,6 +267,37 @@ func RunMigrations(logPrefix string) error {
 				return nil
 			},
 		},
+		{
+			ID: "202508190000_consolidate_device_playlists",
+			Migrate: func(tx *gorm.DB) error {
+				logging.Logf("[MIGRATION] Consolidating device playlists to ensure one per device")
+				
+				// Create a playlist service to use the consolidation function
+				playlistService := NewPlaylistService(tx)
+				
+				// Run the consolidation
+				if err := playlistService.ConsolidateDevicePlaylists(); err != nil {
+					return fmt.Errorf("failed to consolidate device playlists: %w", err)
+				}
+				
+				// Add a partial unique index for SQLite to prevent multiple default playlists per device
+				// This creates a unique constraint only for records where is_default = true
+				if err := tx.Exec(`
+					CREATE UNIQUE INDEX IF NOT EXISTS idx_device_default_playlist 
+					ON playlists(device_id) 
+					WHERE is_default = 1
+				`).Error; err != nil {
+					return fmt.Errorf("failed to create unique index for default playlists: %w", err)
+				}
+				
+				logging.Logf("[MIGRATION] Successfully consolidated playlists and added unique constraint")
+				return nil
+			},
+			Rollback: func(tx *gorm.DB) error {
+				// Drop the unique index
+				return tx.Exec("DROP INDEX IF EXISTS idx_device_default_playlist").Error
+			},
+		},
 	})
 
 	// Set initial schema if this is a fresh database

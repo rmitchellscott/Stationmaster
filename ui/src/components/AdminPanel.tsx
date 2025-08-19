@@ -2034,7 +2034,7 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-2">
-                      {(version.download_status === 'failed' || version.download_status === 'pending') && (
+                      {(version.download_status === 'failed' || version.download_status === 'pending') && firmwareMode !== 'proxy' && (
                         <Button
                           variant="outline"
                           size="sm"

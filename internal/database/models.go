@@ -221,6 +221,8 @@ type Device struct {
 	SleepStartTime       string     `gorm:"size:5" json:"sleep_start_time,omitempty"`          // Start time in HH:MM format
 	SleepEndTime         string     `gorm:"size:5" json:"sleep_end_time,omitempty"`            // End time in HH:MM format
 	SleepShowScreen      bool       `gorm:"default:true" json:"sleep_show_screen"`             // Whether to show sleep image or last content
+	FirmwareUpdateStartTime string  `gorm:"size:5;default:'00:00'" json:"firmware_update_start_time"` // Start time for firmware updates in HH:MM format
+	FirmwareUpdateEndTime   string  `gorm:"size:5;default:'23:59'" json:"firmware_update_end_time"`   // End time for firmware updates in HH:MM format
 	CreatedAt            time.Time  `json:"created_at"`
 	UpdatedAt            time.Time  `json:"updated_at"`
 

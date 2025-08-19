@@ -47,6 +47,7 @@ RUN apk add --no-cache \
       ca-certificates \
       imagemagick \
       postgresql-client \
+      tzdata \
     && update-ca-certificates
 
 WORKDIR /app

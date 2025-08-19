@@ -5,12 +5,21 @@ export interface DeviceEvent {
   data: any;
 }
 
+export interface SleepConfig {
+  enabled: boolean;
+  start_time: string;
+  end_time: string;
+  show_screen: boolean;
+  currently_sleeping: boolean;
+}
+
 export interface PlaylistIndexChangeEvent {
   device_id: string;
   current_index: number;
   current_item: any;
   active_items: any[];
   timestamp: string;
+  sleep_config: SleepConfig;
 }
 
 export interface DeviceEventsHookState {
@@ -21,6 +30,7 @@ export interface DeviceEventsHookState {
   currentItem: any | null;
   activeItems: any[];
   currentItemChanged: boolean;
+  sleepConfig: SleepConfig | null;
 }
 
 export interface DeviceEventsHookResult extends DeviceEventsHookState {
@@ -38,6 +48,7 @@ export function useDeviceEvents(deviceId: string): DeviceEventsHookResult {
     currentItem: null,
     activeItems: [],
     currentItemChanged: false,
+    sleepConfig: null,
   });
 
   const eventSourceRef = useRef<EventSource | null>(null);
@@ -126,8 +137,17 @@ export function useDeviceEvents(deviceId: string): DeviceEventsHookResult {
                 currentItem: data.current_item,
                 activeItems: data.active_items || [],
                 currentItemChanged,
+                sleepConfig: data.sleep_config || null,
               };
             });
+          } else if (parsedEvent.type === 'device_settings_updated') {
+            // Handle device settings updates (like sleep config changes)
+            const data = parsedEvent.data;
+            setState(prev => ({
+              ...prev,
+              sleepConfig: data.sleep_config || null,
+            }));
+            console.log(`[SSE] Device settings updated for device ${deviceId}:`, data.sleep_config);
           }
         } catch (parseError) {
           console.error(`[SSE] Failed to parse event data for device ${deviceId}:`, parseError);

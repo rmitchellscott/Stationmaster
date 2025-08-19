@@ -111,6 +111,10 @@ interface Device {
   is_sharable?: boolean;
   mirror_source_id?: string;
   mirror_synced_at?: string;
+  sleep_enabled?: boolean;
+  sleep_start_time?: string;
+  sleep_end_time?: string;
+  sleep_show_screen?: boolean;
   created_at: string;
   updated_at: string;
   device_model?: DeviceModel;
@@ -152,6 +156,12 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
   const [editIsSharable, setEditIsSharable] = useState(false);
   const [deviceModels, setDeviceModels] = useState<DeviceModel[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
+
+  // Sleep mode settings
+  const [editSleepEnabled, setEditSleepEnabled] = useState(false);
+  const [editSleepStartTime, setEditSleepStartTime] = useState("");
+  const [editSleepEndTime, setEditSleepEndTime] = useState("");
+  const [editSleepShowScreen, setEditSleepShowScreen] = useState(true);
 
   // Device deletion
   const [deleteDevice, setDeleteDevice] = useState<Device | null>(null);
@@ -288,7 +298,12 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
         refresh_rate: refreshRate,
         allow_firmware_updates: editAllowFirmwareUpdates,
         is_sharable: editIsSharable,
+        sleep_enabled: editSleepEnabled,
+        sleep_start_time: editSleepStartTime,
+        sleep_end_time: editSleepEndTime,
+        sleep_show_screen: editSleepShowScreen,
       };
+
 
       // Add model name if it has changed from the original
       const originalModelName = editDevice.model_name || "none";
@@ -309,6 +324,7 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
         setSuccessMessage("Device updated successfully!");
         setEditDevice(null);
         await fetchDevices();
+        onUpdate?.(); // Notify parent component to refresh device list
       } else {
         const errorData = await response.json();
         setError(errorData.error || "Failed to update device");
@@ -388,6 +404,12 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
       setEditModelName(device.model_name || "none");
       setEditIsSharable(device.is_sharable ?? false);
       
+      // Initialize sleep mode settings
+      setEditSleepEnabled(device.sleep_enabled ?? false);
+      setEditSleepStartTime(device.sleep_start_time || "22:00");
+      setEditSleepEndTime(device.sleep_end_time || "06:00");
+      setEditSleepShowScreen(device.sleep_show_screen ?? true);
+      
       // Fetch device models when opening edit dialog
       if (deviceModels.length === 0) {
         fetchDeviceModels().catch(error => {
@@ -407,7 +429,11 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
       editRefreshRate !== editDevice.refresh_rate.toString() ||
       editAllowFirmwareUpdates !== (editDevice.allow_firmware_updates ?? true) ||
       editModelName !== (editDevice.model_name || "none") ||
-      editIsSharable !== (editDevice.is_sharable ?? false)
+      editIsSharable !== (editDevice.is_sharable ?? false) ||
+      editSleepEnabled !== (editDevice.sleep_enabled ?? false) ||
+      editSleepStartTime !== (editDevice.sleep_start_time || "22:00") ||
+      editSleepEndTime !== (editDevice.sleep_end_time || "06:00") ||
+      editSleepShowScreen !== (editDevice.sleep_show_screen ?? true)
     );
   };
 
@@ -1053,6 +1079,85 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
               <p className="text-sm text-muted-foreground mt-1">
                 When enabled, device will automatically update to the latest firmware
               </p>
+            </div>
+
+            {/* Sleep Mode Section */}
+            <div className="pt-3 border-t border-border/50 space-y-4">
+              <div>
+                <Label className="text-sm font-medium">Sleep Mode</Label>
+                <div className="mt-2 space-y-3">
+                  <div className="flex items-center space-x-2">
+                    <Switch
+                      id="edit-sleep-enabled"
+                      checked={editSleepEnabled}
+                      onCheckedChange={setEditSleepEnabled}
+                    />
+                    <Label htmlFor="edit-sleep-enabled">
+                      Enable sleep mode
+                    </Label>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Reduce screen refreshes during inactive periods to save battery
+                  </p>
+
+                  {editSleepEnabled && (
+                    <div className="space-y-3 pl-6 border-l-2 border-border">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <Label htmlFor="edit-sleep-start-time" className="text-sm">Start Time</Label>
+                          <Input
+                            id="edit-sleep-start-time"
+                            type="time"
+                            value={editSleepStartTime}
+                            onChange={(e) => setEditSleepStartTime(e.target.value)}
+                            className="mt-1"
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="edit-sleep-end-time" className="text-sm">End Time</Label>
+                          <Input
+                            id="edit-sleep-end-time"
+                            type="time"
+                            value={editSleepEndTime}
+                            onChange={(e) => setEditSleepEndTime(e.target.value)}
+                            className="mt-1"
+                          />
+                        </div>
+                      </div>
+
+
+                      <div className="flex items-center space-x-2">
+                        <Switch
+                          id="edit-sleep-show-screen"
+                          checked={editSleepShowScreen}
+                          onCheckedChange={setEditSleepShowScreen}
+                        />
+                        <Label htmlFor="edit-sleep-show-screen" className="text-sm">
+                          Show sleep screen
+                        </Label>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        When enabled, display sleep image instead of last content during sleep period
+                      </p>
+
+                      {editSleepStartTime && editSleepEndTime && (
+                        <div className="p-3 bg-muted/30 rounded-md">
+                          <div className="text-xs font-medium text-muted-foreground">Schedule Preview</div>
+                          <div className="text-sm mt-1">
+                            Sleep from <span className="font-mono">{editSleepStartTime}</span> to{" "}
+                            <span className="font-mono">{editSleepEndTime}</span> (in your timezone)
+                          </div>
+                          {editSleepStartTime > editSleepEndTime && (
+                            <div className="text-xs text-muted-foreground mt-1">
+                              This schedule crosses midnight
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
 
             {/* Visibility Section */}

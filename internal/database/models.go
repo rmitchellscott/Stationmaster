@@ -217,6 +217,10 @@ type Device struct {
 	IsSharable           bool       `gorm:"default:false" json:"is_sharable"`              // Whether this device can be mirrored by others
 	MirrorSourceID       *uuid.UUID `gorm:"type:uuid;index" json:"mirror_source_id,omitempty"` // ID of device being mirrored (nullable)
 	MirrorSyncedAt       *time.Time `json:"mirror_synced_at,omitempty"`                   // Last time content was synced from source
+	SleepEnabled         bool       `gorm:"default:false" json:"sleep_enabled"`               // Whether sleep mode is active
+	SleepStartTime       string     `gorm:"size:5" json:"sleep_start_time,omitempty"`          // Start time in HH:MM format
+	SleepEndTime         string     `gorm:"size:5" json:"sleep_end_time,omitempty"`            // End time in HH:MM format
+	SleepShowScreen      bool       `gorm:"default:true" json:"sleep_show_screen"`             // Whether to show sleep image or last content
 	CreatedAt            time.Time  `json:"created_at"`
 	UpdatedAt            time.Time  `json:"updated_at"`
 

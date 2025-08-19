@@ -85,8 +85,9 @@ import {
   Eye,
   EyeOff,
   GripVertical,
+  Moon,
 } from "lucide-react";
-import { Device } from "@/utils/deviceHelpers";
+import { Device, isDeviceCurrentlySleeping } from "@/utils/deviceHelpers";
 
 interface UserPlugin {
   id: string;
@@ -117,6 +118,8 @@ interface PlaylistItem {
   updated_at: string;
   user_plugin?: UserPlugin;
   schedules?: any[];
+  is_sleep_mode?: boolean; // Virtual field for sleep mode items
+  sleep_schedule_text?: string; // Schedule text for sleep mode items
 }
 
 interface PlaylistManagementProps {
@@ -256,6 +259,59 @@ const formatScheduleSummary = (schedules: any[], userTimezone?: string): string 
     `${dayText} ${timeWithTz}`;
 };
 
+// Create a virtual sleep mode item for display in the playlist
+const createSleepModeItem = (sleepConfig: any, userTimezone: string): PlaylistItem => {
+  const formatTime12 = (time24: string) => {
+    if (!time24) return "";
+    const [hours, minutes] = time24.split(':');
+    const hour = parseInt(hours);
+    const ampm = hour >= 12 ? 'PM' : 'AM';
+    const hour12 = hour % 12 || 12;
+    return `${hour12}:${minutes}${ampm}`;
+  };
+
+  const startTime = formatTime12(sleepConfig.start_time);
+  const endTime = formatTime12(sleepConfig.end_time);
+  const scheduleText = `${startTime} - ${endTime}`;
+  
+  // Get timezone abbreviation for display
+  const timezoneAbbr = userTimezone ? 
+    new Intl.DateTimeFormat('en', { timeZoneName: 'short', timeZone: userTimezone })
+      .formatToParts(new Date())
+      .find(part => part.type === 'timeZoneName')?.value || '' : '';
+  
+  const fullScheduleText = timezoneAbbr ? `${scheduleText} ${timezoneAbbr}` : scheduleText;
+
+  return {
+    id: 'virtual-sleep-mode',
+    playlist_id: '',
+    user_plugin_id: '',
+    order_index: -1, // Always show at top
+    is_visible: true,
+    importance: false,
+    created_at: '',
+    updated_at: '',
+    is_sleep_mode: true,
+    sleep_schedule_text: fullScheduleText, // Store schedule text separately
+    user_plugin: {
+      id: 'sleep-mode',
+      user_id: '',
+      plugin_id: '',
+      name: 'Sleep Mode',
+      settings: '',
+      is_active: true,
+      created_at: '',
+      updated_at: '',
+      plugin: {
+        id: 'sleep-mode',
+        name: 'Device sleep period', // Generic description instead of schedule
+        type: 'system',
+        description: 'Device sleep schedule',
+      }
+    }
+  };
+};
+
 interface SortableTableRowProps {
   item: PlaylistItem;
   index: number;
@@ -267,6 +323,7 @@ interface SortableTableRowProps {
   userTimezone: string;
   timeTravelMode: boolean;
   timeTravelActiveItems: any[];
+  deviceEvents: any; // DeviceEventsHookResult type
   onScheduleClick: (item: PlaylistItem) => void;
   onVisibilityToggle: (item: PlaylistItem) => void;
   onRemove: (itemId: string) => void;
@@ -284,6 +341,7 @@ function SortableTableRow({
   userTimezone,
   timeTravelMode,
   timeTravelActiveItems,
+  deviceEvents,
   onScheduleClick, 
   onVisibilityToggle, 
   onRemove,
@@ -307,8 +365,20 @@ function SortableTableRow({
     WebkitTouchCallout: 'none' as const,
   };
 
+  // Check if sleep screen is showing (using hybrid approach)
+  const selectedDevice = devices.find(d => d.id === selectedDeviceId);
+  const sseCurrentlySleeping = deviceEvents?.sleepConfig?.currently_sleeping;
+  const fallbackCurrentlySleeping = selectedDevice ? isDeviceCurrentlySleeping(selectedDevice, userTimezone) : false;
+  const currentlySleeping = sseCurrentlySleeping !== undefined ? sseCurrentlySleeping : fallbackCurrentlySleeping;
+  const isSleepScreenActive = !timeTravelMode && currentlySleeping && selectedDevice?.sleep_show_screen;
+  
   // Use SSE-provided currently showing item ID for real-time updates (only in live mode)
-  const isCurrentlyShowing = !timeTravelMode && currentlyShowingItemId === item.id;
+  // Logic: "Now Showing" appears on whatever is actually displayed on the device
+  const isCurrentlyShowing = !timeTravelMode && (
+    item.is_sleep_mode 
+      ? isSleepScreenActive  // Sleep mode shows "Now Showing" only when sleep screen is displayed
+      : (currentlyShowingItemId === item.id && !isSleepScreenActive)  // Regular items show "Now Showing" when they're current AND sleep screen is not active
+  );
   const isChangingToCurrent = isCurrentlyShowing && currentItemChanged;
   
   // Check if item is currently active based on schedules
@@ -335,6 +405,7 @@ function SortableTableRow({
     !item.is_visible ? 'opacity-60' : '',
     !isActive && item.is_visible ? 'opacity-75' : '',
     isChangingToCurrent ? 'animate-pulse' : '',
+    item.is_sleep_mode ? 'bg-slate-50 dark:bg-slate-900/50' : '', // Special styling for sleep mode
   ].filter(Boolean).join(' ');
 
   return (
@@ -345,20 +416,28 @@ function SortableTableRow({
     >
       <TableCell>
         <div className="flex items-center gap-2">
-          <button
-            className="cursor-grab active:cursor-grabbing p-2 text-muted-foreground hover:text-foreground touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center"
-            style={{
-              touchAction: 'none',
-              WebkitUserSelect: 'none',
-              userSelect: 'none',
-              WebkitTouchCallout: 'none',
-            }}
-            {...attributes}
-            {...listeners}
-          >
-            <GripVertical className="h-5 w-5" />
-          </button>
-          <div className="text-sm text-muted-foreground">#{index + 1}</div>
+          {item.is_sleep_mode ? (
+            <div className="p-2 text-muted-foreground min-h-[44px] min-w-[44px] flex items-center justify-center">
+              <Moon className="h-5 w-5" />
+            </div>
+          ) : (
+            <button
+              className="cursor-grab active:cursor-grabbing p-2 text-muted-foreground hover:text-foreground touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center"
+              style={{
+                touchAction: 'none',
+                WebkitUserSelect: 'none',
+                userSelect: 'none',
+                WebkitTouchCallout: 'none',
+              }}
+              {...attributes}
+              {...listeners}
+            >
+              <GripVertical className="h-5 w-5" />
+            </button>
+          )}
+          <div className="text-sm text-muted-foreground">
+            {item.is_sleep_mode ? '' : `#${index + 1}`}
+          </div>
         </div>
       </TableCell>
       <TableCell>
@@ -384,77 +463,145 @@ function SortableTableRow({
         </div>
       </TableCell>
       <TableCell className="hidden md:table-cell">
-        {isCurrentlyShowing ? (
-          <Badge variant="default">
-            <PlayCircle className="h-3 w-3 mr-1" />
-            Now Showing
-          </Badge>
-        ) : isActive && item.is_visible ? (
-          <Badge variant="outline">
-            <Eye className="h-3 w-3 mr-1" />
-            Active
-          </Badge>
-        ) : item.is_visible ? (
-          <Badge variant="secondary">
-            <EyeOff className="h-3 w-3 mr-1" />
-            Scheduled
-          </Badge>
+        {item.is_sleep_mode ? (
+          // Special status logic for sleep mode items
+          timeTravelMode ? (
+            // In time travel mode, just show if sleep would be active at that time
+            isActive ? (
+              <Badge variant="outline">
+                <Moon className="h-3 w-3 mr-1" />
+                Active
+              </Badge>
+            ) : (
+              <Badge variant="secondary">
+                <Clock className="h-3 w-3 mr-1" />
+                Scheduled
+              </Badge>
+            )
+          ) : (
+            // In live mode, use hybrid approach for current status
+            (() => {
+              if (currentlySleeping) {
+                // Only show "Now Showing" if sleep screen is actually displayed
+                if (selectedDevice?.sleep_show_screen) {
+                  return (
+                    <Badge variant="default">
+                      <PlayCircle className="h-3 w-3 mr-1" />
+                      Now Showing
+                    </Badge>
+                  );
+                } else {
+                  // Sleep mode is active but not showing sleep screen - show "Active"
+                  return (
+                    <Badge variant="outline">
+                      <Moon className="h-3 w-3 mr-1" />
+                      Active
+                    </Badge>
+                  );
+                }
+              } else {
+                return (
+                  <Badge variant="secondary">
+                    <Clock className="h-3 w-3 mr-1" />
+                    Scheduled
+                  </Badge>
+                );
+              }
+            })()
+          )
         ) : (
-          <Badge variant="secondary">
-            <EyeOff className="h-3 w-3 mr-1" />
-            Hidden
-          </Badge>
+          // Regular playlist item status logic
+          isCurrentlyShowing ? (
+            <Badge variant="default">
+              <PlayCircle className="h-3 w-3 mr-1" />
+              Now Showing
+            </Badge>
+          ) : isActive && item.is_visible ? (
+            <Badge variant="outline">
+              <Eye className="h-3 w-3 mr-1" />
+              Active
+            </Badge>
+          ) : item.is_visible ? (
+            <Badge variant="secondary">
+              <EyeOff className="h-3 w-3 mr-1" />
+              Scheduled
+            </Badge>
+          ) : (
+            <Badge variant="secondary">
+              <EyeOff className="h-3 w-3 mr-1" />
+              Hidden
+            </Badge>
+          )
         )}
       </TableCell>
       <TableCell className="hidden lg:table-cell">
-        {item.importance ? (
-          <Badge variant="default">
-            <Star className="h-3 w-3 mr-1" />
-            Important
-          </Badge>
+        {item.is_sleep_mode ? (
+          // Empty for sleep mode items
+          <></>
         ) : (
-          <Badge variant="outline">Normal</Badge>
+          item.importance ? (
+            <Badge variant="default">
+              <Star className="h-3 w-3 mr-1" />
+              Important
+            </Badge>
+          ) : (
+            <Badge variant="outline">Normal</Badge>
+          )
         )}
       </TableCell>
       <TableCell className="hidden lg:table-cell">
-        {item.duration_override ? formatDuration(item.duration_override) : "Default"}
+        {item.is_sleep_mode ? (
+          // Empty for sleep mode items
+          <></>
+        ) : (
+          item.duration_override ? formatDuration(item.duration_override) : "Default"
+        )}
       </TableCell>
       <TableCell className="hidden lg:table-cell">
         <div className="text-sm">
-          {formatScheduleSummary(item.schedules || [], userTimezone)}
+          {item.is_sleep_mode 
+            ? item.sleep_schedule_text || 'Always active'
+            : formatScheduleSummary(item.schedules || [], userTimezone)}
         </div>
       </TableCell>
       <TableCell className="text-right">
-        <div className="flex items-center gap-2 justify-end">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => onScheduleClick(item)}
-            title="Manage schedules & settings"
-          >
-            <Calendar className="h-4 w-4" />
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => onVisibilityToggle(item)}
-            title={item.is_visible ? "Hide from device" : "Show on device"}
-          >
-            {item.is_visible ? (
-              <Eye className="h-4 w-4" />
-            ) : (
-              <EyeOff className="h-4 w-4" />
-            )}
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => onRemove(item.id)}
-            title="Remove from playlist"
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
-        </div>
+        {item.is_sleep_mode ? (
+          // No actions for sleep mode items
+          <div className="flex items-center gap-2 justify-end">
+            {/* Empty - no actions for sleep mode */}
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 justify-end">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => onScheduleClick(item)}
+              title="Manage schedules & settings"
+            >
+              <Calendar className="h-4 w-4" />
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => onVisibilityToggle(item)}
+              title={item.is_visible ? "Hide from device" : "Show on device"}
+            >
+              {item.is_visible ? (
+                <Eye className="h-4 w-4" />
+              ) : (
+                <EyeOff className="h-4 w-4" />
+              )}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => onRemove(item.id)}
+              title="Remove from playlist"
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
       </TableCell>
     </TableRow>
   );
@@ -540,6 +687,87 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
       return null;
     }
     return deviceEvents.currentItem?.id || null;
+  };
+
+  // Check if device would be sleeping at the time travel time
+  const isDeviceSleepingInTimeTravel = () => {
+    if (!timeTravelMode || !timeTravelDate || !timeTravelTime) return false;
+    
+    const selectedDevice = devices.find(d => d.id === selectedDeviceId);
+    if (!selectedDevice?.sleep_enabled) return false;
+    
+    // Parse the target time
+    const targetDateTime = new Date(`${timeTravelDate}T${timeTravelTime}:00`);
+    const userTimezone = getUserTimezone();
+    
+    // Get time in user's timezone
+    const timeInTz = targetDateTime.toLocaleTimeString('en-US', { 
+      hour12: false, 
+      timeZone: userTimezone,
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+    
+    const [targetHours, targetMinutes] = timeInTz.split(':').map(Number);
+    const targetTimeMinutes = targetHours * 60 + targetMinutes;
+    
+    // Parse sleep times
+    const [startHours, startMinutes] = (selectedDevice.sleep_start_time || '22:00').split(':').map(Number);
+    const [endHours, endMinutes] = (selectedDevice.sleep_end_time || '06:00').split(':').map(Number);
+    
+    const sleepStartMinutes = startHours * 60 + startMinutes;
+    const sleepEndMinutes = endHours * 60 + endMinutes;
+    
+    // Handle overnight sleep periods
+    if (sleepStartMinutes > sleepEndMinutes) {
+      return targetTimeMinutes >= sleepStartMinutes || targetTimeMinutes <= sleepEndMinutes;
+    } else {
+      return targetTimeMinutes >= sleepStartMinutes && targetTimeMinutes <= sleepEndMinutes;
+    }
+  };
+
+  // Get display items including sleep mode item when appropriate
+  const getDisplayItems = (): PlaylistItem[] => {
+    const sortedItems = [...playlistItems].sort((a, b) => a.order_index - b.order_index);
+    
+    // Always check the actual selected device for sleep configuration
+    const selectedDevice = devices.find(d => d.id === selectedDeviceId);
+    
+    if (!selectedDevice?.sleep_enabled) {
+      return sortedItems;
+    }
+
+    let sleepConfig;
+    
+    if (timeTravelMode) {
+      // In time travel mode, calculate sleep status for specific time
+      sleepConfig = {
+        enabled: selectedDevice.sleep_enabled,
+        start_time: selectedDevice.sleep_start_time || '22:00',
+        end_time: selectedDevice.sleep_end_time || '06:00',
+        show_screen: selectedDevice.sleep_show_screen ?? true,
+        currently_sleeping: isDeviceSleepingInTimeTravel(),
+      };
+    } else {
+      // In live mode, use device settings for config, SSE for real-time status (with fallback)
+      const sseCurrentlySleeping = deviceEvents.sleepConfig?.currently_sleeping;
+      const fallbackCurrentlySleeping = isDeviceCurrentlySleeping(selectedDevice, getUserTimezone());
+      
+      sleepConfig = {
+        enabled: selectedDevice.sleep_enabled,
+        start_time: selectedDevice.sleep_start_time || '22:00',
+        end_time: selectedDevice.sleep_end_time || '06:00',
+        show_screen: selectedDevice.sleep_show_screen ?? true,
+        // Use SSE data when available, fallback to local calculation
+        currently_sleeping: sseCurrentlySleeping !== undefined ? sseCurrentlySleeping : fallbackCurrentlySleeping,
+      };
+    }
+
+    // Create sleep mode item
+    const sleepModeItem = createSleepModeItem(sleepConfig, getUserTimezone());
+    
+    // Add sleep mode item at the beginning
+    return [sleepModeItem, ...sortedItems];
   };
 
   // Convert local time (HH:MM) to UTC time for database storage
@@ -1173,32 +1401,38 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
                     items={playlistItems.sort((a, b) => a.order_index - b.order_index).map(item => item.id)}
                     strategy={verticalListSortingStrategy}
                   >
-                    {playlistItems
-                      .sort((a, b) => a.order_index - b.order_index)
-                      .map((item, index) => (
+                    {getDisplayItems().map((item, index) => {
+                      // Calculate proper index for non-sleep-mode items
+                      const displayIndex = item.is_sleep_mode ? 0 : index;
+                      const playlistIndex = item.is_sleep_mode ? -1 : 
+                        (getDisplayItems()[0]?.is_sleep_mode ? index - 1 : index);
+                      
+                      return (
                         <SortableTableRow
                           key={item.id}
                           item={item}
-                          index={index}
-                          devices={devices}
-                          selectedDeviceId={selectedDeviceId}
-                          allPlaylistItems={playlistItems}
-                          currentlyShowingItemId={getCurrentlyShowingItemId()}
-                          currentItemChanged={deviceEvents.currentItemChanged}
-                          userTimezone={getUserTimezone()}
-                          timeTravelMode={timeTravelMode}
-                          timeTravelActiveItems={timeTravelActiveItems}
-                          onScheduleClick={openScheduleDialog}
-                          onVisibilityToggle={toggleItemVisibility}
-                          onRemove={(itemId) => {
-            const item = playlistItems.find(p => p.id === itemId);
-            if (item) {
-              setDeleteItemDialog({ isOpen: true, item });
-            }
-          }}
-                          onCurrentItemChangeAnimated={deviceEvents.clearCurrentItemChanged}
+                          index={playlistIndex}
+                        devices={devices}
+                        selectedDeviceId={selectedDeviceId}
+                        allPlaylistItems={playlistItems}
+                        currentlyShowingItemId={getCurrentlyShowingItemId()}
+                        currentItemChanged={deviceEvents.currentItemChanged}
+                        userTimezone={getUserTimezone()}
+                        timeTravelMode={timeTravelMode}
+                        timeTravelActiveItems={timeTravelActiveItems}
+                        deviceEvents={deviceEvents}
+                        onScheduleClick={openScheduleDialog}
+                        onVisibilityToggle={toggleItemVisibility}
+                        onRemove={(itemId) => {
+                          const item = playlistItems.find(p => p.id === itemId);
+                          if (item) {
+                            setDeleteItemDialog({ isOpen: true, item });
+                          }
+                        }}
+                        onCurrentItemChangeAnimated={deviceEvents.clearCurrentItemChanged}
                         />
-                      ))}
+                      );
+                    })}
                   </SortableContext>
                 </TableBody>
               </DndContext>

@@ -3,6 +3,7 @@ package trmnl
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strconv"
@@ -270,6 +271,41 @@ func DisplayHandler(c *gin.Context) {
 	status := 0
 	if !device.IsClaimed {
 		status = 202
+	}
+
+	// Check for low battery condition FIRST - takes precedence over everything
+	if device.BatteryVoltage > 0 && device.BatteryVoltage < 3.2 {
+		if debugMode {
+			logging.Logf("[/api/display] Device %s has low battery (%.2fV), returning low battery image", device.MacAddress, device.BatteryVoltage)
+		}
+
+		// Get site URL for absolute URL construction
+		imageURL := "/assets/low_battery.png"
+		if siteURL, err := database.GetSystemSetting("site_url"); err == nil && siteURL != "" {
+			siteURL = strings.TrimSuffix(siteURL, "/")
+			imageURL = fmt.Sprintf("%s/assets/low_battery.png", siteURL)
+		}
+
+		response := gin.H{
+			"status":          0,
+			"image_url":       imageURL,
+			"filename":        "low_battery",
+			"refresh_rate":    fmt.Sprintf("%d", device.RefreshRate),
+			"update_firmware": false,
+			"firmware_url":    "",
+			"reset_firmware":  false,
+		}
+
+		if debugMode {
+			responseBytes, _ := json.Marshal(response)
+			logging.Logf("[/api/display] Low battery response to device %s: %s", device.MacAddress, string(responseBytes))
+
+			duration := time.Since(startTime)
+			logging.Logf("[/api/display] Request processing time: %v", duration)
+		}
+
+		c.JSON(http.StatusOK, response)
+		return
 	}
 
 	// Check for firmware update AFTER device status is updated
@@ -872,9 +908,22 @@ func checkFirmwareUpdate(device *database.Device) FirmwareUpdateResponse {
 		return defaultResponse
 	}
 
-	// 4. Check if firmware file is downloaded and available
-	if !latestFirmware.IsDownloaded || latestFirmware.FilePath == "" {
-		return defaultResponse
+	// 4. Check if firmware is available based on current mode
+	firmwareMode := os.Getenv("FIRMWARE_MODE")
+	if firmwareMode == "" {
+		firmwareMode = "proxy" // Default to proxy mode
+	}
+
+	if firmwareMode == "proxy" {
+		// In proxy mode, firmware is available if we have a download URL
+		if latestFirmware.DownloadURL == "" {
+			return defaultResponse
+		}
+	} else {
+		// In download mode, firmware must be downloaded locally
+		if !latestFirmware.IsDownloaded || latestFirmware.FilePath == "" {
+			return defaultResponse
+		}
 	}
 
 	// 5. Generate firmware URL - try to use absolute URL if site_url is configured
@@ -929,32 +978,96 @@ func FirmwareDownloadHandler(c *gin.Context) {
 		return
 	}
 
-	// Check if firmware file exists and is downloaded
-	if !fwVersion.IsDownloaded || fwVersion.FilePath == "" {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Firmware file not available"})
-		return
-	}
-
 	// Verify device is allowed to download firmware
 	if !device.AllowFirmwareUpdates {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Firmware updates are disabled for this device"})
 		return
 	}
 
-	// Serve the firmware file
-	c.Header("Content-Type", "application/octet-stream")
-	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"firmware_%s.bin\"", firmwareVersion))
-
-	if fwVersion.FileSize > 0 {
-		c.Header("Content-Length", fmt.Sprintf("%d", fwVersion.FileSize))
+	// Check firmware mode - proxy or download
+	firmwareMode := os.Getenv("FIRMWARE_MODE")
+	if firmwareMode == "" {
+		firmwareMode = "proxy" // Default to proxy mode
 	}
 
-	// Log the download
-	logging.Logf("[FIRMWARE] Device %s downloading firmware %s", device.MacAddress, firmwareVersion)
+	if firmwareMode == "proxy" {
+		// Proxy mode - forward request to TRMNL API
+		if fwVersion.DownloadURL == "" {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Firmware download URL not available"})
+			return
+		}
 
-	c.File(fwVersion.FilePath)
+		// Log the proxy request
+		logging.Logf("[FIRMWARE PROXY] Device %s requesting firmware %s, proxying to %s", device.MacAddress, firmwareVersion, fwVersion.DownloadURL)
 
-	logging.Logf("[FIRMWARE DOWNLOAD] Device %s successfully downloaded firmware %s", device.MacAddress, firmwareVersion)
+		// Create HTTP client for proxying
+		client := &http.Client{
+			Timeout: 5 * time.Minute, // Allow time for large firmware downloads
+		}
+
+		// Create request to TRMNL API
+		req, err := http.NewRequest("GET", fwVersion.DownloadURL, nil)
+		if err != nil {
+			logging.Logf("[FIRMWARE PROXY] Failed to create proxy request: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to proxy firmware request"})
+			return
+		}
+
+		// Make request to TRMNL
+		resp, err := client.Do(req)
+		if err != nil {
+			logging.Logf("[FIRMWARE PROXY] Failed to fetch from TRMNL: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch firmware from upstream"})
+			return
+		}
+		defer resp.Body.Close()
+
+		// Check response status
+		if resp.StatusCode != http.StatusOK {
+			logging.Logf("[FIRMWARE PROXY] TRMNL returned status %d for firmware %s", resp.StatusCode, firmwareVersion)
+			c.JSON(http.StatusBadGateway, gin.H{"error": "Upstream firmware server error"})
+			return
+		}
+
+		// Set response headers
+		c.Header("Content-Type", "application/octet-stream")
+		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"firmware_%s.bin\"", firmwareVersion))
+		if contentLength := resp.Header.Get("Content-Length"); contentLength != "" {
+			c.Header("Content-Length", contentLength)
+		}
+
+		// Stream the response from TRMNL to device
+		c.Status(http.StatusOK)
+		_, err = io.Copy(c.Writer, resp.Body)
+		if err != nil {
+			logging.Logf("[FIRMWARE PROXY] Failed to stream firmware %s to device %s: %v", firmwareVersion, device.MacAddress, err)
+			return
+		}
+
+		logging.Logf("[FIRMWARE PROXY] Successfully proxied firmware %s to device %s", firmwareVersion, device.MacAddress)
+	} else {
+		// Download mode - serve local file
+		// Check if firmware file exists and is downloaded
+		if !fwVersion.IsDownloaded || fwVersion.FilePath == "" {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Firmware file not available"})
+			return
+		}
+
+		// Serve the firmware file
+		c.Header("Content-Type", "application/octet-stream")
+		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"firmware_%s.bin\"", firmwareVersion))
+
+		if fwVersion.FileSize > 0 {
+			c.Header("Content-Length", fmt.Sprintf("%d", fwVersion.FileSize))
+		}
+
+		// Log the download
+		logging.Logf("[FIRMWARE] Device %s downloading firmware %s", device.MacAddress, firmwareVersion)
+
+		c.File(fwVersion.FilePath)
+
+		logging.Logf("[FIRMWARE DOWNLOAD] Device %s successfully downloaded firmware %s", device.MacAddress, firmwareVersion)
+	}
 }
 
 // FirmwareUpdateCompleteHandler handles device reporting firmware update completion

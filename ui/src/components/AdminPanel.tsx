@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useConfig } from "@/components/ConfigProvider";
 import { useAuth } from "@/components/AuthProvider";
 import { UserDeleteDialog } from "@/components/UserDeleteDialog";
+import { calculateBatteryPercentage } from "@/utils/deviceHelpers";
 import {
   Dialog,
   DialogContent,
@@ -84,6 +85,7 @@ import {
   BatteryMedium,
   BatteryLow,
   BatteryWarning,
+  ArrowRightLeft,
 } from "lucide-react";
 
 /**
@@ -360,6 +362,7 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
   const [pluginStats, setPluginStats] = useState<PluginStats | null>(null);
   const [firmwareVersions, setFirmwareVersions] = useState<FirmwareVersion[]>([]);
   const [firmwareStats, setFirmwareStats] = useState<FirmwareStats | null>(null);
+  const [firmwareMode, setFirmwareMode] = useState<string>('proxy');
   const [deviceModels, setDeviceModels] = useState<DeviceModel[]>([]);
   const [firmwarePolling, setFirmwarePolling] = useState(false);
   const [modelPolling, setModelPolling] = useState(false);
@@ -475,6 +478,7 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
       fetchPluginStats();
       fetchFirmwareVersions();
       fetchFirmwareStats();
+      fetchFirmwareMode();
       fetchDeviceModels();
     }
   }, [isOpen]);
@@ -755,6 +759,19 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
     }
   };
 
+  const fetchFirmwareMode = async () => {
+    try {
+      const response = await fetch("/api/admin/firmware/mode", {
+        credentials: "include",
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setFirmwareMode(data.firmware_mode || 'proxy');
+      }
+    } catch (error) {
+      console.error("Failed to fetch firmware mode:", error);
+    }
+  };
 
   const fetchDeviceModels = async () => {
     try {
@@ -1619,19 +1636,6 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
   };
 
   // Device utility functions
-  const calculateBatteryPercentage = (voltage: number): number => {
-    // Lithium battery voltage ranges: 2.75V (0%) to 4.2V (100%)
-    // Updated to match official TRMNL curve: 4.0V = 90%
-    if (voltage >= 4.2) return 100;
-    if (voltage <= 2.75) return 0;
-    
-    // Improved curve matching official TRMNL behavior
-    if (voltage >= 4.0) return Math.round(90 + ((voltage - 4.0) / (4.2 - 4.0)) * 10);
-    if (voltage >= 3.7) return Math.round(75 + ((voltage - 3.7) / (4.0 - 3.7)) * 15);
-    if (voltage >= 3.4) return Math.round(50 + ((voltage - 3.4) / (3.7 - 3.4)) * 25);
-    if (voltage >= 3.0) return Math.round(25 + ((voltage - 3.0) / (3.4 - 3.0)) * 25);
-    return Math.round((voltage - 2.75) / (3.0 - 2.75) * 25);
-  };
 
   const getSignalQuality = (rssi: number): { quality: string; strength: number; color: string } => {
     if (rssi > -50) return { quality: "Excellent", strength: 5, color: "text-emerald-600" };
@@ -2000,16 +2004,23 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
                       </Badge>
                     )}
                     {version.download_status === 'failed' && (
-                      <Badge variant="outline" className="text-red-600">
+                      <Badge variant="destructive">
                         <XCircle className="w-3 h-3 mr-1" />
                         Failed
                       </Badge>
                     )}
                     {(!version.download_status || version.download_status === 'pending') && (
-                      <Badge variant="outline" className="text-orange-600">
-                        <Clock className="w-3 h-3 mr-1" />
-                        Pending
-                      </Badge>
+                      firmwareMode === 'proxy' ? (
+                        <Badge variant="secondary">
+                          <ArrowRightLeft className="w-3 h-3 mr-1" />
+                          Proxying
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline">
+                          <Clock className="w-3 h-3 mr-1" />
+                          Pending
+                        </Badge>
+                      )
                     )}
                   </TableCell>
                   <TableCell>

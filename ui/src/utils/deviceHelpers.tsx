@@ -33,10 +33,41 @@ export interface Device {
 }
 
 export const calculateBatteryPercentage = (voltage: number): number => {
-  if (voltage >= 3.7) return Math.min(100, Math.round(75 + ((voltage - 3.7) / (4.2 - 3.7)) * 25));
-  if (voltage >= 3.4) return Math.round(50 + ((voltage - 3.4) / (3.7 - 3.4)) * 25);
-  if (voltage >= 3.0) return Math.round(25 + ((voltage - 3.0) / (3.4 - 3.0)) * 25);
-  return Math.round((voltage - 2.75) / (3.0 - 2.75) * 25);
+  // Clamp voltage to valid range
+  if (voltage <= 3.1) return 1;
+  if (voltage >= 4.06) return 100;
+  
+  // Piecewise linear interpolation based on official API data
+  const points = [
+    [3.1, 1],
+    [3.65, 54],
+    [3.70, 58],
+    [3.75, 62],
+    [3.80, 66],
+    [3.85, 70],
+    [3.88, 73],
+    [3.90, 75],
+    [3.92, 76],
+    [3.98, 81],
+    [4.00, 90],
+    [4.02, 95],
+    [4.05, 95],
+    [4.06, 100]
+  ];
+  
+  // Find the two points to interpolate between
+  for (let i = 0; i < points.length - 1; i++) {
+    const [v1, p1] = points[i];
+    const [v2, p2] = points[i + 1];
+    
+    if (voltage >= v1 && voltage <= v2) {
+      // Linear interpolation between the two points
+      const ratio = (voltage - v1) / (v2 - v1);
+      return Math.round(p1 + ratio * (p2 - p1));
+    }
+  }
+  
+  return 1; // Fallback
 };
 
 export const getSignalQuality = (rssi: number): { quality: string; strength: number; color: string } => {
@@ -67,8 +98,8 @@ export const getBatteryDisplay = (voltage?: number) => {
     icon = <BatteryMedium className="h-4 w-4" />;
     color = "";
   } else if (percentage > 25) {
-    icon = <BatteryLow className="h-4 w-4 text-destructive" />;
-    color = "text-destructive";
+    icon = <BatteryLow className="h-4 w-4" />;
+    color = "";
   } else {
     icon = <BatteryWarning className="h-4 w-4 text-destructive" />;
     color = "text-destructive";

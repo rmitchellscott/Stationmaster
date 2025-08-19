@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "@/components/AuthProvider";
+import { calculateBatteryPercentage } from "@/utils/deviceHelpers";
 import {
   Dialog,
   DialogContent,
@@ -514,16 +515,6 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
     return "offline";
   };
 
-  const calculateBatteryPercentage = (voltage: number): number => {
-    if (voltage >= 4.2) return 100;
-    if (voltage <= 2.75) return 0;
-    
-    if (voltage >= 4.0) return Math.round(90 + ((voltage - 4.0) / (4.2 - 4.0)) * 10);
-    if (voltage >= 3.7) return Math.round(75 + ((voltage - 3.7) / (4.0 - 3.7)) * 15);
-    if (voltage >= 3.4) return Math.round(50 + ((voltage - 3.4) / (3.7 - 3.4)) * 25);
-    if (voltage >= 3.0) return Math.round(25 + ((voltage - 3.0) / (3.4 - 3.0)) * 25);
-    return Math.round((voltage - 2.75) / (3.0 - 2.75) * 25);
-  };
 
   const getSignalQuality = (rssi: number): { quality: string; strength: number; color: string } => {
     if (rssi > -50) return { quality: "Excellent", strength: 5, color: "" };
@@ -570,8 +561,8 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
       icon = <BatteryMedium className="h-4 w-4" />;
       color = "";
     } else if (percentage > 25) {
-      icon = <BatteryLow className="h-4 w-4 text-destructive" />;
-      color = "text-destructive";
+      icon = <BatteryLow className="h-4 w-4" />;
+      color = "";
     } else {
       icon = <BatteryWarning className="h-4 w-4 text-destructive" />;
       color = "text-destructive";

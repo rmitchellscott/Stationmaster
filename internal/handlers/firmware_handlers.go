@@ -286,6 +286,18 @@ func RetryFirmwareDownloadHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Firmware download started"})
 }
 
+// GetFirmwareModeHandler returns the current firmware mode setting
+func GetFirmwareModeHandler(c *gin.Context) {
+	firmwareMode := os.Getenv("FIRMWARE_MODE")
+	if firmwareMode == "" {
+		firmwareMode = "proxy" // Default to proxy mode
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"firmware_mode": firmwareMode,
+	})
+}
+
 // TriggerModelPollHandler triggers a manual model poll
 func TriggerModelPollHandler(c *gin.Context) {
 	db := database.GetDB()

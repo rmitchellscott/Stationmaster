@@ -149,6 +149,7 @@ func main() {
 	router.GET("/api/setup", trmnl.SetupHandler)
 	router.GET("/api/setup/", trmnl.SetupHandler)
 	router.GET("/api/display", trmnl.DisplayHandler)
+	router.GET("/api/current_screen", trmnl.CurrentScreenHandler)
 	router.POST("/api/logs", trmnl.LogsHandler)
 	router.POST("/api/log", trmnl.LogsHandler)
 	router.GET("/api/trmnl/devices/:deviceId/image", trmnl.DeviceImageHandler)

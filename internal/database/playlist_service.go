@@ -120,28 +120,12 @@ func (pls *PlaylistService) AddItemToPlaylist(playlistID, userPluginID uuid.UUID
 
 // GetPlaylistItems returns all items in a playlist with their associated data
 func (pls *PlaylistService) GetPlaylistItems(playlistID uuid.UUID) ([]PlaylistItem, error) {
-	log.Printf("[PLAYLIST QUERY] Querying playlist items for playlist ID: %s", playlistID.String())
-	
 	var items []PlaylistItem
 	err := pls.db.Preload("UserPlugin").Preload("UserPlugin.Plugin").Preload("Schedules").
 		Where("playlist_id = ?", playlistID).
 		Order("order_index ASC").
 		Find(&items).Error
 		
-	log.Printf("[PLAYLIST QUERY] Query completed. Found %d items. Error: %v", len(items), err)
-	
-	for i, item := range items {
-		log.Printf("[PLAYLIST QUERY] Item %d: ID=%s, UserPluginID=%s, IsVisible=%t, OrderIndex=%d, Schedules=%d", 
-			i, item.ID.String(), item.UserPluginID.String(), item.IsVisible, item.OrderIndex, len(item.Schedules))
-		
-		if item.UserPlugin.ID != uuid.Nil {
-			log.Printf("[PLAYLIST QUERY] Item %d UserPlugin: ID=%s, Name=%s, UserID=%s", 
-				i, item.UserPlugin.ID.String(), item.UserPlugin.Name, item.UserPlugin.UserID.String())
-		} else {
-			log.Printf("[PLAYLIST QUERY] Item %d UserPlugin: NOT LOADED or NULL", i)
-		}
-	}
-	
 	return items, err
 }
 
@@ -409,58 +393,35 @@ func (pls *PlaylistService) DeleteSchedule(scheduleID uuid.UUID) error {
 
 // GetActivePlaylistItemsForTime returns playlist items that should be active at a given time
 func (pls *PlaylistService) GetActivePlaylistItemsForTime(deviceID uuid.UUID, currentTime time.Time) ([]PlaylistItem, error) {
-	log.Printf("[SCHEDULE DEBUG] Starting GetActivePlaylistItemsForTime for device %s", deviceID.String())
-	
 	// Get the default playlist for the device
 	playlist, err := pls.GetDefaultPlaylistForDevice(deviceID)
 	if err != nil {
-		log.Printf("[SCHEDULE DEBUG] Error getting default playlist for device %s: %v", deviceID.String(), err)
 		return nil, err
 	}
-	
-	log.Printf("[SCHEDULE DEBUG] Found default playlist for device %s: %s (ID: %s)", 
-		deviceID.String(), playlist.Name, playlist.ID.String())
 
 	// Get all playlist items with their schedules
 	items, err := pls.GetPlaylistItems(playlist.ID)
 	if err != nil {
-		log.Printf("[SCHEDULE DEBUG] Error getting playlist items for playlist %s: %v", playlist.ID.String(), err)
 		return nil, err
 	}
-	
-	log.Printf("[SCHEDULE DEBUG] Raw query returned %d items from GetPlaylistItems", len(items))
 
 	// Filter items that match the current time
 	var activeItems []PlaylistItem
 
-	log.Printf("[SCHEDULE DEBUG] Device: %s, Current time UTC: %s",
-		deviceID.String(), currentTime.UTC().Format("2006-01-02 15:04:05"))
-	log.Printf("[SCHEDULE DEBUG] Found %d playlist items", len(items))
-
-	for i, item := range items {
-		log.Printf("[SCHEDULE DEBUG] Item %d: ID=%s, Visible=%t, Schedules=%d",
-			i, item.ID.String(), item.IsVisible, len(item.Schedules))
-
+	for _, item := range items {
 		if !item.IsVisible {
-			log.Printf("[SCHEDULE DEBUG] Item %d: Skipping - not visible", i)
 			continue
 		}
 
 		// If no schedules, item is always active
 		if len(item.Schedules) == 0 {
-			log.Printf("[SCHEDULE DEBUG] Item %d: Active - no schedules (always active)", i)
 			activeItems = append(activeItems, item)
 			continue
 		}
 
 		// Check if any schedule matches current time
-		itemMatched := false
-		for j, schedule := range item.Schedules {
-			log.Printf("[SCHEDULE DEBUG] Item %d, Schedule %d: Name=%s, Active=%t, DayMask=%d, Start=%s, End=%s, Timezone=%s",
-				i, j, schedule.Name, schedule.IsActive, schedule.DayMask, schedule.StartTime, schedule.EndTime, schedule.Timezone)
-
+		for _, schedule := range item.Schedules {
 			if !schedule.IsActive {
-				log.Printf("[SCHEDULE DEBUG] Item %d, Schedule %d: Skipping - not active", i, j)
 				continue
 			}
 
@@ -469,7 +430,6 @@ func (pls *PlaylistService) GetActivePlaylistItemsForTime(deviceID uuid.UUID, cu
 
 			loc, err := time.LoadLocation(scheduleTimezone)
 			if err != nil {
-				log.Printf("[SCHEDULE DEBUG] Item %d, Schedule %d: Invalid timezone %s, falling back to UTC", i, j, scheduleTimezone)
 				loc = time.UTC
 				scheduleTimezone = "UTC"
 			}
@@ -480,13 +440,8 @@ func (pls *PlaylistService) GetActivePlaylistItemsForTime(deviceID uuid.UUID, cu
 			dayBit := 1 << weekday
 			currentTimeStr := currentTimeInScheduleTZ.Format("15:04:05")
 
-			log.Printf("[SCHEDULE DEBUG] Item %d, Schedule %d: Current time in %s: %s, Weekday: %d, DayBit: %d",
-				i, j, scheduleTimezone, currentTimeInScheduleTZ.Format("2006-01-02 15:04:05"), weekday, dayBit)
-
 			// Check day mask
 			dayMatch := (schedule.DayMask & dayBit) != 0
-			log.Printf("[SCHEDULE DEBUG] Item %d, Schedule %d: Day match = %t (schedule mask %d & current bit %d)",
-				i, j, dayMatch, schedule.DayMask, dayBit)
 			if !dayMatch {
 				continue
 			}
@@ -497,28 +452,17 @@ func (pls *PlaylistService) GetActivePlaylistItemsForTime(deviceID uuid.UUID, cu
 			if schedule.EndTime < schedule.StartTime {
 				// Overnight schedule: active if current time is >= start OR <= end
 				timeMatch = currentTimeStr >= schedule.StartTime || currentTimeStr <= schedule.EndTime
-				log.Printf("[SCHEDULE DEBUG] Item %d, Schedule %d: Overnight schedule - Time match = %t (%s >= %s || %s <= %s)",
-					i, j, timeMatch, currentTimeStr, schedule.StartTime, currentTimeStr, schedule.EndTime)
 			} else {
 				// Normal schedule: active if current time is between start and end
 				timeMatch = currentTimeStr >= schedule.StartTime && currentTimeStr <= schedule.EndTime
-				log.Printf("[SCHEDULE DEBUG] Item %d, Schedule %d: Normal schedule - Time match = %t (%s >= %s && %s <= %s)",
-					i, j, timeMatch, currentTimeStr, schedule.StartTime, currentTimeStr, schedule.EndTime)
 			}
 			if timeMatch {
-				log.Printf("[SCHEDULE DEBUG] Item %d: ACTIVE - matched schedule %d", i, j)
 				activeItems = append(activeItems, item)
-				itemMatched = true
 				break
 			}
 		}
-
-		if !itemMatched {
-			log.Printf("[SCHEDULE DEBUG] Item %d: No matching schedules", i)
-		}
 	}
 
-	log.Printf("[SCHEDULE DEBUG] Found %d active items before importance filtering", len(activeItems))
 
 	// Check if any important items are active
 	importantItems := make([]PlaylistItem, 0)
@@ -534,12 +478,10 @@ func (pls *PlaylistService) GetActivePlaylistItemsForTime(deviceID uuid.UUID, cu
 
 	// If important items are active, only return important items
 	if len(importantItems) > 0 {
-		log.Printf("[SCHEDULE DEBUG] %d important items found - filtering out %d normal items", len(importantItems), len(normalItems))
 		return importantItems, nil
 	}
 
 	// If no important items, return all active items (normal behavior)
-	log.Printf("[SCHEDULE DEBUG] No important items found - returning all %d active items", len(activeItems))
 	return activeItems, nil
 }
 

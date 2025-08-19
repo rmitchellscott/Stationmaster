@@ -109,7 +109,7 @@ interface Device {
   allow_firmware_updates?: boolean;
   last_seen?: string;
   is_active: boolean;
-  is_sharable?: boolean;
+  is_shareable?: boolean;
   mirror_source_id?: string;
   mirror_synced_at?: string;
   sleep_enabled?: boolean;
@@ -156,7 +156,7 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
   const [editRefreshRate, setEditRefreshRate] = useState("");
   const [editAllowFirmwareUpdates, setEditAllowFirmwareUpdates] = useState(true);
   const [editModelName, setEditModelName] = useState<string>("");
-  const [editIsSharable, setEditIsSharable] = useState(false);
+  const [editIsShareable, setEditIsShareable] = useState(false);
   const [deviceModels, setDeviceModels] = useState<DeviceModel[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [editDialogError, setEditDialogError] = useState<string | null>(null);
@@ -305,7 +305,7 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
         name: editDeviceName.trim(),
         refresh_rate: refreshRate,
         allow_firmware_updates: editAllowFirmwareUpdates,
-        is_sharable: editIsSharable,
+        is_shareable: editIsShareable,
         sleep_enabled: editSleepEnabled,
         sleep_start_time: editSleepStartTime,
         sleep_end_time: editSleepEndTime,
@@ -412,7 +412,7 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
       setEditRefreshRate(device.refresh_rate.toString());
       setEditAllowFirmwareUpdates(device.allow_firmware_updates ?? true);
       setEditModelName(device.model_name || "none");
-      setEditIsSharable(device.is_sharable ?? false);
+      setEditIsShareable(device.is_shareable ?? false);
       
       // Initialize sleep mode settings
       setEditSleepEnabled(device.sleep_enabled ?? false);
@@ -446,7 +446,7 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
       editRefreshRate !== editDevice.refresh_rate.toString() ||
       editAllowFirmwareUpdates !== (editDevice.allow_firmware_updates ?? true) ||
       editModelName !== (editDevice.model_name || "none") ||
-      editIsSharable !== (editDevice.is_sharable ?? false) ||
+      editIsShareable !== (editDevice.is_shareable ?? false) ||
       editSleepEnabled !== (editDevice.sleep_enabled ?? false) ||
       editSleepStartTime !== (editDevice.sleep_start_time || "22:00") ||
       editSleepEndTime !== (editDevice.sleep_end_time || "06:00") ||
@@ -826,9 +826,9 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
                         <div>
                           <div className="flex items-center gap-2">
                             <span className="font-medium">{device.name || "Unnamed Device"}</span>
-                            {device.is_sharable && (
+                            {device.is_shareable && (
                               <Badge variant="outline" className="text-xs">
-                                Sharable
+                                Shareable
                               </Badge>
                             )}
                             {device.mirror_source_id && (
@@ -1208,18 +1208,18 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
                   <div className="mt-2">
                     <div className="flex items-center space-x-2">
                       <Switch
-                        id="edit-is-sharable"
-                        checked={editIsSharable}
-                        onCheckedChange={setEditIsSharable}
+                        id="edit-is-shareable"
+                        checked={editIsShareable}
+                        onCheckedChange={setEditIsShareable}
                       />
-                      <Label htmlFor="edit-is-sharable">
-                        Sharable
+                      <Label htmlFor="edit-is-shareable">
+                        Shareable
                       </Label>
                     </div>
                     <p className="text-sm text-muted-foreground mt-1">
                       Allow other devices to mirror this device's playlist
                     </p>
-                    {editIsSharable && editDevice && (
+                    {editIsShareable && editDevice && (
                       <div className="mt-3 p-3 bg-muted/50 rounded-md">
                         <Label className="text-xs text-muted-foreground">Device ID for Mirroring</Label>
                         <div className="mt-1 font-mono text-lg font-bold text-primary">
@@ -1277,7 +1277,7 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
                           Mirror Another Device
                         </Button>
                         <p className="text-xs text-muted-foreground mt-1">
-                          Copy playlist from another sharable device
+                          Copy playlist from another shareable device
                         </p>
                       </div>
                     )}
@@ -1638,7 +1638,7 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
           <DialogHeader>
             <DialogTitle>Mirror Another Device</DialogTitle>
             <DialogDescription>
-              Enter the 6-digit Device ID of the sharable device you want to mirror.
+              Enter the 6-digit Device ID of the shareable device you want to mirror.
             </DialogDescription>
           </DialogHeader>
           
@@ -1654,7 +1654,7 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
                 maxLength={6}
               />
               <p className="text-sm text-muted-foreground mt-1">
-                This device must be marked as "Sharable" by its owner
+                This device must be marked as "Shareable" by its owner
               </p>
             </div>
           </div>

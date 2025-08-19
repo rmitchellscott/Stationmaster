@@ -126,7 +126,7 @@ func UpdateDeviceHandler(c *gin.Context) {
 		AllowFirmwareUpdates    *bool   `json:"allow_firmware_updates"`
 		ModelName               *string `json:"model_name"`
 		ClearModelOverride      *bool   `json:"clear_model_override"`
-		IsSharable              *bool   `json:"is_sharable"`
+		IsShareable             *bool   `json:"is_shareable"`
 		SleepEnabled            *bool   `json:"sleep_enabled"`
 		SleepStartTime          string  `json:"sleep_start_time"`
 		SleepEndTime            string  `json:"sleep_end_time"`
@@ -168,9 +168,9 @@ func UpdateDeviceHandler(c *gin.Context) {
 	if req.AllowFirmwareUpdates != nil {
 		device.AllowFirmwareUpdates = *req.AllowFirmwareUpdates
 	}
-	if req.IsSharable != nil {
-		// If device is being set to not sharable, clear any mirrored devices
-		if !*req.IsSharable && device.IsSharable {
+	if req.IsShareable != nil {
+		// If device is being set to not shareable, clear any mirrored devices
+		if !*req.IsShareable && device.IsShareable {
 			playlistService := database.NewPlaylistService(db)
 			err := playlistService.ClearMirroredPlaylistsForSourceDevice(device.ID)
 			if err != nil {
@@ -178,7 +178,7 @@ func UpdateDeviceHandler(c *gin.Context) {
 				return
 			}
 		}
-		device.IsSharable = *req.IsSharable
+		device.IsShareable = *req.IsShareable
 	}
 
 	// Handle model name updates
@@ -318,7 +318,6 @@ func UpdateDeviceHandler(c *gin.Context) {
 				"timestamp": time.Now().UTC(),
 			},
 		})
-		logging.Logf("[SSE] Broadcasted device settings update for device %s", device.MacAddress)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"device": device})
@@ -559,9 +558,7 @@ func DeviceEventsHandler(c *gin.Context) {
 
 	select {
 	case <-client.Done:
-		logging.Logf("[SSE] Client %s disconnected for device %s", client.ID, deviceID.String())
 	case <-ctx.Done():
-		logging.Logf("[SSE] Context cancelled for client %s on device %s", client.ID, deviceID.String())
 	}
 
 	sseService.RemoveClient(client.ID)
@@ -731,9 +728,9 @@ func MirrorDeviceHandler(c *gin.Context) {
 		return
 	}
 
-	// Verify source device is sharable
-	if !sourceDevice.IsSharable {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Source device is not sharable"})
+	// Verify source device is shareable
+	if !sourceDevice.IsShareable {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Source device is not shareable"})
 		return
 	}
 
@@ -813,9 +810,9 @@ func SyncMirrorHandler(c *gin.Context) {
 		return
 	}
 
-	// Verify source device is still sharable
-	if !sourceDevice.IsSharable {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Source device is no longer sharable"})
+	// Verify source device is still shareable
+	if !sourceDevice.IsShareable {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Source device is no longer shareable"})
 		return
 	}
 

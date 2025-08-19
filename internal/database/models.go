@@ -335,7 +335,7 @@ type Schedule struct {
 	StartTime      string    `gorm:"size:8;not null" json:"start_time"` // HH:MM:SS format
 	EndTime        string    `gorm:"size:8;not null" json:"end_time"`   // HH:MM:SS format
 	Timezone       string    `gorm:"size:50;default:'UTC'" json:"timezone"`
-	IsActive       bool      `gorm:"default:true" json:"is_active"`
+	IsActive       bool      `json:"is_active"`
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
 

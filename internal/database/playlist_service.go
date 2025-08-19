@@ -236,7 +236,7 @@ func (pls *PlaylistService) compactPlaylistOrderInTx(tx *gorm.DB, playlistID uui
 }
 
 // AddScheduleToPlaylistItem adds a schedule to a playlist item
-func (pls *PlaylistService) AddScheduleToPlaylistItem(playlistItemID uuid.UUID, name string, dayMask int, startTime, endTime, timezone string) (*Schedule, error) {
+func (pls *PlaylistService) AddScheduleToPlaylistItem(playlistItemID uuid.UUID, name string, dayMask int, startTime, endTime, timezone string, isActive bool) (*Schedule, error) {
 	schedule := &Schedule{
 		PlaylistItemID: playlistItemID,
 		Name:           name,
@@ -244,7 +244,7 @@ func (pls *PlaylistService) AddScheduleToPlaylistItem(playlistItemID uuid.UUID, 
 		StartTime:      startTime,
 		EndTime:        endTime,
 		Timezone:       timezone,
-		IsActive:       true,
+		IsActive:       isActive,
 	}
 
 	if err := pls.db.Create(schedule).Error; err != nil {
@@ -257,7 +257,7 @@ func (pls *PlaylistService) AddScheduleToPlaylistItem(playlistItemID uuid.UUID, 
 // GetSchedulesByPlaylistItemID returns all schedules for a playlist item
 func (pls *PlaylistService) GetSchedulesByPlaylistItemID(playlistItemID uuid.UUID) ([]Schedule, error) {
 	var schedules []Schedule
-	err := pls.db.Where("playlist_item_id = ? AND is_active = ?", playlistItemID, true).Order("created_at ASC").Find(&schedules).Error
+	err := pls.db.Where("playlist_item_id = ?", playlistItemID).Order("created_at ASC").Find(&schedules).Error
 	return schedules, err
 }
 

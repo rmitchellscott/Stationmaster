@@ -892,6 +892,7 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
       ...schedule,
       start_time: convertUTCTimeToLocal(schedule.start_time) + ":00", // Add seconds for UI
       end_time: convertUTCTimeToLocal(schedule.end_time) + ":00", // Add seconds for UI
+      is_active: schedule.is_active !== undefined ? schedule.is_active : true, // Ensure is_active is set
     }));
     
     setSchedules(schedulesWithLocalTimes);
@@ -946,14 +947,13 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
 
       // Then create all new schedules
       for (const schedule of schedules) {
-        if (!schedule.is_active) continue; // Skip inactive schedules
-
         const scheduleData = {
           name: schedule.name || "Unnamed Schedule",
           day_mask: schedule.day_mask,
           start_time: convertLocalTimeToUTC(schedule.start_time.substring(0, 5)), // Convert to UTC
           end_time: convertLocalTimeToUTC(schedule.end_time.substring(0, 5)), // Convert to UTC
           timezone: "UTC",
+          is_active: schedule.is_active,
         };
 
         const response = await fetch(`/api/playlists/items/${scheduleItem.id}/schedules`, {

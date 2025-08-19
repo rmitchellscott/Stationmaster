@@ -86,7 +86,6 @@ npm run dev
 | `PORT` | `8000` | Port for the web server |
 | `GIN_MODE` | `release` | Gin framework mode (`debug`, `release`, `test`) |
 | `DATA_DIR` | `/data` | Directory for data storage |
-| `DISABLE_UI` | - | Set to any value to disable the web UI |
 
 ### Database Configuration
 
@@ -116,7 +115,6 @@ npm run dev
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MULTI_USER_MODE` | `true` | Enable multi-user functionality |
 | `PUBLIC_REGISTRATION_ENABLED` | `false` | Allow public user registration |
 | `ADMIN_USERNAME` | - | Initial admin username |
 | `ADMIN_PASSWORD` | - | Initial admin password |
@@ -180,7 +178,6 @@ npm run dev
 |----------|---------|-------------|
 | `DEBUG` | `false` | Enable debug mode |
 | `DRY_RUN` | `false` | Enable dry-run mode (no actual changes) |
-| `RMAPI_HOST` | - | reMarkable API host override |
 
 ### File-based Secrets
 

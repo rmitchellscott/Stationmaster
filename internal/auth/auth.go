@@ -4,12 +4,8 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"fmt"
-	"io"
 	"io/fs"
 	"net/http"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -17,7 +13,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/rmitchellscott/stationmaster/internal/config"
-	"golang.org/x/term"
 	"golang.org/x/time/rate"
 )
 
@@ -297,44 +292,3 @@ func ServeIndexWithSecret(c *gin.Context, uiFS fs.FS, secret string) {
 	c.String(http.StatusOK, html)
 }
 
-// RunPair handles interactive pairing flow
-func RunPair(stdout, stderr io.Writer) error {
-	// 1) Are we interactive?
-	if !term.IsTerminal(int(os.Stdin.Fd())) {
-		return fmt.Errorf("no TTY detected; please run `docker run ... stationmaster pair` in an interactive shell")
-	}
-
-	if host := config.Get("RMAPI_HOST", ""); host != "" {
-		fmt.Fprintf(stdout, "Welcome to Stationmaster. Let's pair with %s!\n", host)
-	} else {
-		fmt.Fprintln(stdout, "Welcome to Stationmaster. Let's pair with the reMarkable Cloud!")
-	}
-
-	// 2) cd into rmapi
-	cmd := exec.Command("rmapi", "cd")
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = stdout
-	cmd.Stderr = stderr
-
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("`rmapi cd` failed: %w", err)
-	}
-
-	// 3) print the rmapi.conf if it exists
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("could not get home directory: %w", err)
-	}
-	cfgPath := filepath.Join(home, ".config", "rmapi", "rmapi.conf")
-
-	fmt.Fprintf(stdout, "\nPrinting your %s file:\n", cfgPath)
-	data, err := os.ReadFile(cfgPath)
-	if err != nil {
-		return fmt.Errorf("could not read config: %w", err)
-	}
-	stdout.Write(data)
-	stdout.Write([]byte("\n"))
-
-	fmt.Fprintln(stdout, "Done!")
-	return nil
-}

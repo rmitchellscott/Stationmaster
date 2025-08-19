@@ -339,8 +339,7 @@ func main() {
 	router.GET("/api/config", handlers.ConfigHandler)
 
 	// Serve UI
-	if config.Get("DISABLE_UI", "") == "" {
-		router.NoRoute(func(c *gin.Context) {
+	router.NoRoute(func(c *gin.Context) {
 			p := strings.TrimPrefix(c.Request.URL.Path, "/")
 			if p == "" {
 				p = "index.html"
@@ -385,12 +384,6 @@ func main() {
 			}
 			http.ServeFileFS(c.Writer, c.Request, uiFS, p)
 		})
-	} else {
-		logging.Logf("[STARTUP] DISABLE_UI is set → running in API-only mode (no UI).")
-		router.NoRoute(func(c *gin.Context) {
-			c.AbortWithStatus(http.StatusNotFound)
-		})
-	}
 
 	// Create HTTP server
 	srv := &http.Server{

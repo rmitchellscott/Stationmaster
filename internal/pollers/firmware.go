@@ -365,7 +365,7 @@ func (p *FirmwarePoller) downloadFirmwareFile(ctx context.Context, firmware *dat
 	if resp.StatusCode != http.StatusOK {
 		errMsg := fmt.Sprintf("Download failed with status %d", resp.StatusCode)
 		p.markDownloadFailed(firmware, errMsg)
-		return fmt.Errorf(errMsg)
+		return fmt.Errorf("%s", errMsg)
 	}
 
 	// Get content length for progress tracking
@@ -406,7 +406,7 @@ func (p *FirmwarePoller) downloadFirmwareFile(ctx context.Context, firmware *dat
 			os.Remove(filePath) // Clean up corrupted file
 			errMsg := fmt.Sprintf("Checksum mismatch: expected %s, got %s", firmware.SHA256, calculatedHash)
 			p.markDownloadFailed(firmware, errMsg)
-			return fmt.Errorf(errMsg)
+			return fmt.Errorf("%s", errMsg)
 		}
 	}
 

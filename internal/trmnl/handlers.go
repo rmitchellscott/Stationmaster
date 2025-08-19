@@ -894,21 +894,37 @@ func checkFirmwareUpdate(device *database.Device) FirmwareUpdateResponse {
 		return defaultResponse
 	}
 
+	// 2. Check if we're in the firmware update schedule window
+	// Get user timezone for schedule calculations
+	userTimezone := "UTC" // Default fallback
+	if device.UserID != nil {
+		db := database.GetDB()
+		userService := database.NewUserService(db)
+		user, err := userService.GetUserByID(*device.UserID)
+		if err == nil && user.Timezone != "" {
+			userTimezone = user.Timezone
+		}
+	}
+	
+	if !isInFirmwareUpdatePeriod(device, userTimezone) {
+		return defaultResponse
+	}
+
 	db := database.GetDB()
 	firmwareService := database.NewFirmwareService(db)
 
-	// 2. Get latest firmware version
+	// 3. Get latest firmware version
 	latestFirmware, err := firmwareService.GetLatestFirmwareVersion()
 	if err != nil {
 		return defaultResponse
 	}
 
-	// 3. Compare with device's current version
+	// 4. Compare with device's current version
 	if device.FirmwareVersion != "" && device.FirmwareVersion >= latestFirmware.Version {
 		return defaultResponse
 	}
 
-	// 4. Check if firmware is available based on current mode
+	// 5. Check if firmware is available based on current mode
 	firmwareMode := os.Getenv("FIRMWARE_MODE")
 	if firmwareMode == "" {
 		firmwareMode = "proxy" // Default to proxy mode
@@ -926,7 +942,7 @@ func checkFirmwareUpdate(device *database.Device) FirmwareUpdateResponse {
 		}
 	}
 
-	// 5. Generate firmware URL - try to use absolute URL if site_url is configured
+	// 6. Generate firmware URL - try to use absolute URL if site_url is configured
 	firmwareURL := fmt.Sprintf("/files/firmware/firmware_%s.bin", latestFirmware.Version)
 
 	// Get site URL from settings to create absolute URL
@@ -1408,4 +1424,43 @@ func parseSleepTime(timeStr string, referenceTime time.Time) (time.Time, error) 
 		0, 0,
 		referenceTime.Location(),
 	), nil
+}
+
+// isInFirmwareUpdatePeriod checks if the current time falls within the device's firmware update schedule
+func isInFirmwareUpdatePeriod(device *database.Device, userTimezone string) bool {
+	if device.FirmwareUpdateStartTime == "" || device.FirmwareUpdateEndTime == "" {
+		return true // Default to always allow if no schedule is set
+	}
+
+	// Parse timezone
+	loc, err := time.LoadLocation(userTimezone)
+	if err != nil {
+		logging.Logf("[FIRMWARE UPDATE] Invalid timezone %s for device %s, using UTC", userTimezone, device.MacAddress)
+		loc = time.UTC
+	}
+
+	// Get current time in device's timezone
+	now := time.Now().In(loc)
+	
+	// Parse firmware update start and end times
+	startTime, err := parseSleepTime(device.FirmwareUpdateStartTime, now)
+	if err != nil {
+		logging.Logf("[FIRMWARE UPDATE] Invalid start time %s for device %s: %v", device.FirmwareUpdateStartTime, device.MacAddress, err)
+		return true // Default to allow if invalid time
+	}
+	
+	endTime, err := parseSleepTime(device.FirmwareUpdateEndTime, now)
+	if err != nil {
+		logging.Logf("[FIRMWARE UPDATE] Invalid end time %s for device %s: %v", device.FirmwareUpdateEndTime, device.MacAddress, err)
+		return true // Default to allow if invalid time
+	}
+
+	// Handle firmware update periods that cross midnight
+	if startTime.After(endTime) {
+		// Update period crosses midnight (e.g., 22:00 to 06:00)
+		return now.After(startTime) || now.Before(endTime)
+	} else {
+		// Update period is within the same day (e.g., 01:00 to 05:00)
+		return now.After(startTime) && now.Before(endTime)
+	}
 }

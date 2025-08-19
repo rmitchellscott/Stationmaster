@@ -286,13 +286,13 @@ const createSleepModeItem = (sleepConfig: any, userTimezone: string): PlaylistIt
     id: 'virtual-sleep-mode',
     playlist_id: '',
     user_plugin_id: '',
-    order_index: -1, // Always show at top
+    order_index: -1, 
     is_visible: true,
     importance: false,
     created_at: '',
     updated_at: '',
     is_sleep_mode: true,
-    sleep_schedule_text: fullScheduleText, // Store schedule text separately
+    sleep_schedule_text: fullScheduleText, 
     user_plugin: {
       id: 'sleep-mode',
       user_id: '',
@@ -304,7 +304,7 @@ const createSleepModeItem = (sleepConfig: any, userTimezone: string): PlaylistIt
       updated_at: '',
       plugin: {
         id: 'sleep-mode',
-        name: 'Device sleep period', // Generic description instead of schedule
+        name: 'Device Setting', 
         type: 'system',
         description: 'Device sleep schedule',
       }

@@ -116,6 +116,8 @@ interface Device {
   sleep_start_time?: string;
   sleep_end_time?: string;
   sleep_show_screen?: boolean;
+  firmware_update_start_time?: string;
+  firmware_update_end_time?: string;
   created_at: string;
   updated_at: string;
   device_model?: DeviceModel;
@@ -164,6 +166,10 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
   const [editSleepStartTime, setEditSleepStartTime] = useState("");
   const [editSleepEndTime, setEditSleepEndTime] = useState("");
   const [editSleepShowScreen, setEditSleepShowScreen] = useState(true);
+
+  // Firmware update schedule settings
+  const [editFirmwareUpdateStartTime, setEditFirmwareUpdateStartTime] = useState("00:00");
+  const [editFirmwareUpdateEndTime, setEditFirmwareUpdateEndTime] = useState("23:59");
 
   // Device deletion
   const [deleteDevice, setDeleteDevice] = useState<Device | null>(null);
@@ -304,6 +310,8 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
         sleep_start_time: editSleepStartTime,
         sleep_end_time: editSleepEndTime,
         sleep_show_screen: editSleepShowScreen,
+        firmware_update_start_time: editFirmwareUpdateStartTime,
+        firmware_update_end_time: editFirmwareUpdateEndTime,
       };
 
 
@@ -412,6 +420,10 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
       setEditSleepEndTime(device.sleep_end_time || "06:00");
       setEditSleepShowScreen(device.sleep_show_screen ?? true);
       
+      // Initialize firmware update schedule settings
+      setEditFirmwareUpdateStartTime(device.firmware_update_start_time || "00:00");
+      setEditFirmwareUpdateEndTime(device.firmware_update_end_time || "23:59");
+      
       // Clear any previous dialog errors
       setEditDialogError(null);
       
@@ -438,7 +450,9 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
       editSleepEnabled !== (editDevice.sleep_enabled ?? false) ||
       editSleepStartTime !== (editDevice.sleep_start_time || "22:00") ||
       editSleepEndTime !== (editDevice.sleep_end_time || "06:00") ||
-      editSleepShowScreen !== (editDevice.sleep_show_screen ?? true)
+      editSleepShowScreen !== (editDevice.sleep_show_screen ?? true) ||
+      editFirmwareUpdateStartTime !== (editDevice.firmware_update_start_time || "00:00") ||
+      editFirmwareUpdateEndTime !== (editDevice.firmware_update_end_time || "23:59")
     );
   };
 
@@ -1086,6 +1100,39 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
                 <p className="text-sm text-muted-foreground mt-1">
                   When enabled, device will automatically update to the latest firmware
                 </p>
+
+                {editAllowFirmwareUpdates && (
+                  <div className="mt-3 pl-6 border-l-2 border-border space-y-3">
+                    <div>
+                      <Label className="text-sm font-medium">Firmware Update Schedule</Label>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Restrict firmware updates to specific times
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <Label htmlFor="edit-firmware-start-time" className="text-sm">Start Time</Label>
+                        <Input
+                          id="edit-firmware-start-time"
+                          type="time"
+                          value={editFirmwareUpdateStartTime}
+                          onChange={(e) => setEditFirmwareUpdateStartTime(e.target.value)}
+                          className="mt-1"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="edit-firmware-end-time" className="text-sm">End Time</Label>
+                        <Input
+                          id="edit-firmware-end-time"
+                          type="time"
+                          value={editFirmwareUpdateEndTime}
+                          onChange={(e) => setEditFirmwareUpdateEndTime(e.target.value)}
+                          className="mt-1"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 

@@ -1037,7 +1037,10 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
         setEditDevice(null);
         setEditDialogError(null);
       }}>
-        <DialogContent className="sm:max-w-lg md:max-w-2xl lg:max-w-4xl xl:max-w-5xl max-h-[85vh] mobile-dialog-content overflow-y-auto !top-[0vh] !translate-y-0 sm:!top-[6vh]">
+        <DialogContent 
+          className="sm:max-w-lg md:max-w-2xl lg:max-w-4xl xl:max-w-5xl max-h-[85vh] mobile-dialog-content overflow-y-auto !top-[0vh] !translate-y-0 sm:!top-[6vh]"
+          onOpenAutoFocus={(e) => e.preventDefault()}
+        >
           <DialogHeader>
             <DialogTitle>Edit Device</DialogTitle>
             <DialogDescription>

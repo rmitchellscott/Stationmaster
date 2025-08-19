@@ -479,7 +479,10 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
 
       {/* Add Plugin Dialog */}
       <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
-        <DialogContent className="sm:max-w-5xl max-h-[70vh] overflow-hidden flex flex-col mobile-dialog-content !top-[0vh] !translate-y-0 sm:!top-[6vh]">
+        <DialogContent 
+          className="sm:max-w-5xl max-h-[70vh] overflow-hidden flex flex-col mobile-dialog-content !top-[0vh] !translate-y-0 sm:!top-[6vh]"
+          onOpenAutoFocus={(e) => e.preventDefault()}
+        >
           <DialogHeader className="pb-3">
             <DialogTitle>Add Plugin Instance</DialogTitle>
             <DialogDescription>
@@ -641,7 +644,10 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
 
       {/* Edit Plugin Dialog */}
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-        <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogContent 
+          className="sm:max-w-2xl max-h-[80vh] overflow-y-auto"
+          onOpenAutoFocus={(e) => e.preventDefault()}
+        >
           <DialogHeader>
             <DialogTitle>Edit Plugin Instance</DialogTitle>
             <DialogDescription>

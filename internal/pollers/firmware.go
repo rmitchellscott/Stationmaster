@@ -22,9 +22,10 @@ import (
 // FirmwarePoller polls for firmware updates
 type FirmwarePoller struct {
 	*BasePoller
-	db         *gorm.DB
-	apiURL     string
-	storageDir string
+	db           *gorm.DB
+	apiURL       string
+	storageDir   string
+	firmwareMode string
 }
 
 // FirmwareVersionInfo represents firmware version information from the API
@@ -47,6 +48,7 @@ func NewFirmwarePoller(db *gorm.DB) *FirmwarePoller {
 	enabled := config.Get("FIRMWARE_POLLER", "true") != "false"
 	apiURL := config.Get("TRMNL_FIRMWARE_API_URL", "https://usetrmnl.com/api/firmware/latest")
 	storageDir := config.Get("FIRMWARE_STORAGE_DIR", "/data/firmware")
+	firmwareMode := config.Get("FIRMWARE_MODE", "proxy")
 
 	config := PollerConfig{
 		Name:       "firmware",
@@ -58,9 +60,10 @@ func NewFirmwarePoller(db *gorm.DB) *FirmwarePoller {
 	}
 
 	poller := &FirmwarePoller{
-		db:         db,
-		apiURL:     apiURL,
-		storageDir: storageDir,
+		db:           db,
+		apiURL:       apiURL,
+		storageDir:   storageDir,
+		firmwareMode: firmwareMode,
 	}
 
 	poller.BasePoller = NewBasePoller(config, poller.poll)
@@ -101,6 +104,12 @@ func (p *FirmwarePoller) DiscoverFirmware(ctx context.Context) error {
 // StartPendingDownloads starts downloads for firmware versions with pending status
 func (p *FirmwarePoller) StartPendingDownloads(ctx context.Context) error {
 	logging.Logf("[FIRMWARE DOWNLOADS] Starting pending downloads")
+	
+	// Skip downloads in proxy mode
+	if p.firmwareMode != "download" {
+		logging.Logf("[FIRMWARE DOWNLOADS] Proxy mode enabled, skipping file downloads")
+		return nil
+	}
 
 	// Get all pending firmware versions
 	var pendingVersions []database.FirmwareVersion
@@ -243,8 +252,8 @@ func (p *FirmwarePoller) processFirmwareVersion(ctx context.Context, versionInfo
 	err := p.db.Where("version = ?", versionInfo.Version).First(&existingVersion).Error
 
 	if err == nil {
-		// Version exists - check if it's actually downloaded
-		if !existingVersion.IsDownloaded {
+		// Version exists - check if it's actually downloaded (only in download mode)
+		if !existingVersion.IsDownloaded && p.firmwareMode == "download" {
 			// Version exists in DB but file not downloaded - download it now
 			logging.Logf("[FIRMWARE POLLER] Version %s exists but not downloaded, downloading now", versionInfo.Version)
 			autoDownload := config.Get("FIRMWARE_AUTO_DOWNLOAD", "true") == "true"
@@ -288,9 +297,9 @@ func (p *FirmwarePoller) processFirmwareVersion(ctx context.Context, versionInfo
 		logging.Logf("[FIRMWARE POLLER] Error updating latest version flag: %v", err)
 	}
 
-	// Optionally download firmware file
+	// Optionally download firmware file (only in download mode)
 	autoDownload := config.Get("FIRMWARE_AUTO_DOWNLOAD", "true") == "true"
-	if autoDownload {
+	if autoDownload && p.firmwareMode == "download" {
 		if err := p.downloadFirmwareFile(ctx, &firmwareVersion); err != nil {
 			logging.Logf("[FIRMWARE POLLER] Failed to download firmware %s: %v", versionInfo.Version, err)
 		}

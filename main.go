@@ -5,6 +5,7 @@ import (
 	"context"
 	"embed"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"net/http"
@@ -156,18 +157,96 @@ func main() {
 	router.GET("/api/trmnl/firmware/:version/download", trmnl.FirmwareDownloadHandler)
 	router.POST("/api/trmnl/firmware/update-complete", trmnl.FirmwareUpdateCompleteHandler)
 
+	// Static assets (no authentication required)
+	router.Static("/assets", "./assets")
+
 	// Public firmware downloads (no authentication required)
-	// Custom handler to serve firmware files
+	// Custom handler to serve firmware files - supports both proxy and download modes
 	router.GET("/files/firmware/*filepath", func(c *gin.Context) {
 		filepath := c.Param("filepath")
 		// Remove leading slash from filepath
 		if strings.HasPrefix(filepath, "/") {
 			filepath = filepath[1:]
 		}
-		// Use the same storage directory configuration as the firmware poller
-		storageDir := config.Get("FIRMWARE_STORAGE_DIR", "/data/firmware")
-		filePath := storageDir + "/" + filepath
-		c.File(filePath)
+
+		// Extract version from filename (e.g., "firmware_1.6.5.bin" -> "1.6.5")
+		version := ""
+		if strings.HasPrefix(filepath, "firmware_") && strings.HasSuffix(filepath, ".bin") {
+			version = strings.TrimPrefix(filepath, "firmware_")
+			version = strings.TrimSuffix(version, ".bin")
+		}
+
+		if version == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid firmware filename"})
+			return
+		}
+
+		// Check firmware mode
+		firmwareMode := config.Get("FIRMWARE_MODE", "proxy")
+		
+		if firmwareMode == "proxy" {
+			// Proxy mode - forward to TRMNL API
+			db := database.GetDB()
+			firmwareService := database.NewFirmwareService(db)
+			
+			fwVersion, err := firmwareService.GetFirmwareVersionByVersion(version)
+			if err != nil {
+				c.JSON(http.StatusNotFound, gin.H{"error": "Firmware version not found"})
+				return
+			}
+
+			if fwVersion.DownloadURL == "" {
+				c.JSON(http.StatusNotFound, gin.H{"error": "Firmware download URL not available"})
+				return
+			}
+
+			// Create HTTP client for proxying
+			client := &http.Client{
+				Timeout: 5 * time.Minute, // Allow time for large firmware downloads
+			}
+
+			// Create request to TRMNL API
+			req, err := http.NewRequest("GET", fwVersion.DownloadURL, nil)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to proxy firmware request"})
+				return
+			}
+
+			// Make request to TRMNL
+			resp, err := client.Do(req)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch firmware from upstream"})
+				return
+			}
+			defer resp.Body.Close()
+
+			// Check response status
+			if resp.StatusCode != http.StatusOK {
+				c.JSON(http.StatusBadGateway, gin.H{"error": "Upstream firmware server error"})
+				return
+			}
+
+			// Set response headers
+			c.Header("Content-Type", "application/octet-stream")
+			c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filepath))
+			if contentLength := resp.Header.Get("Content-Length"); contentLength != "" {
+				c.Header("Content-Length", contentLength)
+			}
+
+			// Stream the response from TRMNL to client
+			c.Status(http.StatusOK)
+			_, err = io.Copy(c.Writer, resp.Body)
+			if err != nil {
+				// Log error but can't return JSON at this point since we've started streaming
+				logging.Logf("[FIRMWARE PROXY] Failed to stream firmware %s: %v", version, err)
+				return
+			}
+		} else {
+			// Download mode - serve local file
+			storageDir := config.Get("FIRMWARE_STORAGE_DIR", "/data/firmware")
+			filePath := storageDir + "/" + filepath
+			c.File(filePath)
+		}
 	})
 
 	// Registration and password reset
@@ -262,6 +341,7 @@ func main() {
 		admin.GET("/firmware/latest", handlers.GetLatestFirmwareVersionHandler)           // GET /api/admin/firmware/latest - get latest firmware version
 		admin.GET("/firmware/stats", handlers.GetFirmwareStatsHandler)                    // GET /api/admin/firmware/stats - get firmware statistics
 		admin.GET("/firmware/status", handlers.GetFirmwareStatusHandler)                  // GET /api/admin/firmware/status - get real-time download status
+		admin.GET("/firmware/mode", handlers.GetFirmwareModeHandler)                      // GET /api/admin/firmware/mode - get current firmware mode
 		admin.POST("/firmware/versions/:id/retry", handlers.RetryFirmwareDownloadHandler) // POST /api/admin/firmware/versions/:id/retry - retry firmware download
 		admin.DELETE("/firmware/versions/:id", handlers.DeleteFirmwareVersionHandler)     // DELETE /api/admin/firmware/versions/:id - delete firmware version
 

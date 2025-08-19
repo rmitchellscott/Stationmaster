@@ -108,6 +108,9 @@ interface Device {
   allow_firmware_updates?: boolean;
   last_seen?: string;
   is_active: boolean;
+  is_sharable?: boolean;
+  mirror_source_id?: string;
+  mirror_synced_at?: string;
   created_at: string;
   updated_at: string;
   device_model?: DeviceModel;
@@ -141,6 +144,7 @@ export function DeviceManagementContent() {
   const [editRefreshRate, setEditRefreshRate] = useState("");
   const [editAllowFirmwareUpdates, setEditAllowFirmwareUpdates] = useState(true);
   const [editModelName, setEditModelName] = useState<string>("");
+  const [editIsSharable, setEditIsSharable] = useState(false);
   const [deviceModels, setDeviceModels] = useState<DeviceModel[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
 
@@ -162,6 +166,12 @@ export function DeviceManagementContent() {
   const [totalLogsCount, setTotalLogsCount] = useState(0);
   const [logsOffset, setLogsOffset] = useState(0);
   const logsLimit = 50;
+
+  // Mirroring
+  const [showMirrorDialog, setShowMirrorDialog] = useState(false);
+  const [mirrorSourceFriendlyId, setMirrorSourceFriendlyId] = useState("");
+  const [mirrorLoading, setMirrorLoading] = useState(false);
+  const [syncLoading, setSyncLoading] = useState(false);
 
   useEffect(() => {
     fetchDevices();
@@ -270,6 +280,7 @@ export function DeviceManagementContent() {
         name: editDeviceName.trim(),
         refresh_rate: refreshRate,
         allow_firmware_updates: editAllowFirmwareUpdates,
+        is_sharable: editIsSharable,
       };
 
       // Add model name if it has changed from the original
@@ -367,6 +378,7 @@ export function DeviceManagementContent() {
       setEditRefreshRate(device.refresh_rate.toString());
       setEditAllowFirmwareUpdates(device.allow_firmware_updates ?? true);
       setEditModelName(device.model_name || "none");
+      setEditIsSharable(device.is_sharable ?? false);
       
       // Fetch device models when opening edit dialog
       if (deviceModels.length === 0) {
@@ -386,7 +398,8 @@ export function DeviceManagementContent() {
       editDeviceName.trim() !== (editDevice.name || "") ||
       editRefreshRate !== editDevice.refresh_rate.toString() ||
       editAllowFirmwareUpdates !== (editDevice.allow_firmware_updates ?? true) ||
-      editModelName !== (editDevice.model_name || "none")
+      editModelName !== (editDevice.model_name || "none") ||
+      editIsSharable !== (editDevice.is_sharable ?? false)
     );
   };
 
@@ -581,6 +594,91 @@ export function DeviceManagementContent() {
     setPendingModelOverride("");
   };
 
+  const mirrorDevice = async () => {
+    if (!editDevice || !mirrorSourceFriendlyId.trim()) {
+      setError("Please enter a device ID");
+      return;
+    }
+
+    try {
+      setMirrorLoading(true);
+      setError(null);
+
+      const response = await fetch(`/api/devices/${editDevice.id}/mirror`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+        body: JSON.stringify({
+          source_friendly_id: mirrorSourceFriendlyId.trim().toUpperCase(),
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setSuccessMessage(data.message);
+        setShowMirrorDialog(false);
+        setMirrorSourceFriendlyId("");
+        await fetchDevices();
+      } else {
+        const errorData = await response.json();
+        setError(errorData.error || "Failed to mirror device");
+      }
+    } catch (error) {
+      setError("Network error occurred");
+    } finally {
+      setMirrorLoading(false);
+    }
+  };
+
+  const syncMirror = async (device: Device) => {
+    try {
+      setSyncLoading(true);
+      setError(null);
+
+      const response = await fetch(`/api/devices/${device.id}/sync-mirror`, {
+        method: "POST",
+        credentials: "include",
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setSuccessMessage(data.message);
+        await fetchDevices();
+      } else {
+        const errorData = await response.json();
+        setError(errorData.error || "Failed to sync device");
+      }
+    } catch (error) {
+      setError("Network error occurred");
+    } finally {
+      setSyncLoading(false);
+    }
+  };
+
+  const unmirrorDevice = async (device: Device) => {
+    try {
+      setError(null);
+
+      const response = await fetch(`/api/devices/${device.id}/unmirror`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setSuccessMessage(data.message);
+        await fetchDevices();
+      } else {
+        const errorData = await response.json();
+        setError(errorData.error || "Failed to unmirror device");
+      }
+    } catch (error) {
+      setError("Network error occurred");
+    }
+  };
+
   return (
     <>
       {error && (
@@ -643,8 +741,27 @@ export function DeviceManagementContent() {
                     <TableRow key={device.id}>
                       <TableCell>
                         <div>
-                          <div className="font-medium">{device.name || "Unnamed Device"}</div>
-                          <div className="text-sm text-muted-foreground">ID: {device.friendly_id}</div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">{device.name || "Unnamed Device"}</span>
+                            {device.is_sharable && (
+                              <Badge variant="secondary" className="text-xs">
+                                Sharable
+                              </Badge>
+                            )}
+                            {device.mirror_source_id && (
+                              <Badge variant="outline" className="text-xs">
+                                Mirroring
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="text-sm text-muted-foreground">
+                            ID: {device.friendly_id}
+                            {device.mirror_source_id && device.mirror_synced_at && (
+                              <span className="ml-2">
+                                • Last sync: {new Date(device.mirror_synced_at).toLocaleDateString()}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </TableCell>
                       <TableCell>{getStatusBadge(device)}</TableCell>
@@ -875,6 +992,90 @@ export function DeviceManagementContent() {
               <p className="text-sm text-muted-foreground mt-1">
                 When enabled, device will automatically update to the latest firmware
               </p>
+            </div>
+
+            {/* Visibility Section */}
+            <div className="pt-3 border-t border-border/50 space-y-4">
+              <div>
+                <Label className="text-sm font-medium">Visibility</Label>
+                <div className="mt-2">
+                  <div className="flex items-center space-x-2">
+                    <Switch
+                      id="edit-is-sharable"
+                      checked={editIsSharable}
+                      onCheckedChange={setEditIsSharable}
+                    />
+                    <Label htmlFor="edit-is-sharable">
+                      Sharable
+                    </Label>
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Allow other devices to mirror this device's playlist
+                  </p>
+                  {editIsSharable && editDevice && (
+                    <div className="mt-3 p-3 bg-muted/30 rounded-md">
+                      <Label className="text-xs text-muted-foreground">Device ID for Mirroring</Label>
+                      <div className="mt-1 font-mono text-lg font-bold text-primary">
+                        {editDevice.friendly_id}
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Share this 6-digit ID with others who want to mirror this device
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Mirroring Section */}
+              <div>
+                <Label className="text-sm font-medium">Mirroring</Label>
+                <div className="mt-2 space-y-3">
+                  {editDevice?.mirror_source_id ? (
+                    <div className="space-y-2">
+                      <div className="p-3 bg-blue-50 dark:bg-blue-950/30 rounded-md">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="text-sm font-medium">Currently Mirroring</div>
+                            <div className="text-xs text-muted-foreground">
+                              Last synced: {editDevice.mirror_synced_at ? new Date(editDevice.mirror_synced_at).toLocaleString() : "Never"}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => editDevice && syncMirror(editDevice)}
+                          disabled={syncLoading}
+                        >
+                          {syncLoading ? "Syncing..." : "Sync Screens"}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => editDevice && unmirrorDevice(editDevice)}
+                        >
+                          Stop Mirroring
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setShowMirrorDialog(true)}
+                      >
+                        Mirror Another Device
+                      </Button>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Copy playlist from another sharable device
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
             
             {/* Developer Settings Collapsible Section */}
@@ -1213,6 +1414,47 @@ export function DeviceManagementContent() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Mirror Device Dialog */}
+      <Dialog open={showMirrorDialog} onOpenChange={setShowMirrorDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Mirror Another Device</DialogTitle>
+            <DialogDescription>
+              Enter the 6-digit Device ID of the sharable device you want to mirror.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="mirror-source-id">Source Device ID</Label>
+              <Input
+                id="mirror-source-id"
+                value={mirrorSourceFriendlyId}
+                onChange={(e) => setMirrorSourceFriendlyId(e.target.value.toUpperCase())}
+                placeholder="e.g., 917F0B"
+                className="mt-2"
+                maxLength={6}
+              />
+              <p className="text-sm text-muted-foreground mt-1">
+                This device must be marked as "Sharable" by its owner
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowMirrorDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={mirrorDevice}
+              disabled={mirrorLoading || !mirrorSourceFriendlyId.trim()}
+            >
+              {mirrorLoading ? "Mirroring..." : "Mirror Device"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

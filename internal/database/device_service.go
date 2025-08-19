@@ -134,6 +134,9 @@ func (ds *DeviceService) UpdateDevice(device *Device) error {
 		"allow_firmware_updates": device.AllowFirmwareUpdates,
 		"model_name":             device.ModelName,
 		"manual_model_override":  device.ManualModelOverride,
+		"is_sharable":            device.IsSharable,
+		"mirror_source_id":       device.MirrorSourceID,
+		"mirror_synced_at":       device.MirrorSyncedAt,
 	}
 	return ds.db.Model(device).Updates(updates).Error
 }

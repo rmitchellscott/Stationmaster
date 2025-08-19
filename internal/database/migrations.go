@@ -222,6 +222,51 @@ func RunMigrations(logPrefix string) error {
 				return tx.Exec("DELETE FROM device_models WHERE model_name IN ('og_plus', 'v2')").Error
 			},
 		},
+		{
+			ID: "202501190000_add_device_mirroring_fields",
+			Migrate: func(tx *gorm.DB) error {
+				// Check if is_sharable column already exists
+				if tx.Migrator().HasColumn(&Device{}, "is_sharable") {
+					return nil // Columns already exist, skip
+				}
+
+				// For SQLite, we need to handle foreign keys carefully
+				var dbType string
+				if err := tx.Raw("SELECT sqlite_version()").Scan(&dbType); err == nil {
+					// SQLite - temporarily disable foreign keys
+					if err := tx.Exec("PRAGMA foreign_keys = OFF").Error; err != nil {
+						return fmt.Errorf("failed to disable foreign keys: %w", err)
+					}
+					defer tx.Exec("PRAGMA foreign_keys = ON")
+				}
+
+				// Add the is_sharable column with default value of false
+				if err := tx.Exec("ALTER TABLE devices ADD COLUMN is_sharable BOOLEAN DEFAULT FALSE").Error; err != nil {
+					return fmt.Errorf("failed to add is_sharable column: %w", err)
+				}
+
+				// Add the mirror_source_id column
+				if err := tx.Exec("ALTER TABLE devices ADD COLUMN mirror_source_id TEXT").Error; err != nil {
+					return fmt.Errorf("failed to add mirror_source_id column: %w", err)
+				}
+
+				// Add the mirror_synced_at column
+				if err := tx.Exec("ALTER TABLE devices ADD COLUMN mirror_synced_at DATETIME").Error; err != nil {
+					return fmt.Errorf("failed to add mirror_synced_at column: %w", err)
+				}
+
+				// Add index on mirror_source_id
+				if err := tx.Exec("CREATE INDEX idx_devices_mirror_source_id ON devices(mirror_source_id)").Error; err != nil {
+					return fmt.Errorf("failed to create index on mirror_source_id: %w", err)
+				}
+
+				return nil
+			},
+			Rollback: func(tx *gorm.DB) error {
+				// SQLite doesn't support dropping columns easily, so we'll leave them
+				return nil
+			},
+		},
 	})
 
 	// Set initial schema if this is a fresh database

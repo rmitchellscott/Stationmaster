@@ -1054,22 +1054,6 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
       )}
 
 
-      {deviceEvents.error && (
-        <Alert variant="destructive">
-          <AlertTriangle className="h-4 w-4" />
-          <AlertDescription>
-            Real-time updates unavailable: {deviceEvents.error}
-            <Button 
-              variant="outline" 
-              size="sm" 
-              className="ml-2"
-              onClick={deviceEvents.reconnect}
-            >
-              Retry
-            </Button>
-          </AlertDescription>
-        </Alert>
-      )}
 
 
       <div className="flex justify-between items-center">

@@ -139,6 +139,7 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
   // Device claiming
   const [showClaimDialog, setShowClaimDialog] = useState(false);
   const [claimLoading, setClaimLoading] = useState(false);
+  const [claimError, setClaimError] = useState<string | null>(null);
   const [friendlyId, setFriendlyId] = useState("");
   const [deviceName, setDeviceName] = useState("");
 
@@ -206,13 +207,13 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
 
   const claimDevice = async () => {
     if (!friendlyId.trim() || !deviceName.trim()) {
-      setError("Please fill in all fields");
+      setClaimError("Please fill in all fields");
       return;
     }
 
     try {
       setClaimLoading(true);
-      setError(null);
+      setClaimError(null);
 
       const response = await fetch("/api/devices/claim", {
         method: "POST",
@@ -231,14 +232,15 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
         setShowClaimDialog(false);
         setFriendlyId("");
         setDeviceName("");
+        setClaimError(null);
         await fetchDevices();
         onUpdate?.(); // Notify parent component to refresh
       } else {
         const errorData = await response.json();
-        setError(errorData.error || "Failed to claim device");
+        setClaimError(errorData.error || "Failed to claim device");
       }
     } catch (error) {
-      setError("Network error occurred");
+      setClaimError("Network error occurred");
     } finally {
       setClaimLoading(false);
     }
@@ -932,28 +934,41 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
       </div>
 
       {/* Claim Device Dialog */}
-      <Dialog open={showClaimDialog} onOpenChange={setShowClaimDialog}>
+      <Dialog open={showClaimDialog} onOpenChange={(open) => {
+        setShowClaimDialog(open);
+        if (!open) {
+          setClaimError(null);
+          setFriendlyId("");
+          setDeviceName("");
+        }
+      }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Claim Device</DialogTitle>
             <DialogDescription>
-              Enter your TRMNL device's friendly ID to claim it to your account.
+              Enter your TRMNL device's friendly ID or MAC address to claim it to your account.
             </DialogDescription>
           </DialogHeader>
           
+          {claimError && (
+            <Alert variant="destructive" className="items-center">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>{claimError}</AlertDescription>
+            </Alert>
+          )}
+          
           <div className="space-y-4">
             <div>
-              <Label htmlFor="friendly-id">Device Friendly ID</Label>
+              <Label htmlFor="friendly-id">Device Friendly ID or MAC Address</Label>
               <Input
                 id="friendly-id"
                 value={friendlyId}
-                onChange={(e) => setFriendlyId(e.target.value.toUpperCase())}
-                placeholder="e.g., 917F0B"
+                onChange={(e) => setFriendlyId(e.target.value)}
+                placeholder="e.g., 917F0B or AA:BB:CC:DD:EE:FF"
                 className="mt-2"
-                maxLength={6}
               />
               <p className="text-sm text-muted-foreground mt-1">
-                Find this 6-character ID on your device's setup screen
+                Enter either the 6-character ID from your device's setup screen or its MAC address
               </p>
             </div>
             <div>

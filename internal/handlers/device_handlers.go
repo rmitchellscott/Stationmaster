@@ -55,12 +55,12 @@ func ClaimDeviceHandler(c *gin.Context) {
 	db := database.GetDB()
 	deviceService := database.NewDeviceService(db)
 
-	device, err := deviceService.ClaimDevice(userUUID, req.FriendlyID, req.Name)
+	device, err := deviceService.ClaimDeviceByIdentifier(userUUID, req.FriendlyID, req.Name)
 	if err != nil {
 		if err.Error() == "device already claimed" {
 			c.JSON(http.StatusConflict, gin.H{"error": "Device already claimed by another user"})
 		} else if err.Error() == "record not found" {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Device not found. Please check the friendly ID."})
+			c.JSON(http.StatusNotFound, gin.H{"error": "Device not found. Please check the device ID or MAC address."})
 		} else {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to claim device"})
 		}

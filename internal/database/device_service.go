@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -75,6 +76,82 @@ func (ds *DeviceService) ClaimDevice(userID uuid.UUID, friendlyID, name string) 
 	}
 
 	return device, nil
+}
+
+// ClaimDeviceByIdentifier claims an unclaimed device for a user using either friendly ID or MAC address
+func (ds *DeviceService) ClaimDeviceByIdentifier(userID uuid.UUID, identifier, name string) (*Device, error) {
+	var device *Device
+	var err error
+	
+	// Detect if the identifier is a MAC address or friendly ID
+	if ds.isMAC(identifier) {
+		// Normalize MAC address to colon format (AA:BB:CC:DD:EE:FF) to match database storage
+		normalizedMAC := ds.normalizeMAC(identifier)
+		logging.Logf("[CLAIM DEVICE] Looking up MAC address: %s -> %s", identifier, normalizedMAC)
+		device, err = ds.GetDeviceByMacAddress(normalizedMAC)
+	} else {
+		// Treat as friendly ID (convert to uppercase for consistency)
+		upperID := strings.ToUpper(identifier)
+		logging.Logf("[CLAIM DEVICE] Looking up friendly ID: %s -> %s", identifier, upperID)
+		device, err = ds.GetDeviceByFriendlyID(upperID)
+	}
+	
+	if err != nil {
+		logging.Logf("[CLAIM DEVICE] Device lookup failed: %v", err)
+		return nil, err
+	}
+
+	if device.IsClaimed {
+		logging.Logf("[CLAIM DEVICE] Device %s already claimed", device.FriendlyID)
+		return nil, fmt.Errorf("device already claimed")
+	}
+
+	device.UserID = &userID
+	device.Name = name
+	device.IsClaimed = true
+
+	if err := ds.db.Save(device).Error; err != nil {
+		return nil, err
+	}
+
+	logging.Logf("[CLAIM DEVICE] Successfully claimed device %s for user %s", device.FriendlyID, userID)
+	return device, nil
+}
+
+// isMAC checks if the identifier is a MAC address format
+func (ds *DeviceService) isMAC(identifier string) bool {
+	// Check for common MAC address patterns
+	// Supports: AA:BB:CC:DD:EE:FF, AA-BB-CC-DD-EE-FF, AABBCCDDEEFF
+	macPatterns := []string{
+		`^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$`, // AA:BB:CC:DD:EE:FF or AA-BB-CC-DD-EE-FF
+		`^[0-9A-Fa-f]{12}$`,                          // AABBCCDDEEFF
+	}
+	
+	for _, pattern := range macPatterns {
+		matched, _ := regexp.MatchString(pattern, identifier)
+		if matched {
+			return true
+		}
+	}
+	return false
+}
+
+// normalizeMAC converts MAC address to colon format (AA:BB:CC:DD:EE:FF) to match database storage
+func (ds *DeviceService) normalizeMAC(mac string) string {
+	// Remove common separators first
+	clean := strings.ReplaceAll(mac, ":", "")
+	clean = strings.ReplaceAll(clean, "-", "")
+	clean = strings.ToUpper(clean)
+	
+	// Add colons in the standard format AA:BB:CC:DD:EE:FF
+	if len(clean) == 12 {
+		return fmt.Sprintf("%s:%s:%s:%s:%s:%s",
+			clean[0:2], clean[2:4], clean[4:6],
+			clean[6:8], clean[8:10], clean[10:12])
+	}
+	
+	// Return original if not 12 characters (invalid MAC)
+	return mac
 }
 
 // GetDevicesByUserID returns all claimed devices for a specific user

@@ -124,7 +124,11 @@ interface DeviceLog {
   created_at: string;
 }
 
-export function DeviceManagementContent() {
+interface DeviceManagementContentProps {
+  onUpdate?: () => void;
+}
+
+export function DeviceManagementContent({ onUpdate }: DeviceManagementContentProps) {
   const { t } = useTranslation();
   const { user } = useAuth();
   const [devices, setDevices] = useState<Device[]>([]);
@@ -228,6 +232,7 @@ export function DeviceManagementContent() {
         setFriendlyId("");
         setDeviceName("");
         await fetchDevices();
+        onUpdate?.(); // Notify parent component to refresh
       } else {
         const errorData = await response.json();
         setError(errorData.error || "Failed to claim device");
@@ -357,12 +362,13 @@ export function DeviceManagementContent() {
       });
 
       if (response.ok) {
-        setSuccessMessage("Device deleted successfully!");
+        setSuccessMessage("Device unlinked successfully!");
         setDeleteDevice(null);
         await fetchDevices();
+        onUpdate?.(); // Notify parent component to refresh
       } else {
         const errorData = await response.json();
-        setError(errorData.error || "Failed to delete device");
+        setError(errorData.error || "Failed to unlink device");
       }
     } catch (error) {
       setError("Network error occurred");
@@ -912,7 +918,7 @@ export function DeviceManagementContent() {
                                 <Trash2 className="h-4 w-4" />
                               </Button>
                             </TooltipTrigger>
-                            <TooltipContent>Delete Device</TooltipContent>
+                            <TooltipContent>Unlink Device</TooltipContent>
                           </Tooltip>
                         </div>
                       </TableCell>
@@ -1255,16 +1261,16 @@ export function DeviceManagementContent() {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Device Dialog */}
+      {/* Unlink Device Dialog */}
       <Dialog open={!!deleteDevice} onOpenChange={() => setDeleteDevice(null)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-destructive" />
-              Delete Device
+              Unlink Device
             </DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete "{deleteDevice?.name || 'this device'}"? This will remove all associated playlists and settings. This action cannot be undone.
+              Are you sure you want to unlink "{deleteDevice?.name || 'this device'}"? This will remove all associated playlists and make the device available for reclaiming. You can claim it again later if needed.
             </DialogDescription>
           </DialogHeader>
 
@@ -1277,7 +1283,7 @@ export function DeviceManagementContent() {
               onClick={confirmDeleteDevice}
               disabled={deleteLoading}
             >
-              {deleteLoading ? "Deleting..." : "Delete Device"}
+              {deleteLoading ? "Unlinking..." : "Unlink Device"}
             </Button>
           </DialogFooter>
         </DialogContent>

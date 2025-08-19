@@ -6,14 +6,12 @@ interface Config {
   apiKeyEnabled: boolean;
   multiUserMode: boolean;
   defaultRmDir: string;
-  rmapi_host: string;
   smtpConfigured: boolean;
   oidcEnabled: boolean;
   oidcSsoOnly: boolean;
   oidcButtonText: string;
   proxyAuthEnabled: boolean;
   oidcGroupBasedAdmin: boolean;
-  rmapi_paired?: boolean;
 }
 
 interface ConfigContextType {

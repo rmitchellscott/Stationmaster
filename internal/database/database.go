@@ -216,7 +216,7 @@ func initializeSystemSettings() error {
 		},
 		"registration_enabled": {
 			Key:         "registration_enabled",
-			Value:       "true",
+			Value:       config.Get("PUBLIC_REGISTRATION_ENABLED", "false"),
 			Description: "Whether new user registration is enabled",
 		},
 		"max_api_keys_per_user": {

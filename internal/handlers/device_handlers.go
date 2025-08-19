@@ -12,6 +12,7 @@ import (
 	"github.com/rmitchellscott/stationmaster/internal/database"
 	"github.com/rmitchellscott/stationmaster/internal/logging"
 	"github.com/rmitchellscott/stationmaster/internal/sse"
+	"github.com/rmitchellscott/stationmaster/internal/trmnl"
 )
 
 // GetDevicesHandler returns all devices for the current user
@@ -126,6 +127,10 @@ func UpdateDeviceHandler(c *gin.Context) {
 		ModelName            *string `json:"model_name"`
 		ClearModelOverride   *bool   `json:"clear_model_override"`
 		IsSharable           *bool   `json:"is_sharable"`
+		SleepEnabled         *bool   `json:"sleep_enabled"`
+		SleepStartTime       string  `json:"sleep_start_time"`
+		SleepEndTime         string  `json:"sleep_end_time"`
+		SleepShowScreen      *bool   `json:"sleep_show_screen"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -199,11 +204,84 @@ func UpdateDeviceHandler(c *gin.Context) {
 		}
 	}
 
+	// Handle sleep mode configuration
+	logging.Logf("[DEVICE UPDATE] Sleep mode request: enabled=%v, start=%s, end=%s, show_screen=%v", 
+		req.SleepEnabled, req.SleepStartTime, req.SleepEndTime, req.SleepShowScreen)
+	
+	if req.SleepEnabled != nil {
+		device.SleepEnabled = *req.SleepEnabled
+		logging.Logf("[DEVICE UPDATE] Set sleep enabled to: %v", device.SleepEnabled)
+	}
+	// Always update sleep times if provided (frontend always sends these values)
+	if req.SleepStartTime != "" {
+		// Validate time format (HH:MM)
+		if err := validateTimeFormat(req.SleepStartTime); err != nil {
+			logging.Logf("[DEVICE UPDATE] Invalid sleep start time format: %s, error: %v", req.SleepStartTime, err)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid sleep start time format. Use HH:MM"})
+			return
+		}
+		device.SleepStartTime = req.SleepStartTime
+		logging.Logf("[DEVICE UPDATE] Set sleep start time to: %s", device.SleepStartTime)
+	} else {
+		// If empty string is sent, clear the field
+		device.SleepStartTime = ""
+		logging.Logf("[DEVICE UPDATE] Cleared sleep start time")
+	}
+	
+	if req.SleepEndTime != "" {
+		// Validate time format (HH:MM)
+		if err := validateTimeFormat(req.SleepEndTime); err != nil {
+			logging.Logf("[DEVICE UPDATE] Invalid sleep end time format: %s, error: %v", req.SleepEndTime, err)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid sleep end time format. Use HH:MM"})
+			return
+		}
+		device.SleepEndTime = req.SleepEndTime
+		logging.Logf("[DEVICE UPDATE] Set sleep end time to: %s", device.SleepEndTime)
+	} else {
+		// If empty string is sent, clear the field
+		device.SleepEndTime = ""
+		logging.Logf("[DEVICE UPDATE] Cleared sleep end time")
+	}
+	if req.SleepShowScreen != nil {
+		device.SleepShowScreen = *req.SleepShowScreen
+		logging.Logf("[DEVICE UPDATE] Set sleep show screen to: %v", device.SleepShowScreen)
+	}
+
 	err = deviceService.UpdateDevice(device)
 	if err != nil {
 		logging.Logf("[DEVICE UPDATE] Failed to update device %s: %v", device.ID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update device"})
 		return
+	}
+
+	// Broadcast device settings update via SSE if sleep settings changed
+	if req.SleepEnabled != nil || req.SleepStartTime != "" || req.SleepEndTime != "" || req.SleepShowScreen != nil {
+		// Get user timezone for sleep calculation
+		userTimezone := "UTC"
+		if user.Timezone != "" {
+			userTimezone = user.Timezone
+		}
+		
+		// Check if device is currently in sleep period
+		currentlySleeping := trmnl.IsInSleepPeriod(device, userTimezone)
+		
+		// Send updated sleep config via SSE
+		sseService := sse.GetSSEService()
+		sseService.BroadcastToDevice(device.ID, sse.Event{
+			Type: "device_settings_updated",
+			Data: map[string]interface{}{
+				"device_id": device.ID.String(),
+				"sleep_config": map[string]interface{}{
+					"enabled":            device.SleepEnabled,
+					"start_time":         device.SleepStartTime,
+					"end_time":           device.SleepEndTime,
+					"show_screen":        device.SleepShowScreen,
+					"currently_sleeping": currentlySleeping,
+				},
+				"timestamp": time.Now().UTC(),
+			},
+		})
+		logging.Logf("[SSE] Broadcasted device settings update for device %s", device.MacAddress)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"device": device})
@@ -409,6 +487,15 @@ func DeviceEventsHandler(c *gin.Context) {
 	if err == nil && len(activeItems) > 0 {
 		currentIndex := device.LastPlaylistIndex
 		if currentIndex >= 0 && currentIndex < len(activeItems) {
+			// Get user timezone for sleep calculation
+			userTimezone := "UTC"
+			if user.Timezone != "" {
+				userTimezone = user.Timezone
+			}
+			
+			// Check if device is currently in sleep period
+			currentlySleeping := trmnl.IsInSleepPeriod(device, userTimezone)
+			
 			sseService.BroadcastToDevice(deviceID, sse.Event{
 				Type: "playlist_index_changed",
 				Data: map[string]interface{}{
@@ -417,6 +504,13 @@ func DeviceEventsHandler(c *gin.Context) {
 					"current_item":  activeItems[currentIndex],
 					"active_items":  activeItems,
 					"timestamp":     time.Now().UTC(),
+					"sleep_config": map[string]interface{}{
+						"enabled":            device.SleepEnabled,
+						"start_time":         device.SleepStartTime,
+						"end_time":           device.SleepEndTime,
+						"show_screen":        device.SleepShowScreen,
+						"currently_sleeping": currentlySleeping,
+					},
 				},
 			})
 		}
@@ -771,4 +865,10 @@ func UnmirrorDeviceHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Device successfully unmirrored",
 	})
+}
+
+// validateTimeFormat validates that a time string is in HH:MM format
+func validateTimeFormat(timeStr string) error {
+	_, err := time.Parse("15:04", timeStr)
+	return err
 }

@@ -25,6 +25,11 @@ export interface Device {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  sleep_enabled?: boolean;
+  sleep_start_time?: string;
+  sleep_end_time?: string;
+  sleep_show_screen?: boolean;
+  mirror_source_id?: string;
 }
 
 export const calculateBatteryPercentage = (voltage: number): number => {
@@ -118,4 +123,36 @@ export const getDeviceStatus = (device: Device): string => {
   }
   
   return "offline";
+};
+
+export const isDeviceCurrentlySleeping = (device: Device, userTimezone: string): boolean => {
+  if (!device.sleep_enabled || !device.sleep_start_time || !device.sleep_end_time) {
+    return false;
+  }
+
+  // Get current time in user's timezone
+  const now = new Date();
+  const timeInTz = now.toLocaleTimeString('en-US', { 
+    hour12: false, 
+    timeZone: userTimezone,
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+  
+  const [targetHours, targetMinutes] = timeInTz.split(':').map(Number);
+  const targetTimeMinutes = targetHours * 60 + targetMinutes;
+  
+  // Parse sleep times
+  const [startHours, startMinutes] = device.sleep_start_time.split(':').map(Number);
+  const [endHours, endMinutes] = device.sleep_end_time.split(':').map(Number);
+  
+  const sleepStartMinutes = startHours * 60 + startMinutes;
+  const sleepEndMinutes = endHours * 60 + endMinutes;
+  
+  // Handle overnight sleep periods
+  if (sleepStartMinutes > sleepEndMinutes) {
+    return targetTimeMinutes >= sleepStartMinutes || targetTimeMinutes <= sleepEndMinutes;
+  } else {
+    return targetTimeMinutes >= sleepStartMinutes && targetTimeMinutes <= sleepEndMinutes;
+  }
 };

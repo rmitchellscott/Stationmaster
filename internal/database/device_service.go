@@ -168,6 +168,10 @@ func (ds *DeviceService) GetDeviceByID(deviceID uuid.UUID) (*Device, error) {
 	if err != nil {
 		return nil, err
 	}
+	
+	logging.Logf("[DEVICE FETCH] Loaded device %s with sleep settings: enabled=%v, start=%s, end=%s, show_screen=%v", 
+		device.ID, device.SleepEnabled, device.SleepStartTime, device.SleepEndTime, device.SleepShowScreen)
+	
 	return &device, nil
 }
 
@@ -214,8 +218,22 @@ func (ds *DeviceService) UpdateDevice(device *Device) error {
 		"is_sharable":            device.IsSharable,
 		"mirror_source_id":       device.MirrorSourceID,
 		"mirror_synced_at":       device.MirrorSyncedAt,
+		"sleep_enabled":          device.SleepEnabled,
+		"sleep_start_time":       device.SleepStartTime,
+		"sleep_end_time":         device.SleepEndTime,
+		"sleep_show_screen":      device.SleepShowScreen,
 	}
-	return ds.db.Model(device).Updates(updates).Error
+	
+	logging.Logf("[DEVICE UPDATE] Updating device %s with sleep settings: enabled=%v, start=%s, end=%s, show_screen=%v", 
+		device.ID, device.SleepEnabled, device.SleepStartTime, device.SleepEndTime, device.SleepShowScreen)
+	
+	err := ds.db.Model(device).Updates(updates).Error
+	if err != nil {
+		logging.Logf("[DEVICE UPDATE] Database update failed: %v", err)
+	} else {
+		logging.Logf("[DEVICE UPDATE] Database update successful for device %s", device.ID)
+	}
+	return err
 }
 
 // UpdateRefreshRate updates only the refresh rate for a device (GORM-safe)

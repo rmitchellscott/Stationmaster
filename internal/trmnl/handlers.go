@@ -184,6 +184,16 @@ func DisplayHandler(c *gin.Context) {
 		logging.Logf("[/api/display] Authentication successful for device %s (friendly_id: %s)", device.MacAddress, device.FriendlyID)
 	}
 
+	// Get user timezone for sleep mode calculations
+	userTimezone := "UTC" // Default fallback
+	if device.UserID != nil {
+		userService := database.NewUserService(db)
+		user, err := userService.GetUserByID(*device.UserID)
+		if err == nil && user.Timezone != "" {
+			userTimezone = user.Timezone
+		}
+	}
+
 	// Parse and update device status
 	var batteryVoltage float64
 	var rssi int
@@ -282,11 +292,33 @@ func DisplayHandler(c *gin.Context) {
 			filename = "empty_state"
 		}
 
+		refreshRate := device.RefreshRate
+		
+		// Handle sleep mode for fallback response
+		inSleepPeriod := isInSleepPeriod(device, userTimezone)
+		if debugMode || device.SleepEnabled {
+			logging.Logf("[SLEEP] Device %s sleep check (fallback): enabled=%v, timezone=%s, in_sleep=%v", 
+				device.MacAddress, device.SleepEnabled, userTimezone, inSleepPeriod)
+		}
+		
+		if inSleepPeriod {
+			refreshRate = calculateSecondsUntilSleepEnd(device, userTimezone)
+			
+			// If sleep screen is enabled, override the image URL
+			if device.SleepShowScreen {
+				imageURL = "https://usetrmnl.com/images/setup/sleep.png"
+				filename = "sleep"
+			}
+			
+			logging.Logf("[SLEEP] Device %s is in sleep period (fallback), refresh rate set to %d seconds, show_screen=%v", 
+				device.MacAddress, refreshRate, device.SleepShowScreen)
+		}
+
 		response = gin.H{
 			"status":       status,
 			"image_url":    imageURL,
 			"filename":     filename,
-			"refresh_rate": fmt.Sprintf("%d", device.RefreshRate),
+			"refresh_rate": fmt.Sprintf("%d", refreshRate),
 		}
 	} else {
 		// Ensure required fields are set when plugins succeed
@@ -303,6 +335,27 @@ func DisplayHandler(c *gin.Context) {
 			}
 		}
 		// If plugin provided refresh_rate, we use it as-is (highest priority)
+	}
+
+	// Handle sleep mode - override refresh rate and image if in sleep period
+	inSleepPeriod := isInSleepPeriod(device, userTimezone)
+	if debugMode || device.SleepEnabled {
+		logging.Logf("[SLEEP] Device %s sleep check: enabled=%v, timezone=%s, in_sleep=%v", 
+			device.MacAddress, device.SleepEnabled, userTimezone, inSleepPeriod)
+	}
+	
+	if inSleepPeriod {
+		sleepRefreshRate := calculateSecondsUntilSleepEnd(device, userTimezone)
+		response["refresh_rate"] = fmt.Sprintf("%d", sleepRefreshRate)
+		
+		// If sleep screen is enabled, override the image URL
+		if device.SleepShowScreen {
+			response["image_url"] = "https://usetrmnl.com/images/setup/sleep.png"
+			response["filename"] = "sleep"
+		}
+		
+		logging.Logf("[SLEEP] Device %s is in sleep period, refresh rate set to %d seconds, show_screen=%v", 
+			device.MacAddress, sleepRefreshRate, device.SleepShowScreen)
 	}
 
 	// Always add firmware update info to response
@@ -541,6 +594,19 @@ func processActivePlugins(device *database.Device, activeItems []database.Playli
 			// The rotation will still work, just might repeat an item next time
 			logging.Logf("[PLAYLIST] Failed to update last playlist index for device %s: %v", device.MacAddress, err)
 		} else {
+			// Get user timezone for sleep calculations
+			userTimezone := "UTC" // Default fallback
+			if device.UserID != nil {
+				userService := database.NewUserService(db)
+				user, err := userService.GetUserByID(*device.UserID)
+				if err == nil && user.Timezone != "" {
+					userTimezone = user.Timezone
+				}
+			}
+			
+			// Check if device is currently in sleep period for SSE event
+			currentlySleeping := isInSleepPeriod(device, userTimezone)
+			
 			// Broadcast playlist index change to connected SSE clients
 			sseService := sse.GetSSEService()
 			sseService.BroadcastToDevice(device.ID, sse.Event{
@@ -551,9 +617,17 @@ func processActivePlugins(device *database.Device, activeItems []database.Playli
 					"current_item":  item,
 					"active_items":  activeItems,
 					"timestamp":     time.Now().UTC(),
+					"sleep_config": map[string]interface{}{
+						"enabled":            device.SleepEnabled,
+						"start_time":         device.SleepStartTime,
+						"end_time":           device.SleepEndTime,
+						"show_screen":        device.SleepShowScreen,
+						"currently_sleeping": currentlySleeping,
+					},
 				},
 			})
-			logging.Logf("[SSE] Broadcasted playlist index change for device %s: index %d", device.MacAddress, nextIndex)
+			logging.Logf("[SSE] Broadcasted playlist index change for device %s: index %d, sleep_enabled=%v, currently_sleeping=%v", 
+				device.MacAddress, nextIndex, device.SleepEnabled, currentlySleeping)
 		}
 	}
 
@@ -1098,4 +1172,127 @@ func processCurrentPlugin(device *database.Device, activeItems []database.Playli
 	}
 
 	return response, pluginErr
+}
+
+// isInSleepPeriod checks if the current time falls within the device's sleep schedule
+// IsInSleepPeriod checks if a device is currently in its sleep period (exported version)
+func IsInSleepPeriod(device *database.Device, userTimezone string) bool {
+	return isInSleepPeriod(device, userTimezone)
+}
+
+func isInSleepPeriod(device *database.Device, userTimezone string) bool {
+	if !device.SleepEnabled || device.SleepStartTime == "" || device.SleepEndTime == "" {
+		return false
+	}
+
+	// Parse timezone
+	loc, err := time.LoadLocation(userTimezone)
+	if err != nil {
+		logging.Logf("[SLEEP] Invalid timezone %s for device %s, using UTC", userTimezone, device.MacAddress)
+		loc = time.UTC
+	}
+
+	// Get current time in device's timezone
+	now := time.Now().In(loc)
+	
+	// Parse sleep start and end times
+	startTime, err := parseSleepTime(device.SleepStartTime, now)
+	if err != nil {
+		logging.Logf("[SLEEP] Invalid start time %s for device %s: %v", device.SleepStartTime, device.MacAddress, err)
+		return false
+	}
+	
+	endTime, err := parseSleepTime(device.SleepEndTime, now)
+	if err != nil {
+		logging.Logf("[SLEEP] Invalid end time %s for device %s: %v", device.SleepEndTime, device.MacAddress, err)
+		return false
+	}
+
+	// Handle sleep periods that cross midnight
+	if startTime.After(endTime) {
+		// Sleep period crosses midnight (e.g., 22:00 to 06:00)
+		return now.After(startTime) || now.Before(endTime)
+	} else {
+		// Sleep period is within the same day (e.g., 01:00 to 05:00)
+		return now.After(startTime) && now.Before(endTime)
+	}
+}
+
+// calculateSecondsUntilSleepEnd calculates seconds until the end of the current sleep period
+func calculateSecondsUntilSleepEnd(device *database.Device, userTimezone string) int {
+	if !device.SleepEnabled || device.SleepStartTime == "" || device.SleepEndTime == "" {
+		return device.RefreshRate
+	}
+
+	// Parse timezone
+	loc, err := time.LoadLocation(userTimezone)
+	if err != nil {
+		logging.Logf("[SLEEP] Invalid timezone %s for device %s, using UTC", userTimezone, device.MacAddress)
+		loc = time.UTC
+	}
+
+	// Get current time in device's timezone
+	now := time.Now().In(loc)
+	
+	// Parse sleep end time
+	endTime, err := parseSleepTime(device.SleepEndTime, now)
+	if err != nil {
+		logging.Logf("[SLEEP] Invalid end time %s for device %s: %v", device.SleepEndTime, device.MacAddress, err)
+		return device.RefreshRate
+	}
+
+	// Parse sleep start time to handle periods that cross midnight
+	startTime, err := parseSleepTime(device.SleepStartTime, now)
+	if err != nil {
+		logging.Logf("[SLEEP] Invalid start time %s for device %s: %v", device.SleepStartTime, device.MacAddress, err)
+		return device.RefreshRate
+	}
+
+	// Handle sleep periods that cross midnight
+	if startTime.After(endTime) {
+		// Sleep period crosses midnight
+		if now.After(startTime) {
+			// We're after start time, so end time is tomorrow
+			endTime = endTime.Add(24 * time.Hour)
+		}
+		// If we're before end time and start time is after end time, 
+		// then we're in the early morning part of the sleep period
+	}
+
+	// Calculate seconds until end time
+	duration := endTime.Sub(now)
+	seconds := int(duration.Seconds())
+	
+	// Ensure we return a positive value and cap at max refresh rate
+	if seconds <= 0 {
+		return device.RefreshRate
+	}
+	
+	// Cap at 24 hours to prevent extremely long refresh rates
+	maxSeconds := 24 * 60 * 60
+	if seconds > maxSeconds {
+		return maxSeconds
+	}
+	
+	return seconds
+}
+
+// parseSleepTime parses a time string (HH:MM) and returns a time.Time for the given date
+func parseSleepTime(timeStr string, referenceTime time.Time) (time.Time, error) {
+	// Parse time in HH:MM format
+	t, err := time.Parse("15:04", timeStr)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("invalid time format %s: %w", timeStr, err)
+	}
+	
+	// Create time for the same date as reference time
+	return time.Date(
+		referenceTime.Year(),
+		referenceTime.Month(),
+		referenceTime.Day(),
+		t.Hour(),
+		t.Minute(),
+		0, 0,
+		referenceTime.Location(),
+	), nil
 }

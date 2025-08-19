@@ -447,7 +447,7 @@ func DeletePlaylistItemHandler(c *gin.Context) {
 	}
 
 	if playlist.UserID != userUUID {
-		log.Printf("[DeletePlaylistItemHandler] Access denied - user %s does not own playlist %s (owner: %s)", 
+		log.Printf("[DeletePlaylistItemHandler] Access denied - user %s does not own playlist %s (owner: %s)",
 			userUUID.String(), playlist.ID.String(), playlist.UserID.String())
 		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
 		return
@@ -459,7 +459,7 @@ func DeletePlaylistItemHandler(c *gin.Context) {
 	err = playlistService.DeletePlaylistItem(itemID)
 	if err != nil {
 		log.Printf("[DeletePlaylistItemHandler] Failed to delete playlist item %s: %v", itemID.String(), err)
-		
+
 		// Provide more specific error messages
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Playlist item not found"})
@@ -641,6 +641,7 @@ func AddScheduleHandler(c *gin.Context) {
 		StartTime string `json:"start_time" binding:"required"`
 		EndTime   string `json:"end_time" binding:"required"`
 		Timezone  string `json:"timezone"`
+		IsActive  *bool  `json:"is_active"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -674,7 +675,12 @@ func AddScheduleHandler(c *gin.Context) {
 		return
 	}
 
-	schedule, err := playlistService.AddScheduleToPlaylistItem(itemID, req.Name, req.DayMask, req.StartTime, req.EndTime, req.Timezone)
+	isActive := true // Default to active for backward compatibility
+	if req.IsActive != nil {
+		isActive = *req.IsActive
+	}
+
+	schedule, err := playlistService.AddScheduleToPlaylistItem(itemID, req.Name, req.DayMask, req.StartTime, req.EndTime, req.Timezone, isActive)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add schedule"})
 		return

@@ -537,6 +537,25 @@ func GetSystemSetting(key string) (string, error) {
 	return setting.Value, nil
 }
 
+// GetRegistrationSetting gets the registration enabled setting, checking environment variable first
+func GetRegistrationSetting() (string, bool) {
+	envValue := config.Get("PUBLIC_REGISTRATION_ENABLED", "")
+	if envValue != "" {
+		return envValue, true // true means locked by environment
+	}
+	
+	dbValue, err := GetSystemSetting("registration_enabled")
+	if err != nil {
+		return "false", false
+	}
+	return dbValue, false // false means not locked
+}
+
+// IsRegistrationSettingLocked returns true if registration setting is controlled by environment variable
+func IsRegistrationSettingLocked() bool {
+	return config.Get("PUBLIC_REGISTRATION_ENABLED", "") != ""
+}
+
 // SetSystemSetting sets a system setting
 func SetSystemSetting(key, value string, updatedBy *uuid.UUID) error {
 	setting := SystemSetting{

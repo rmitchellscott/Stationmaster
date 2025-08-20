@@ -115,7 +115,7 @@ npm run dev
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PUBLIC_REGISTRATION_ENABLED` | `false` | Sets initial value for user registration setting in database |
+| `PUBLIC_REGISTRATION_ENABLED` | `false` | Controls user registration setting (overrides database and locks admin control when set) |
 | `ADMIN_USERNAME` | - | Initial admin username |
 | `ADMIN_PASSWORD` | - | Initial admin password |
 | `ADMIN_EMAIL` | - | Initial admin email |

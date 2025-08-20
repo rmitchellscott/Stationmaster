@@ -334,6 +334,7 @@ interface SystemStatus {
   };
   settings: {
     registration_enabled: string;
+    registration_enabled_locked: boolean;
     max_api_keys_per_user: string;
     session_timeout_hours: string;
   };
@@ -386,6 +387,7 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
   const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
   const [registrationEnabled, setRegistrationEnabled] = useState(false);
+  const [registrationLocked, setRegistrationLocked] = useState(false);
   const [maxApiKeys, setMaxApiKeys] = useState("10");
   const [maxApiKeysError, setMaxApiKeysError] = useState<string | null>(null);
   const [siteUrl, setSiteUrl] = useState("");
@@ -516,6 +518,7 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
       setNewEmail("");
       setNewPassword("");
       setRegistrationEnabled(false);
+      setRegistrationLocked(false);
       setMaxApiKeys("10");
       setMaxApiKeysError(null);
       setNewPasswordValue("");
@@ -573,6 +576,7 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
         const status = await response.json();
         setSystemStatus(status);
         setRegistrationEnabled(status.settings.registration_enabled === "true");
+        setRegistrationLocked(status.settings.registration_enabled_locked || false);
         setMaxApiKeys(status.settings.max_api_keys_per_user);
         setSiteUrl(status.settings.site_url || "");
       }
@@ -2632,20 +2636,30 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
                         {t("admin.labels.enable_registration")}
                       </Label>
                       <p className="text-sm text-muted-foreground">
-                        {t("admin.descriptions.registration_help")}
+                        {registrationLocked 
+                          ? "Set via environment variable" 
+                          : t("admin.descriptions.registration_help")}
                       </p>
                     </div>
-                    <Switch
-                      id="registration-enabled"
-                      checked={registrationEnabled}
-                      onCheckedChange={(checked) => {
-                        setRegistrationEnabled(checked);
-                        updateSystemSetting(
-                          "registration_enabled",
-                          checked.toString(),
-                        );
-                      }}
-                    />
+                    <div className="relative">
+                      <Switch
+                        id="registration-enabled"
+                        checked={registrationEnabled}
+                        disabled={registrationLocked}
+                        onCheckedChange={(checked) => {
+                          if (!registrationLocked) {
+                            setRegistrationEnabled(checked);
+                            updateSystemSetting(
+                              "registration_enabled",
+                              checked.toString(),
+                            );
+                          }
+                        }}
+                      />
+                      {registrationLocked && (
+                        <div className="absolute inset-0 cursor-not-allowed" title="Set via environment variable" />
+                      )}
+                    </div>
                   </div>
                 </CardContent>
               </Card>

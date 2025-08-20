@@ -42,19 +42,35 @@ RUN --mount=type=cache,target=/root/.cache \
 # Final image
 FROM alpine:3.22
 
-# Install runtime dependencies
+# Install runtime dependencies including Chromium for HTML rendering
 RUN apk add --no-cache \
       ca-certificates \
       imagemagick \
       postgresql-client \
       tzdata \
+      chromium \
+      chromium-chromedriver \
+      nss \
+      freetype \
+      freetype-dev \
+      harfbuzz \
+      ttf-freefont \
     && update-ca-certificates
 
 WORKDIR /app
 COPY --from=stationmaster-builder /app/stationmaster .
 
-# Create data directory
-RUN mkdir -p /data
+# Create data directory and setup for Chromium
+RUN mkdir -p /data /app/static/rendered \
+    && addgroup -g 1000 -S appuser \
+    && adduser -u 1000 -S appuser -G appuser \
+    && chown -R appuser:appuser /app /data
+
+# Environment variables for Chromium
+ENV CHROMIUM_BIN=/usr/bin/chromium-browser
+ENV CHROME_BIN=/usr/bin/chromium-browser
+
+USER appuser
 
 EXPOSE 8000
 CMD ["./stationmaster"]

@@ -243,16 +243,17 @@ func (d *Device) BeforeCreate(tx *gorm.DB) error {
 
 // Plugin represents a system-wide plugin type (managed by admins)
 type Plugin struct {
-	ID           uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
-	Name         string    `gorm:"size:255;not null;uniqueIndex" json:"name"`
-	Type         string    `gorm:"size:100;not null" json:"type"`
-	Description  string    `gorm:"type:text" json:"description"`
-	ConfigSchema string    `gorm:"type:text" json:"config_schema"` // JSON schema for plugin settings
-	Version      string    `gorm:"size:50" json:"version"`
-	Author       string    `gorm:"size:255" json:"author,omitempty"`
-	IsActive     bool      `gorm:"default:true" json:"is_active"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID                uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
+	Name              string    `gorm:"size:255;not null;uniqueIndex" json:"name"`
+	Type              string    `gorm:"size:100;not null" json:"type"`
+	Description       string    `gorm:"type:text" json:"description"`
+	ConfigSchema      string    `gorm:"type:text" json:"config_schema"` // JSON schema for plugin settings
+	Version           string    `gorm:"size:50" json:"version"`
+	Author            string    `gorm:"size:255" json:"author,omitempty"`
+	IsActive          bool      `gorm:"default:true" json:"is_active"`
+	RequiresProcessing bool      `gorm:"default:false" json:"requires_processing"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
 
 	// Associations
 	UserPlugins []UserPlugin `gorm:"foreignKey:PluginID;constraint:OnDelete:CASCADE" json:"-"`
@@ -267,19 +268,21 @@ func (p *Plugin) BeforeCreate(tx *gorm.DB) error {
 
 // UserPlugin represents a user's instance of a plugin with specific settings
 type UserPlugin struct {
-	ID        uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
-	UserID    uuid.UUID `gorm:"type:uuid;not null;index" json:"user_id"`
-	PluginID  uuid.UUID `gorm:"type:uuid;not null;index" json:"plugin_id"`
-	Name      string    `gorm:"size:255;not null" json:"name"` // User-defined name for this instance
-	Settings  string    `gorm:"type:text" json:"settings"`     // JSON settings specific to this instance
-	IsActive  bool      `gorm:"default:true" json:"is_active"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID              uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
+	UserID          uuid.UUID `gorm:"type:uuid;not null;index" json:"user_id"`
+	PluginID        uuid.UUID `gorm:"type:uuid;not null;index" json:"plugin_id"`
+	Name            string    `gorm:"size:255;not null" json:"name"` // User-defined name for this instance
+	Settings        string    `gorm:"type:text" json:"settings"`     // JSON settings specific to this instance
+	RefreshInterval int       `gorm:"default:3600" json:"refresh_interval"` // Refresh interval in seconds
+	IsActive        bool      `gorm:"default:true" json:"is_active"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 
 	// Associations
-	User          User           `gorm:"foreignKey:UserID" json:"-"`
-	Plugin        Plugin         `gorm:"foreignKey:PluginID" json:"plugin"`
-	PlaylistItems []PlaylistItem `gorm:"foreignKey:UserPluginID;constraint:OnDelete:CASCADE" json:"-"`
+	User            User             `gorm:"foreignKey:UserID" json:"-"`
+	Plugin          Plugin           `gorm:"foreignKey:PluginID" json:"plugin"`
+	PlaylistItems   []PlaylistItem   `gorm:"foreignKey:UserPluginID;constraint:OnDelete:CASCADE" json:"-"`
+	RenderedContent []RenderedContent `gorm:"foreignKey:UserPluginID;constraint:OnDelete:CASCADE" json:"-"`
 }
 
 func (up *UserPlugin) BeforeCreate(tx *gorm.DB) error {
@@ -439,6 +442,53 @@ func (d *DeviceModel) BeforeCreate(tx *gorm.DB) error {
 
 // FirmwareUpdateJob - REMOVED: Using automatic updates now instead of job-based system
 
+// RenderedContent represents a cached rendered image for a plugin
+type RenderedContent struct {
+	ID           uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
+	UserPluginID uuid.UUID `gorm:"type:uuid;not null;index" json:"user_plugin_id"`
+	Width        int       `gorm:"not null" json:"width"`
+	Height       int       `gorm:"not null" json:"height"`
+	BitDepth     int       `gorm:"not null" json:"bit_depth"`
+	ImagePath    string    `gorm:"size:1000;not null" json:"image_path"`
+	FileSize     int64     `json:"file_size"`
+	RenderedAt   time.Time `gorm:"not null;index" json:"rendered_at"`
+	CreatedAt    time.Time `json:"created_at"`
+
+	// Associations
+	UserPlugin UserPlugin `gorm:"foreignKey:UserPluginID" json:"-"`
+}
+
+func (rc *RenderedContent) BeforeCreate(tx *gorm.DB) error {
+	if rc.ID == uuid.Nil {
+		rc.ID = uuid.New()
+	}
+	return nil
+}
+
+// RenderQueue represents pending render jobs for plugins
+type RenderQueue struct {
+	ID           uuid.UUID  `gorm:"type:uuid;primaryKey" json:"id"`
+	UserPluginID uuid.UUID  `gorm:"type:uuid;not null;index" json:"user_plugin_id"`
+	Priority     int        `gorm:"default:0;index" json:"priority"` // Higher number = higher priority
+	ScheduledFor time.Time  `gorm:"not null;index" json:"scheduled_for"`
+	Status       string     `gorm:"size:50;default:pending;index" json:"status"` // pending, processing, completed, failed
+	Attempts     int        `gorm:"default:0" json:"attempts"`
+	LastAttempt  *time.Time `json:"last_attempt,omitempty"`
+	ErrorMessage string     `gorm:"type:text" json:"error_message,omitempty"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
+
+	// Associations
+	UserPlugin UserPlugin `gorm:"foreignKey:UserPluginID" json:"-"`
+}
+
+func (rq *RenderQueue) BeforeCreate(tx *gorm.DB) error {
+	if rq.ID == uuid.Nil {
+		rq.ID = uuid.New()
+	}
+	return nil
+}
+
 // GetAllModels returns all models for auto-migration
 func GetAllModels() []interface{} {
 	return []interface{}{
@@ -458,6 +508,8 @@ func GetAllModels() []interface{} {
 		&Schedule{},
 		&DeviceLog{},
 		&FirmwareVersion{},
+		&RenderedContent{},
+		&RenderQueue{},
 		// &DeviceModel{}, // Managed manually in migrations to avoid foreign key constraint issues
 		// &FirmwareUpdateJob{}, // Removed - using automatic updates
 	}

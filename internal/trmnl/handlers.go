@@ -310,9 +310,40 @@ func DisplayHandler(c *gin.Context) {
 	// Check for firmware update AFTER device status is updated
 	firmwareUpdate := checkFirmwareUpdate(device)
 
+	// Build base URL for image responses
+	scheme := "http"
+	if c.Request.TLS != nil {
+		scheme = "https"
+	}
+	baseURL := fmt.Sprintf("%s://%s", scheme, c.Request.Host)
+
 	// Process active plugins and generate response
-	response, currentItem, err := processActivePlugins(device, activeItems)
-	if err != nil {
+	processor := GetPluginProcessor()
+	var response gin.H
+	var currentItem *database.PlaylistItem
+	var pluginErr error
+	
+	if processor != nil {
+		response, currentItem, pluginErr = processor.processActivePluginsNew(device, activeItems)
+	} else {
+		// Fallback to old implementation if processor not available
+		response, currentItem, pluginErr = processActivePlugins(device, activeItems)
+	}
+	
+	// Convert relative image URLs to absolute URLs
+	if response != nil {
+		if imageURL, exists := response["image_url"]; exists {
+			if imageURLStr, ok := imageURL.(string); ok {
+				// Handle both "/static/rendered/" and "static/rendered/" cases
+				if strings.HasPrefix(imageURLStr, "/static/rendered/") {
+					response["image_url"] = baseURL + imageURLStr
+				} else if strings.HasPrefix(imageURLStr, "static/rendered/") {
+					response["image_url"] = baseURL + "/" + imageURLStr
+				}
+			}
+		}
+	}
+	if pluginErr != nil {
 		// Fall back to default response if plugin processing fails
 		if debugMode {
 			logging.Logf("[/api/display] No active plugins for device %s, using default response (status: %d)", device.MacAddress, status)
@@ -1191,9 +1222,39 @@ func CurrentScreenHandler(c *gin.Context) {
 		status = 202
 	}
 
+	// Build base URL for image responses
+	scheme := "http"
+	if c.Request.TLS != nil {
+		scheme = "https"
+	}
+	baseURL := fmt.Sprintf("%s://%s", scheme, c.Request.Host)
+
 	// Process current plugin without advancing playlist
-	response, err := processCurrentPlugin(device, activeItems)
-	if err != nil {
+	processor := GetPluginProcessor()
+	var response gin.H
+	var pluginErr error
+	
+	if processor != nil {
+		response, pluginErr = processor.processCurrentPluginNew(device, activeItems)
+	} else {
+		// Fallback to old implementation if processor not available
+		response, pluginErr = processCurrentPlugin(device, activeItems)
+	}
+	
+	// Convert relative image URLs to absolute URLs
+	if response != nil {
+		if imageURL, exists := response["image_url"]; exists {
+			if imageURLStr, ok := imageURL.(string); ok {
+				// Handle both "/static/rendered/" and "static/rendered/" cases
+				if strings.HasPrefix(imageURLStr, "/static/rendered/") {
+					response["image_url"] = baseURL + imageURLStr
+				} else if strings.HasPrefix(imageURLStr, "static/rendered/") {
+					response["image_url"] = baseURL + "/" + imageURLStr
+				}
+			}
+		}
+	}
+	if pluginErr != nil {
 		// Fall back to default response if plugin processing fails
 		if debugMode {
 			logging.Logf("[/api/current_screen] No active plugins for device %s, using default response (status: %d)", device.MacAddress, status)

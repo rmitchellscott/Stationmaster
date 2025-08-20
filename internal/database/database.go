@@ -245,155 +245,8 @@ func initializeSystemSettings() error {
 
 // initializeDefaultPlugins creates default system plugins if they don't exist
 func initializeDefaultPlugins() error {
+	// Only keep functional plugins that have actual implementations
 	defaultPlugins := []Plugin{
-		{
-			Name:        "Text Display",
-			Type:        "display",
-			Description: "Display custom text messages on your TRMNL device",
-			ConfigSchema: `{
-				"type": "object",
-				"properties": {
-					"text": {
-						"type": "string",
-						"title": "Text to Display",
-						"description": "The text message to show on the device",
-						"default": "Hello World!"
-					},
-					"font_size": {
-						"type": "integer",
-						"title": "Font Size",
-						"description": "Size of the text font",
-						"minimum": 12,
-						"maximum": 72,
-						"default": 24
-					}
-				},
-				"required": ["text"]
-			}`,
-			Version:  "1.0.0",
-			Author:   "Stationmaster",
-			IsActive: true,
-		},
-		{
-			Name:        "Clock",
-			Type:        "time",
-			Description: "Display current time and date",
-			ConfigSchema: `{
-				"type": "object",
-				"properties": {
-					"format": {
-						"type": "string",
-						"title": "Time Format",
-						"description": "Format for displaying time",
-						"enum": ["12-hour", "24-hour"],
-						"default": "12-hour"
-					},
-					"timezone": {
-						"type": "string",
-						"title": "Timezone",
-						"description": "Timezone for displaying time",
-						"default": "UTC"
-					},
-					"show_date": {
-						"type": "boolean",
-						"title": "Show Date",
-						"description": "Whether to display the date along with time",
-						"default": true
-					}
-				}
-			}`,
-			Version:  "1.0.0",
-			Author:   "Stationmaster",
-			IsActive: true,
-		},
-		{
-			Name:        "Weather",
-			Type:        "weather",
-			Description: "Display weather information",
-			ConfigSchema: `{
-				"type": "object",
-				"properties": {
-					"location": {
-						"type": "string",
-						"title": "Location",
-						"description": "City or location for weather data",
-						"default": "New York, NY"
-					},
-					"units": {
-						"type": "string",
-						"title": "Temperature Units",
-						"description": "Units for temperature display",
-						"enum": ["celsius", "fahrenheit"],
-						"default": "fahrenheit"
-					},
-					"api_key": {
-						"type": "string",
-						"title": "API Key",
-						"description": "Weather API key (OpenWeatherMap, etc.)",
-						"format": "password"
-					}
-				},
-				"required": ["location", "api_key"]
-			}`,
-			Version:  "1.0.0",
-			Author:   "Stationmaster",
-			IsActive: true,
-		},
-		{
-			Name:        "RSS Feed",
-			Type:        "content",
-			Description: "Display RSS feed headlines",
-			ConfigSchema: `{
-				"type": "object",
-				"properties": {
-					"feed_url": {
-						"type": "string",
-						"title": "RSS Feed URL",
-						"description": "URL of the RSS feed to display",
-						"default": "https://feeds.bbci.co.uk/news/rss.xml"
-					},
-					"max_items": {
-						"type": "integer",
-						"title": "Maximum Items",
-						"description": "Maximum number of feed items to display",
-						"minimum": 1,
-						"maximum": 10,
-						"default": 5
-					}
-				},
-				"required": ["feed_url"]
-			}`,
-			Version:  "1.0.0",
-			Author:   "Stationmaster",
-			IsActive: true,
-		},
-		{
-			Name:        "Image Display",
-			Type:        "media",
-			Description: "Display custom images",
-			ConfigSchema: `{
-				"type": "object",
-				"properties": {
-					"image_url": {
-						"type": "string",
-						"title": "Image URL",
-						"description": "URL of the image to display",
-						"default": "https://via.placeholder.com/800x480"
-					},
-					"fit_mode": {
-						"type": "string",
-						"title": "Fit Mode",
-						"description": "How to fit the image on the display",
-						"enum": ["contain", "cover", "fill"],
-						"default": "contain"
-					}
-				},
-				"required": ["image_url"]
-			}`,
-			Version:  "1.0.0",
-			Author:   "Stationmaster",
-			IsActive: true,
-		},
 		{
 			Name:        "Redirect",
 			Type:        "redirect",
@@ -437,6 +290,26 @@ func initializeDefaultPlugins() error {
 					}
 				},
 				"required": ["image_url"]
+			}`,
+			Version:  "1.0.0",
+			Author:   "Stationmaster",
+			IsActive: true,
+		},
+		{
+			Name:        "Core Proxy",
+			Type:        "core_proxy",
+			Description: "Proxy to TRMNL core API endpoints for plugins",
+			ConfigSchema: `{
+				"type": "object",
+				"properties": {
+					"plugin_uuid": {
+						"type": "string",
+						"title": "Plugin UUID",
+						"description": "TRMNL plugin UUID to proxy",
+						"placeholder": "12345678-1234-5678-9012-123456789abc"
+					}
+				},
+				"required": ["plugin_uuid"]
 			}`,
 			Version:  "1.0.0",
 			Author:   "Stationmaster",

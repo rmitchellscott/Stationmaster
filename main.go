@@ -27,9 +27,19 @@ import (
 	"github.com/rmitchellscott/stationmaster/internal/handlers"
 	"github.com/rmitchellscott/stationmaster/internal/logging"
 	"github.com/rmitchellscott/stationmaster/internal/pollers"
+	"github.com/rmitchellscott/stationmaster/internal/rendering"
 	"github.com/rmitchellscott/stationmaster/internal/sse"
+	"github.com/rmitchellscott/stationmaster/internal/sync"
 	"github.com/rmitchellscott/stationmaster/internal/trmnl"
+
 	"github.com/rmitchellscott/stationmaster/internal/version"
+
+	// Plugin imports for auto-registration
+	_ "github.com/rmitchellscott/stationmaster/internal/plugins/alias"
+	_ "github.com/rmitchellscott/stationmaster/internal/plugins/core_proxy"
+	_ "github.com/rmitchellscott/stationmaster/internal/plugins/days_left"
+	_ "github.com/rmitchellscott/stationmaster/internal/plugins/image_display"
+	_ "github.com/rmitchellscott/stationmaster/internal/plugins/redirect"
 )
 
 //go:generate npm --prefix ui install
@@ -73,11 +83,43 @@ func main() {
 
 	// Register pollers
 	db := database.GetDB()
+	
+	// Sync plugin registry with database
+	if err := sync.SyncPluginRegistry(db); err != nil {
+		logging.Logf("Warning: Failed to sync plugin registry: %v", err)
+		// Don't fail startup, but log the warning
+	}
+	
+	// Initialize plugin processor with database
+	if err := trmnl.InitPluginProcessor(db); err != nil {
+		log.Fatalf("Failed to initialize plugin processor: %v", err)
+	}
+	defer func() {
+		if err := trmnl.CleanupPluginProcessor(); err != nil {
+			logging.Logf("Failed to cleanup plugin processor: %v", err)
+		}
+	}()
 	firmwarePoller := pollers.NewFirmwarePoller(db)
 	modelPoller := pollers.NewModelPoller(db)
+	
+	// Create render poller for pre-rendering plugin content
+	staticDir := config.Get("STATIC_DIR", "./static")
+	renderPollerConfig := pollers.PollerConfig{
+		Name:        "render_poller",
+		Enabled:     true,
+		Interval:    30 * time.Second, // Check for render jobs every 30 seconds
+		Timeout:     5 * time.Minute,  // Allow up to 5 minutes for render processing
+		MaxRetries:  3,
+		RetryDelay:  10 * time.Second,
+	}
+	renderPoller, err := pollers.NewRenderPoller(db, staticDir, renderPollerConfig)
+	if err != nil {
+		log.Fatalf("Failed to create render poller: %v", err)
+	}
 
 	pollerManager.Register(firmwarePoller)
 	pollerManager.Register(modelPoller)
+	pollerManager.Register(renderPoller)
 
 	// Start pollers and SSE keep-alive
 	ctx, cancel := context.WithCancel(context.Background())
@@ -85,6 +127,12 @@ func main() {
 
 	if err := pollerManager.Start(ctx); err != nil {
 		log.Fatalf("Failed to start pollers: %v", err)
+	}
+
+	// Schedule initial renders for existing active plugins
+	queueManager := rendering.NewQueueManager(db)
+	if err := queueManager.ScheduleInitialRenders(ctx); err != nil {
+		logging.Logf("Failed to schedule initial renders: %v", err)
 	}
 
 	// Start SSE keep-alive service
@@ -159,6 +207,7 @@ func main() {
 
 	// Static assets (no authentication required)
 	router.Static("/assets", "./assets")
+	router.Static("/static/rendered", "./static/rendered")
 
 	// Public firmware downloads (no authentication required)
 	// Custom handler to serve firmware files - supports both proxy and download modes
@@ -374,6 +423,12 @@ func main() {
 	plugins := protected.Group("/plugins")
 	{
 		plugins.GET("", handlers.GetPluginsHandler) // GET /api/plugins - list available plugins
+		plugins.GET("/info", handlers.GetPluginInfoHandler) // GET /api/plugins/info - get detailed plugin information
+		plugins.GET("/types", handlers.GetAvailablePluginTypesHandler) // GET /api/plugins/types - get available plugin types
+		plugins.GET("/types/:type", handlers.GetPluginByTypeHandler) // GET /api/plugins/types/:type - get specific plugin info
+		plugins.POST("/validate", handlers.ValidatePluginSettingsHandler) // POST /api/plugins/validate - validate plugin settings
+		plugins.GET("/refresh-rate-options", handlers.GetRefreshRateOptionsHandler) // GET /api/plugins/refresh-rate-options - get refresh rate options
+		plugins.GET("/registry/stats", handlers.GetPluginRegistryStatsHandler) // GET /api/plugins/registry/stats - registry statistics
 	}
 
 	// User plugin management endpoints
@@ -381,9 +436,10 @@ func main() {
 	{
 		userPlugins.GET("", handlers.GetUserPluginsHandler)          // GET /api/user-plugins - list user's plugin instances
 		userPlugins.POST("", handlers.CreateUserPluginHandler)       // POST /api/user-plugins - create plugin instance
-		userPlugins.GET("/:id", handlers.GetUserPluginHandler)       // GET /api/user-plugins/:id - get plugin instance
-		userPlugins.PUT("/:id", handlers.UpdateUserPluginHandler)    // PUT /api/user-plugins/:id - update plugin instance
-		userPlugins.DELETE("/:id", handlers.DeleteUserPluginHandler) // DELETE /api/user-plugins/:id - delete plugin instance
+		userPlugins.GET("/:id", handlers.GetUserPluginHandler)           // GET /api/user-plugins/:id - get plugin instance
+		userPlugins.PUT("/:id", handlers.UpdateUserPluginHandler)        // PUT /api/user-plugins/:id - update plugin instance
+		userPlugins.POST("/:id/force-refresh", handlers.ForceRefreshUserPluginHandler) // POST /api/user-plugins/:id/force-refresh - force re-render
+		userPlugins.DELETE("/:id", handlers.DeleteUserPluginHandler)     // DELETE /api/user-plugins/:id - delete plugin instance
 	}
 
 	// Playlist management endpoints

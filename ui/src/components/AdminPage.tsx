@@ -1506,8 +1506,8 @@ export function AdminPage({ onNavigateBack }: AdminPageProps) {
 
   if (!user?.is_admin) {
     return (
-      <div className="bg-background pt-0 pb-8 px-8">
-        <div className="max-w-6xl mx-auto space-y-6">
+      <div className="bg-background pt-0 pb-8 px-0 sm:px-8">
+        <div className="max-w-6xl mx-0 sm:mx-auto space-y-6">
           <div className="text-center">
             <h1 className="text-2xl font-bold mb-4">Access Denied</h1>
             <p className="text-muted-foreground">You don't have permission to access this page.</p>
@@ -1518,8 +1518,8 @@ export function AdminPage({ onNavigateBack }: AdminPageProps) {
   }
 
   return (
-    <div className="bg-background pt-0 pb-8 px-8">
-      <div className="max-w-6xl mx-auto space-y-6">
+    <div className="bg-background pt-0 pb-8 px-0 sm:px-8">
+      <div className="max-w-6xl mx-0 sm:mx-auto space-y-6">
 
         <Card>
           <CardHeader>

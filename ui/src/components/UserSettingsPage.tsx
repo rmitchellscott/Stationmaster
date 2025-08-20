@@ -318,8 +318,8 @@ export function UserSettingsPage({ onNavigateBack }: UserSettingsPageProps) {
 
   return (
     <>
-      <div className="bg-background pt-0 pb-8 px-8">
-        <div className="max-w-6xl mx-auto space-y-6">
+      <div className="bg-background pt-0 pb-8 px-0 sm:px-8">
+        <div className="max-w-6xl mx-0 sm:mx-auto space-y-6">
 
         {error && (
           <div className="bg-destructive/10 border border-destructive/20 rounded-md p-3 text-destructive">

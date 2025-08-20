@@ -21,6 +21,7 @@ function AppContent() {
   const { t } = useTranslation();
   const { isAuthenticated, multiUserMode, user } = useAuth();
   const [showAdminPanel, setShowAdminPanel] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   
   const isPasswordResetPage = window.location.pathname === '/reset-password' || window.location.search.includes('token=');
   const isRegistrationPage = window.location.pathname === '/register';
@@ -67,6 +68,7 @@ function AppContent() {
 
   if (isSettingsPage) {
     const handleNavigateBack = () => {
+      setMobileMenuOpen(false);
       window.history.back();
     };
 
@@ -90,6 +92,7 @@ function AppContent() {
 
   if (isAdminPage) {
     const handleNavigateBack = () => {
+      setMobileMenuOpen(false);
       window.history.back();
     };
 
@@ -151,6 +154,8 @@ function AppContent() {
             showAdmin={isAuthenticated && multiUserMode && !!user?.is_admin}
             onOpenSettings={() => window.location.href = '/settings'}
             onOpenAdmin={() => window.location.href = '/admin'}
+            isOpen={mobileMenuOpen}
+            onOpenChange={setMobileMenuOpen}
           />
         </div>
       </header>

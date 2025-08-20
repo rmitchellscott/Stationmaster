@@ -311,8 +311,8 @@ export default function HomePage() {
   }
 
   return (
-    <div className="bg-background pt-0 pb-8 px-8">
-      <div className="max-w-6xl mx-auto space-y-6">
+    <div className="bg-background pt-0 pb-8 px-0 sm:px-8">
+      <div className="max-w-6xl mx-0 sm:mx-auto space-y-6">
         {showOnboarding && (
           <Card>
             <CardHeader>

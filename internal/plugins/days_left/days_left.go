@@ -30,6 +30,16 @@ func (p *DaysLeftPlugin) Description() string {
 	return "Displays the number of days passed and remaining between two dates with a progress bar"
 }
 
+// Author returns the plugin author
+func (p *DaysLeftPlugin) Author() string {
+	return "Stationmaster Team"
+}
+
+// Version returns the plugin version
+func (p *DaysLeftPlugin) Version() string {
+	return "1.0.0"
+}
+
 // RequiresProcessing returns true since this plugin needs HTML rendering
 func (p *DaysLeftPlugin) RequiresProcessing() bool {
 	return true

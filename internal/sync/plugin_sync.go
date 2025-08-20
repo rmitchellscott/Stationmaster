@@ -52,8 +52,8 @@ func syncSinglePlugin(pluginService *database.PluginService, pluginInfo plugins.
 			nameConflictPlugin.Type = pluginInfo.Type
 			nameConflictPlugin.Description = pluginInfo.Description
 			nameConflictPlugin.ConfigSchema = pluginInfo.ConfigSchema
-			nameConflictPlugin.Version = "1.0.0"
-			nameConflictPlugin.Author = "Stationmaster"
+			nameConflictPlugin.Version = pluginInfo.Version
+			nameConflictPlugin.Author = pluginInfo.Author
 			nameConflictPlugin.RequiresProcessing = pluginInfo.RequiresProcessing
 			nameConflictPlugin.IsActive = true
 			// Keep existing name to avoid conflicts
@@ -68,8 +68,8 @@ func syncSinglePlugin(pluginService *database.PluginService, pluginInfo plugins.
 			pluginInfo.Type,
 			pluginInfo.Description,
 			pluginInfo.ConfigSchema,
-			"1.0.0",
-			"Stationmaster",
+			pluginInfo.Version,
+			pluginInfo.Author,
 			pluginInfo.RequiresProcessing,
 		)
 		return err

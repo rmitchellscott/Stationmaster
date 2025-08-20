@@ -30,6 +30,16 @@ func (p *AliasPlugin) Description() string {
 	return "Returns a configured static image URL directly"
 }
 
+// Author returns the plugin author
+func (p *AliasPlugin) Author() string {
+	return "Stationmaster Team"
+}
+
+// Version returns the plugin version
+func (p *AliasPlugin) Version() string {
+	return "1.0.0"
+}
+
 // RequiresProcessing returns false since this plugin returns direct URLs
 func (p *AliasPlugin) RequiresProcessing() bool {
 	return false

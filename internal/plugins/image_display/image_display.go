@@ -34,6 +34,16 @@ func (p *ImageDisplayPlugin) Description() string {
 	return "Displays a single image from a URL, automatically resized and dithered for your device"
 }
 
+// Author returns the plugin author
+func (p *ImageDisplayPlugin) Author() string {
+	return "Stationmaster"
+}
+
+// Version returns the plugin version
+func (p *ImageDisplayPlugin) Version() string {
+	return "1.0.0"
+}
+
 // RequiresProcessing returns true since this plugin needs image processing
 func (p *ImageDisplayPlugin) RequiresProcessing() bool {
 	return true
@@ -76,7 +86,7 @@ func (p *ImageDisplayPlugin) Process(ctx plugins.PluginContext) (plugins.PluginR
 	// Get image URL from settings
 	imageURL := ctx.GetStringSetting("image_url", "")
 	if imageURL == "" {
-		return plugins.CreateErrorResponse("Image URL is required"), 
+		return plugins.CreateErrorResponse("Image URL is required"),
 			fmt.Errorf("image_url setting is missing")
 	}
 
@@ -133,7 +143,7 @@ func (p *ImageDisplayPlugin) Process(ctx plugins.PluginContext) (plugins.PluginR
 	}
 
 	// Generate filename
-	filename := fmt.Sprintf("image_display_%s_%dx%d.png", 
+	filename := fmt.Sprintf("image_display_%s_%dx%d.png",
 		time.Now().Format("20060102_150405"),
 		ctx.Device.DeviceModel.ScreenWidth,
 		ctx.Device.DeviceModel.ScreenHeight)

@@ -37,6 +37,12 @@ type Plugin interface {
 	// Description returns a description of what the plugin does
 	Description() string
 	
+	// Author returns the author/creator of the plugin
+	Author() string
+	
+	// Version returns the version of the plugin
+	Version() string
+	
 	// ConfigSchema returns the JSON schema for plugin configuration
 	ConfigSchema() string
 	
@@ -67,6 +73,8 @@ type PluginInfo struct {
 	PluginType         PluginType `json:"plugin_type"`
 	Name               string     `json:"name"`
 	Description        string     `json:"description"`
+	Author             string     `json:"author"`
+	Version            string     `json:"version"`
 	ConfigSchema       string     `json:"config_schema"`
 	DataSchema         string     `json:"data_schema,omitempty"`
 	RequiresProcessing bool       `json:"requires_processing"`
@@ -79,6 +87,8 @@ func GetInfo(plugin Plugin) PluginInfo {
 		PluginType:         plugin.PluginType(),
 		Name:               plugin.Name(),
 		Description:        plugin.Description(),
+		Author:             plugin.Author(),
+		Version:            plugin.Version(),
 		ConfigSchema:       plugin.ConfigSchema(),
 		RequiresProcessing: plugin.RequiresProcessing(),
 	}

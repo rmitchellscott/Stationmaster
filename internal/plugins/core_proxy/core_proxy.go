@@ -32,6 +32,16 @@ func (p *CoreProxyPlugin) Description() string {
 	return "Proxies requests to TRMNL's official server using your TRMNL device credentials"
 }
 
+// Author returns the plugin author
+func (p *CoreProxyPlugin) Author() string {
+	return "Stationmaster Team"
+}
+
+// Version returns the plugin version
+func (p *CoreProxyPlugin) Version() string {
+	return "1.0.0"
+}
+
 // RequiresProcessing returns false since this plugin returns direct URLs
 func (p *CoreProxyPlugin) RequiresProcessing() bool {
 	return false

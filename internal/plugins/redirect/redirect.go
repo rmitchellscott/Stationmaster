@@ -32,6 +32,16 @@ func (p *RedirectPlugin) Description() string {
 	return "Fetches JSON response from an external endpoint and returns the image URL"
 }
 
+// Author returns the plugin author
+func (p *RedirectPlugin) Author() string {
+	return "Stationmaster Team"
+}
+
+// Version returns the plugin version
+func (p *RedirectPlugin) Version() string {
+	return "1.0.0"
+}
+
 // RequiresProcessing returns false since this plugin returns direct URLs
 func (p *RedirectPlugin) RequiresProcessing() bool {
 	return false

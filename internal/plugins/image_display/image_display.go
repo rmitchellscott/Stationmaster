@@ -101,20 +101,32 @@ func (p *ImageDisplayPlugin) Process(ctx plugins.PluginContext) (plugins.PluginR
 			fmt.Errorf("failed to process image for device: %w", err)
 	}
 
-	// Convert processed image to PNG bytes with maximum compression
-	var buf bytes.Buffer
-	encoder := &png.Encoder{
-		CompressionLevel: png.BestCompression,
-	}
-	err = encoder.Encode(&buf, processedImg)
-	if err != nil {
-		return plugins.CreateErrorResponse(fmt.Sprintf("Failed to encode processed image: %v", err)),
-			fmt.Errorf("failed to encode processed image: %w", err)
+	// Convert processed image to PNG bytes with proper bit depth
+	var pngData []byte
+	if ctx.Device.DeviceModel.BitDepth <= 2 {
+		// Use custom PNG encoder for 1-bit and 2-bit images to ensure proper bit depth
+		pngData, err = imageprocessing.EncodePalettedPNG(processedImg, ctx.Device.DeviceModel.BitDepth)
+		if err != nil {
+			return plugins.CreateErrorResponse(fmt.Sprintf("Failed to encode processed image with custom encoder: %v", err)),
+				fmt.Errorf("failed to encode processed image with custom encoder: %w", err)
+		}
+	} else {
+		// Use standard PNG encoder for higher bit depths
+		var buf bytes.Buffer
+		encoder := &png.Encoder{
+			CompressionLevel: png.BestCompression,
+		}
+		err = encoder.Encode(&buf, processedImg)
+		if err != nil {
+			return plugins.CreateErrorResponse(fmt.Sprintf("Failed to encode processed image: %v", err)),
+				fmt.Errorf("failed to encode processed image: %w", err)
+		}
+		pngData = buf.Bytes()
 	}
 
 	// Store the processed image
 	imageStorage := storage.GetDefaultImageStorage()
-	storedImageURL, err := imageStorage.StoreImage(buf.Bytes(), ctx.Device.ID, p.Type())
+	storedImageURL, err := imageStorage.StoreImage(pngData, ctx.Device.ID, p.Type())
 	if err != nil {
 		return plugins.CreateErrorResponse(fmt.Sprintf("Failed to store processed image: %v", err)),
 			fmt.Errorf("failed to store processed image: %w", err)

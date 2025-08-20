@@ -252,8 +252,8 @@ type Plugin struct {
 	Author            string    `gorm:"size:255" json:"author,omitempty"`
 	IsActive          bool      `gorm:"default:true" json:"is_active"`
 	RequiresProcessing bool      `gorm:"default:false" json:"requires_processing"`
-	CreatedAt         time.Time `json:"created_at"`
-	UpdatedAt         time.Time `json:"updated_at"`
+	CreatedAt         time.Time `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt         time.Time `gorm:"autoUpdateTime" json:"updated_at"`
 
 	// Associations
 	UserPlugins []UserPlugin `gorm:"foreignKey:PluginID;constraint:OnDelete:CASCADE" json:"-"`
@@ -275,8 +275,8 @@ type UserPlugin struct {
 	Settings        string    `gorm:"type:text" json:"settings"`     // JSON settings specific to this instance
 	RefreshInterval int       `gorm:"default:3600" json:"refresh_interval"` // Refresh interval in seconds
 	IsActive        bool      `gorm:"default:true" json:"is_active"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	CreatedAt       time.Time `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt       time.Time `gorm:"autoUpdateTime" json:"updated_at"`
 
 	// Associations
 	User            User             `gorm:"foreignKey:UserID" json:"-"`

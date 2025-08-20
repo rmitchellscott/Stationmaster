@@ -54,21 +54,52 @@ func NewRenderWorker(db *gorm.DB, staticDir string) (*RenderWorker, error) {
 
 // ProcessRenderQueue processes pending render jobs
 func (w *RenderWorker) ProcessRenderQueue(ctx context.Context) error {
-	// Get pending render jobs ordered by priority and scheduled time
+	// Get pending render jobs, ensuring only one job per plugin instance
+	// by selecting the earliest scheduled job for each user_plugin_id
+	
+	// First, find the earliest job ID for each user_plugin_id using a subquery
+	type JobID struct {
+		ID uuid.UUID
+	}
+	
+	var jobIDs []JobID
+	err := w.db.WithContext(ctx).Raw(`
+		SELECT id FROM render_queues rq1
+		WHERE status = ? AND scheduled_for <= ?
+		AND id = (
+			SELECT id FROM render_queues rq2
+			WHERE rq2.user_plugin_id = rq1.user_plugin_id
+			AND rq2.status = ? AND rq2.scheduled_for <= ?
+			ORDER BY priority DESC, scheduled_for ASC
+			LIMIT 1
+		)
+		GROUP BY user_plugin_id
+		LIMIT 10
+	`, "pending", time.Now(), "pending", time.Now()).Scan(&jobIDs).Error
+
+	if err != nil {
+		return fmt.Errorf("failed to find job IDs: %w", err)
+	}
+
+	if len(jobIDs) == 0 {
+		return nil
+	}
+
+	// Extract IDs for the main query
+	ids := make([]uuid.UUID, len(jobIDs))
+	for i, jobID := range jobIDs {
+		ids[i] = jobID.ID
+	}
+
+	// Now fetch the actual jobs using GORM
 	var jobs []database.RenderQueue
-	err := w.db.WithContext(ctx).
-		Where("status = ? AND scheduled_for <= ?", "pending", time.Now()).
+	err = w.db.WithContext(ctx).
+		Where("id IN ?", ids).
 		Order("priority DESC, scheduled_for ASC").
-		Limit(10). // Process up to 10 jobs at once
 		Find(&jobs).Error
 
 	if err != nil {
 		return fmt.Errorf("failed to fetch render jobs: %w", err)
-	}
-
-	if len(jobs) == 0 {
-		logging.Logf("[RENDER_WORKER] No pending render jobs")
-		return nil
 	}
 
 	logging.Logf("[RENDER_WORKER] Processing %d render jobs", len(jobs))
@@ -149,6 +180,14 @@ func (w *RenderWorker) processRenderJob(ctx context.Context, job database.Render
 	err = w.db.WithContext(ctx).Model(&job).Update("status", "completed").Error
 	if err != nil {
 		logging.Logf("[RENDER_WORKER] Failed to mark job as completed: %v", err)
+	}
+
+	// Clean up any other pending jobs for this plugin instance to prevent duplicates
+	err = w.db.WithContext(ctx).Model(&database.RenderQueue{}).
+		Where("user_plugin_id = ? AND status = ? AND id != ?", userPlugin.ID, "pending", job.ID).
+		Update("status", "cancelled").Error
+	if err != nil {
+		logging.Logf("[RENDER_WORKER] Failed to clean up duplicate pending jobs: %v", err)
 	}
 
 	// Schedule next render
@@ -249,13 +288,34 @@ func (w *RenderWorker) renderForDeviceModel(ctx context.Context, userPlugin data
 		fileSize = int64(len(imageData))
 	}
 
-	// Clean up old rendered content for this resolution
+	// Clean up old rendered content and files for this resolution
+	var oldContent []database.RenderedContent
 	err = w.db.WithContext(ctx).
 		Where("user_plugin_id = ? AND width = ? AND height = ? AND bit_depth = ?",
 			userPlugin.ID, deviceModel.ScreenWidth, deviceModel.ScreenHeight, deviceModel.BitDepth).
-		Delete(&database.RenderedContent{}).Error
+		Find(&oldContent).Error
 	if err != nil {
-		logging.Logf("[RENDER_WORKER] Failed to clean up old content: %v", err)
+		logging.Logf("[RENDER_WORKER] Failed to find old content: %v", err)
+	} else {
+		// Delete old image files
+		for _, content := range oldContent {
+			if filepath.IsAbs(content.ImagePath) && filepath.HasPrefix(content.ImagePath, w.renderedDir) {
+				if err := os.Remove(content.ImagePath); err != nil && !os.IsNotExist(err) {
+					logging.Logf("[RENDER_WORKER] Failed to delete old image %s: %v", content.ImagePath, err)
+				} else if err == nil {
+					logging.Logf("[RENDER_WORKER] Deleted old image: %s", content.ImagePath)
+				}
+			}
+		}
+		
+		// Delete database records
+		err = w.db.WithContext(ctx).
+			Where("user_plugin_id = ? AND width = ? AND height = ? AND bit_depth = ?",
+				userPlugin.ID, deviceModel.ScreenWidth, deviceModel.ScreenHeight, deviceModel.BitDepth).
+			Delete(&database.RenderedContent{}).Error
+		if err != nil {
+			logging.Logf("[RENDER_WORKER] Failed to clean up old content records: %v", err)
+		}
 	}
 
 	// Store rendered content record
@@ -294,6 +354,21 @@ func (w *RenderWorker) scheduleNextRender(ctx context.Context, userPlugin databa
 		return
 	}
 
+	// Check if there's already a pending job for this plugin instance
+	var existingCount int64
+	err := w.db.WithContext(ctx).Model(&database.RenderQueue{}).
+		Where("user_plugin_id = ? AND status = ?", userPlugin.ID, "pending").
+		Count(&existingCount).Error
+	if err != nil {
+		logging.Logf("[RENDER_WORKER] Failed to check existing jobs for %s: %v", userPlugin.ID, err)
+		return
+	}
+
+	if existingCount > 0 {
+		logging.Logf("[RENDER_WORKER] Skipping next render schedule for %s - already has pending job", userPlugin.Name)
+		return
+	}
+
 	nextRender := time.Now().Add(time.Duration(userPlugin.RefreshInterval) * time.Second)
 
 	renderJob := database.RenderQueue{
@@ -304,7 +379,7 @@ func (w *RenderWorker) scheduleNextRender(ctx context.Context, userPlugin databa
 		Status:       "pending",
 	}
 
-	err := w.db.WithContext(ctx).Create(&renderJob).Error
+	err = w.db.WithContext(ctx).Create(&renderJob).Error
 	if err != nil {
 		logging.Logf("[RENDER_WORKER] Failed to schedule next render: %v", err)
 	} else {
@@ -356,6 +431,94 @@ func (w *RenderWorker) CleanupOldContent(ctx context.Context, maxAge time.Durati
 
 	if len(oldContent) > 0 {
 		logging.Logf("[RENDER_WORKER] Cleaned up %d old rendered content items", len(oldContent))
+	}
+
+	return nil
+}
+
+// CleanupOldContentSmart removes old rendered content based on plugin refresh intervals
+func (w *RenderWorker) CleanupOldContentSmart(ctx context.Context) error {
+	// Find all unique UserPlugin IDs that have rendered content
+	var userPluginIDs []uuid.UUID
+	err := w.db.WithContext(ctx).
+		Model(&database.RenderedContent{}).
+		Distinct("user_plugin_id").
+		Pluck("user_plugin_id", &userPluginIDs).Error
+	if err != nil {
+		return fmt.Errorf("failed to get user plugin IDs: %w", err)
+	}
+
+	totalCleaned := 0
+	
+	for _, userPluginID := range userPluginIDs {
+		// Get the user plugin to access its refresh interval
+		var userPlugin database.UserPlugin
+		err := w.db.WithContext(ctx).First(&userPlugin, userPluginID).Error
+		if err != nil {
+			logging.Logf("[RENDER_WORKER] Skipping cleanup for missing plugin %s: %v", userPluginID, err)
+			continue
+		}
+
+		// Calculate retention period based on refresh interval (keep 2-3 refresh cycles)
+		// Minimum 1 hour, maximum 24 hours
+		refreshInterval := time.Duration(userPlugin.RefreshInterval) * time.Second
+		retentionPeriod := refreshInterval * 3 // Keep 3 refresh cycles
+		
+		// Apply bounds
+		minRetention := 1 * time.Hour
+		maxRetention := 24 * time.Hour
+		if retentionPeriod < minRetention {
+			retentionPeriod = minRetention
+		} else if retentionPeriod > maxRetention {
+			retentionPeriod = maxRetention
+		}
+		
+		cutoff := time.Now().Add(-retentionPeriod)
+		
+		// Find old content for this specific user plugin
+		var oldContent []database.RenderedContent
+		err = w.db.WithContext(ctx).
+			Where("user_plugin_id = ? AND rendered_at < ?", userPluginID, cutoff).
+			Find(&oldContent).Error
+		if err != nil {
+			logging.Logf("[RENDER_WORKER] Failed to find old content for plugin %s: %v", userPluginID, err)
+			continue
+		}
+		
+		if len(oldContent) == 0 {
+			continue
+		}
+
+		// Delete files for this plugin
+		filesDeleted := 0
+		for _, content := range oldContent {
+			if filepath.IsAbs(content.ImagePath) && filepath.HasPrefix(content.ImagePath, w.renderedDir) {
+				if err := os.Remove(content.ImagePath); err != nil && !os.IsNotExist(err) {
+					logging.Logf("[RENDER_WORKER] Failed to delete old image %s: %v", content.ImagePath, err)
+				} else if err == nil {
+					filesDeleted++
+				}
+			}
+		}
+		
+		// Delete database records for this plugin
+		err = w.db.WithContext(ctx).
+			Where("user_plugin_id = ? AND rendered_at < ?", userPluginID, cutoff).
+			Delete(&database.RenderedContent{}).Error
+		if err != nil {
+			logging.Logf("[RENDER_WORKER] Failed to delete old content records for plugin %s: %v", userPluginID, err)
+			continue
+		}
+		
+		totalCleaned += len(oldContent)
+		if len(oldContent) > 0 {
+			logging.Logf("[RENDER_WORKER] Plugin %s (refresh: %v): cleaned up %d items (retention: %v)",
+				userPlugin.Name, refreshInterval, len(oldContent), retentionPeriod)
+		}
+	}
+
+	if totalCleaned > 0 {
+		logging.Logf("[RENDER_WORKER] Smart cleanup completed: %d total items removed", totalCleaned)
 	}
 
 	return nil

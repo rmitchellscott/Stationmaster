@@ -14,6 +14,7 @@ import (
 type RenderPoller struct {
 	*BasePoller
 	renderWorker *rendering.RenderWorker
+	queueManager *rendering.QueueManager
 }
 
 // NewRenderPoller creates a new render poller
@@ -23,8 +24,11 @@ func NewRenderPoller(db *gorm.DB, staticDir string, config PollerConfig) (*Rende
 		return nil, fmt.Errorf("failed to create render worker: %w", err)
 	}
 
+	queueManager := rendering.NewQueueManager(db)
+
 	poller := &RenderPoller{
 		renderWorker: renderWorker,
+		queueManager: queueManager,
 	}
 
 	// Create base poller with our poll function
@@ -40,9 +44,14 @@ func (p *RenderPoller) poll(ctx context.Context) error {
 		return fmt.Errorf("failed to process render queue: %w", err)
 	}
 
-	// Clean up old content (older than 7 days)
-	if err := p.renderWorker.CleanupOldContent(ctx, 7*24*time.Hour); err != nil {
+	// Smart cleanup based on plugin refresh intervals
+	if err := p.renderWorker.CleanupOldContentSmart(ctx); err != nil {
 		return fmt.Errorf("failed to cleanup old content: %w", err)
+	}
+
+	// Cleanup old completed/failed/cancelled render jobs (keep 24 hours)
+	if err := p.queueManager.CleanupOldJobs(ctx, 24*time.Hour); err != nil {
+		return fmt.Errorf("failed to cleanup old render jobs: %w", err)
 	}
 
 	return nil

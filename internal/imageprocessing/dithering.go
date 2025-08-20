@@ -20,8 +20,8 @@ func DitherFloydSteinberg(img image.Image, bitDepth int) image.Image {
 	ditherer := dither.NewDitherer(palette)
 	ditherer.Matrix = dither.FloydSteinberg
 	
-	// Apply dithering
-	return ditherer.Dither(img)
+	// Apply dithering and return as paletted image for proper bit depth handling
+	return ditherer.DitherPaletted(img)
 }
 
 // createGrayscalePalette creates a grayscale color palette for the specified bit depth

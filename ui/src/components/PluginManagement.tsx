@@ -611,7 +611,6 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                                   v{plugin.version} by {plugin.author}
                                 </div>
                               </div>
-                              <Badge variant="outline" className="flex-shrink-0 text-xs">{plugin.type}</Badge>
                             </CardTitle>
                           </CardHeader>
                           <CardContent className="flex flex-col flex-grow pt-0">
@@ -681,7 +680,6 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                           v{selectedPlugin.version} by {selectedPlugin.author}
                         </div>
                       </div>
-                      <Badge variant="outline" className="text-xs">{selectedPlugin.type}</Badge>
                     </div>
                   </div>
 

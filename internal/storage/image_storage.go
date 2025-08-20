@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// ImageStorage handles storing and retrieving rendered images
+// ImageStorage handles minimal image storage operations for legacy compatibility
 type ImageStorage struct {
 	basePath string
 	baseURL  string
@@ -24,7 +24,7 @@ func NewImageStorage(basePath, baseURL string) *ImageStorage {
 	}
 }
 
-// StoreImage stores image data and returns a URL
+// StoreImage stores image data and returns a URL - used by legacy on-demand processing
 func (s *ImageStorage) StoreImage(imageData []byte, deviceID uuid.UUID, pluginType string) (string, error) {
 	// Ensure the base directory exists
 	if err := os.MkdirAll(s.basePath, 0755); err != nil {
@@ -47,36 +47,6 @@ func (s *ImageStorage) StoreImage(imageData []byte, deviceID uuid.UUID, pluginTy
 	// Return URL
 	imageURL := fmt.Sprintf("%s/%s", s.baseURL, filename)
 	return imageURL, nil
-}
-
-// CleanupOldImages removes images older than the specified duration
-func (s *ImageStorage) CleanupOldImages(maxAge time.Duration) error {
-	entries, err := os.ReadDir(s.basePath)
-	if err != nil {
-		return fmt.Errorf("failed to read image directory: %w", err)
-	}
-
-	cutoff := time.Now().Add(-maxAge)
-	
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		
-		info, err := entry.Info()
-		if err != nil {
-			continue
-		}
-		
-		if info.ModTime().Before(cutoff) {
-			fullPath := filepath.Join(s.basePath, entry.Name())
-			if err := os.Remove(fullPath); err != nil {
-				fmt.Printf("Failed to remove old image %s: %v\n", fullPath, err)
-			}
-		}
-	}
-	
-	return nil
 }
 
 // GetDefaultImageStorage returns a default image storage configuration

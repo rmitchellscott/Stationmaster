@@ -266,6 +266,13 @@ func DisplayHandler(c *gin.Context) {
 	// 2. Playlist item duration override (if any)
 	// 3. Device's stored refresh rate (fallback)
 
+	// Build base URL for image responses
+	scheme := "http"
+	if c.Request.TLS != nil {
+		scheme = "https"
+	}
+	baseURL := fmt.Sprintf("%s://%s", scheme, c.Request.Host)
+
 	// Determine device status
 	status := 0
 	if !device.IsClaimed {
@@ -278,11 +285,10 @@ func DisplayHandler(c *gin.Context) {
 			logging.Logf("[/api/display] Device %s has low battery (%.2fV), returning low battery image", device.MacAddress, device.BatteryVoltage)
 		}
 
-		// Get site URL for absolute URL construction
-		imageURL := "/assets/low_battery.png"
-		if siteURL, err := database.GetSystemSetting("site_url"); err == nil && siteURL != "" {
-			siteURL = strings.TrimSuffix(siteURL, "/")
-			imageURL = fmt.Sprintf("%s/assets/low_battery.png", siteURL)
+		// Use relative path for low battery image URL, then convert to absolute
+		imageURL := "/images/low_battery.png"
+		if strings.HasPrefix(imageURL, "/images/") {
+			imageURL = baseURL + imageURL
 		}
 
 		response := gin.H{
@@ -308,14 +314,7 @@ func DisplayHandler(c *gin.Context) {
 	}
 
 	// Check for firmware update AFTER device status is updated
-	firmwareUpdate := checkFirmwareUpdate(device)
-
-	// Build base URL for image responses
-	scheme := "http"
-	if c.Request.TLS != nil {
-		scheme = "https"
-	}
-	baseURL := fmt.Sprintf("%s://%s", scheme, c.Request.Host)
+	firmwareUpdate := checkFirmwareUpdate(c, device)
 
 	// Process active plugins and generate response
 	processor := GetPluginProcessor()
@@ -339,6 +338,8 @@ func DisplayHandler(c *gin.Context) {
 					response["image_url"] = baseURL + imageURLStr
 				} else if strings.HasPrefix(imageURLStr, "static/rendered/") {
 					response["image_url"] = baseURL + "/" + imageURLStr
+				} else if strings.HasPrefix(imageURLStr, "/images/") {
+					response["image_url"] = baseURL + imageURLStr
 				}
 			}
 		}
@@ -368,7 +369,7 @@ func DisplayHandler(c *gin.Context) {
 			
 			// If sleep screen is enabled, override the image URL
 			if device.SleepShowScreen {
-				imageURL = "https://usetrmnl.com/images/setup/sleep.png"
+				imageURL = "/images/sleep.png"
 				filename = "sleep"
 			}
 			
@@ -406,7 +407,7 @@ func DisplayHandler(c *gin.Context) {
 		
 		// If sleep screen is enabled, override the image URL
 		if device.SleepShowScreen {
-			response["image_url"] = "https://usetrmnl.com/images/setup/sleep.png"
+			response["image_url"] = "/images/sleep.png"
 			response["filename"] = "sleep"
 		}
 		
@@ -897,7 +898,7 @@ type FirmwareUpdateResponse struct {
 }
 
 // checkFirmwareUpdate checks if device needs a firmware update and can receive one
-func checkFirmwareUpdate(device *database.Device) FirmwareUpdateResponse {
+func checkFirmwareUpdate(c *gin.Context, device *database.Device) FirmwareUpdateResponse {
 	// Default response - no firmware update
 	defaultResponse := FirmwareUpdateResponse{
 		UpdateFirmware: false,
@@ -958,17 +959,15 @@ func checkFirmwareUpdate(device *database.Device) FirmwareUpdateResponse {
 		}
 	}
 
-	// 6. Generate firmware URL - try to use absolute URL if site_url is configured
-	firmwareURL := fmt.Sprintf("/files/firmware/firmware_%s.bin", latestFirmware.Version)
-
-	// Get site URL from settings to create absolute URL
-	if siteURL, err := database.GetSystemSetting("site_url"); err == nil && siteURL != "" {
-		siteURL = strings.TrimSuffix(siteURL, "/") // Remove trailing slash
-		firmwareURL = fmt.Sprintf("%s/files/firmware/firmware_%s.bin", siteURL, latestFirmware.Version)
-		logging.Logf("[FIRMWARE UPDATE] Using absolute URL: %s", firmwareURL)
-	} else {
-		logging.Logf("[FIRMWARE UPDATE] Using relative URL (no site_url configured): %s", firmwareURL)
+	// 6. Generate firmware URL using request-based host return
+	scheme := "http"
+	if c.Request.TLS != nil {
+		scheme = "https"
 	}
+	baseURL := fmt.Sprintf("%s://%s", scheme, c.Request.Host)
+	firmwareURL := fmt.Sprintf("%s/files/firmware/firmware_%s.bin", baseURL, latestFirmware.Version)
+	
+	logging.Logf("[FIRMWARE UPDATE] Using request-based URL: %s", firmwareURL)
 
 	logging.Logf("[FIRMWARE UPDATE] Device %s (v%s) will be updated to v%s",
 		device.MacAddress, device.FirmwareVersion, latestFirmware.Version)
@@ -1250,6 +1249,8 @@ func CurrentScreenHandler(c *gin.Context) {
 					response["image_url"] = baseURL + imageURLStr
 				} else if strings.HasPrefix(imageURLStr, "static/rendered/") {
 					response["image_url"] = baseURL + "/" + imageURLStr
+				} else if strings.HasPrefix(imageURLStr, "/images/") {
+					response["image_url"] = baseURL + imageURLStr
 				}
 			}
 		}

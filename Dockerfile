@@ -59,6 +59,7 @@ RUN apk add --no-cache \
 
 WORKDIR /app
 COPY --from=stationmaster-builder /app/stationmaster .
+COPY --from=stationmaster-builder /app/images ./images
 
 # Create data directory and setup for Chromium
 RUN mkdir -p /data /app/static/rendered \

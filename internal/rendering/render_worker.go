@@ -2,6 +2,8 @@ package rendering
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,6 +23,16 @@ type RenderWorker struct {
 	renderer    *HTMLRenderer
 	staticDir   string
 	renderedDir string
+}
+
+// generateRandomString creates a cryptographically secure random string
+func generateRandomString(length int) string {
+	bytes := make([]byte, length/2)
+	if _, err := rand.Read(bytes); err != nil {
+		// Fallback to timestamp-based randomness if crypto/rand fails
+		return fmt.Sprintf("%x", time.Now().UnixNano())[:length]
+	}
+	return hex.EncodeToString(bytes)[:length]
 }
 
 // NewRenderWorker creates a new render worker instance
@@ -233,13 +245,30 @@ func (w *RenderWorker) renderForDeviceModel(ctx context.Context, userPlugin data
 	var fileSize int64
 
 	if plugin.PluginType() == plugins.PluginTypeImage {
-		// For image plugins, we just store the URL reference
-		imageURL, ok := plugins.GetImageURL(response)
-		if !ok {
-			return fmt.Errorf("image plugin response missing image URL")
+		// Check if plugin provided image data (new approach)
+		if imageData, ok := plugins.GetImageData(response); ok {
+			// Save image data to disk using same pattern as data plugins
+			randomString := generateRandomString(10)
+			filename := fmt.Sprintf("%s_%s_%dx%d_%d_%s.png",
+				userPlugin.ID, userPlugin.Plugin.Type,
+				deviceModel.ScreenWidth, deviceModel.ScreenHeight, deviceModel.BitDepth, randomString)
+			imagePath = filepath.Join(w.renderedDir, filename)
+
+			err = os.WriteFile(imagePath, imageData, 0644)
+			if err != nil {
+				return fmt.Errorf("failed to save image plugin image: %w", err)
+			}
+
+			fileSize = int64(len(imageData))
+		} else {
+			// Fallback to URL reference for backward compatibility
+			imageURL, ok := plugins.GetImageURL(response)
+			if !ok {
+				return fmt.Errorf("image plugin response missing image URL and image data")
+			}
+			imagePath = imageURL
+			fileSize = 0 // URL reference, no local file
 		}
-		imagePath = imageURL
-		fileSize = 0 // URL reference, no local file
 	} else if plugin.PluginType() == plugins.PluginTypeData {
 		// For data plugins, render to image
 		dataPlugin, ok := plugin.(plugins.DataPlugin)
@@ -275,9 +304,10 @@ func (w *RenderWorker) renderForDeviceModel(ctx context.Context, userPlugin data
 		}
 
 		// Save image to disk
-		filename := fmt.Sprintf("%s_%s_%dx%d_%d.png",
+		randomString := generateRandomString(10)
+		filename := fmt.Sprintf("%s_%s_%dx%d_%d_%s.png",
 			userPlugin.ID, userPlugin.Plugin.Type,
-			deviceModel.ScreenWidth, deviceModel.ScreenHeight, deviceModel.BitDepth)
+			deviceModel.ScreenWidth, deviceModel.ScreenHeight, deviceModel.BitDepth, randomString)
 		imagePath = filepath.Join(w.renderedDir, filename)
 
 		err = os.WriteFile(imagePath, imageData, 0644)

@@ -17,6 +17,16 @@ func CreateImageResponse(imageURL, filename string, refreshRate int) PluginRespo
 	}
 }
 
+// CreateImageDataResponse creates a response for image-type plugins with raw image data
+func CreateImageDataResponse(imageData []byte, filename string, refreshRate int) PluginResponse {
+	return gin.H{
+		"plugin_type":  string(PluginTypeImage),
+		"image_data":   imageData,
+		"filename":     filename,
+		"refresh_rate": fmt.Sprintf("%d", refreshRate),
+	}
+}
+
 // CreateDataResponse creates a response for data-type plugins
 func CreateDataResponse(data map[string]interface{}, template string, refreshRate int) PluginResponse {
 	return gin.H{
@@ -64,6 +74,14 @@ func GetImageURL(response PluginResponse) (string, bool) {
 		return url, true
 	}
 	return "", false
+}
+
+// GetImageData extracts the image data from an image response
+func GetImageData(response PluginResponse) ([]byte, bool) {
+	if data, ok := response["image_data"].([]byte); ok {
+		return data, true
+	}
+	return nil, false
 }
 
 // GetData extracts the data from a data response

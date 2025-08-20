@@ -8,7 +8,6 @@ import (
 
 	"github.com/rmitchellscott/stationmaster/internal/imageprocessing"
 	"github.com/rmitchellscott/stationmaster/internal/plugins"
-	"github.com/rmitchellscott/stationmaster/internal/storage"
 )
 
 // ImageDisplayPlugin implements an image plugin that displays a single image from a URL
@@ -134,27 +133,19 @@ func (p *ImageDisplayPlugin) Process(ctx plugins.PluginContext) (plugins.PluginR
 		pngData = buf.Bytes()
 	}
 
-	// Store the processed image
-	imageStorage := storage.GetDefaultImageStorage()
-	storedImageURL, err := imageStorage.StoreImage(pngData, ctx.Device.ID, p.Type())
-	if err != nil {
-		return plugins.CreateErrorResponse(fmt.Sprintf("Failed to store processed image: %v", err)),
-			fmt.Errorf("failed to store processed image: %w", err)
-	}
-
 	// Generate filename
 	filename := fmt.Sprintf("image_display_%s_%dx%d.png",
 		time.Now().Format("20060102_150405"),
 		ctx.Device.DeviceModel.ScreenWidth,
 		ctx.Device.DeviceModel.ScreenHeight)
 
-	// Return image response
+	// Return image data response (RenderWorker will handle storage)
 	refreshRate := ctx.UserPlugin.RefreshInterval
 	if refreshRate < 3600 { // Minimum 1 hour for image display to avoid excessive downloads
 		refreshRate = 3600
 	}
 
-	return plugins.CreateImageResponse(storedImageURL, filename, refreshRate), nil
+	return plugins.CreateImageDataResponse(pngData, filename, refreshRate), nil
 }
 
 // Register the plugin when this package is imported

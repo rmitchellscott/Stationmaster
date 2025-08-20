@@ -2,6 +2,8 @@ package trmnl
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -25,6 +27,16 @@ type PluginProcessor struct {
 	imageStorage *storage.ImageStorage
 	db           *gorm.DB
 	queueManager *rendering.QueueManager
+}
+
+// generateRandomString creates a cryptographically secure random string
+func generateRandomString(length int) string {
+	bytes := make([]byte, length/2)
+	if _, err := rand.Read(bytes); err != nil {
+		// Fallback to timestamp-based randomness if crypto/rand fails
+		return fmt.Sprintf("%x", time.Now().UnixNano())[:length]
+	}
+	return hex.EncodeToString(bytes)[:length]
 }
 
 // NewPluginProcessor creates a new plugin processor
@@ -207,9 +219,31 @@ func (pp *PluginProcessor) processActivePluginsNew(device *database.Device, acti
 							}
 						}
 					} else if plugins.IsImageResponse(response) {
-						// Image plugin - already processed and ready to serve
-						logging.Logf("[PLUGIN] Image plugin %s processed successfully", plugin.Type())
-						// Response is already in the correct format from the plugin
+						// Image plugin - check if it has image data that needs to be stored
+						if imageData, ok := plugins.GetImageData(response); ok {
+							// Store the image data and replace with URL
+							randomString := generateRandomString(10)
+							filename := fmt.Sprintf("%s_%s_%s.png", plugin.Type(), time.Now().Format("20060102_150405"), randomString)
+							imageURL, err := pp.imageStorage.StoreImage(imageData, device.ID, plugin.Type())
+							if err != nil {
+								logging.Logf("[PLUGIN] Failed to store image data for %s: %v", plugin.Type(), err)
+								response = gin.H{
+									"image_url": getImageURLForDevice(device),
+									"filename":  fmt.Sprintf("store_error_%s", time.Now().Format("20060102150405")),
+								}
+							} else {
+								// Replace image_data with image_url
+								response = gin.H{
+									"image_url":    imageURL,
+									"filename":     filename,
+									"refresh_rate": response["refresh_rate"],
+								}
+								logging.Logf("[PLUGIN] Stored image data for %s at %s", plugin.Type(), imageURL)
+							}
+						} else {
+							// Already has URL, ready to serve
+							logging.Logf("[PLUGIN] Image plugin %s processed successfully", plugin.Type())
+						}
 					} else {
 						// Unknown plugin response type
 						logging.Logf("[PLUGIN] Unknown plugin response type for %s", plugin.Type())
@@ -382,6 +416,32 @@ func (pp *PluginProcessor) processCurrentPluginNew(device *database.Device, acti
 						"image_url": getImageURLForDevice(device),
 						"filename":  fmt.Sprintf("render_error_%s", time.Now().Format("20060102150405")),
 					}
+				}
+			} else if plugins.IsImageResponse(response) {
+				// Image plugin - check if it has image data that needs to be stored
+				if imageData, ok := plugins.GetImageData(response); ok {
+					// Store the image data and replace with URL
+					randomString := generateRandomString(10)
+					filename := fmt.Sprintf("%s_%s_%s.png", plugin.Type(), time.Now().Format("20060102_150405"), randomString)
+					imageURL, err := pp.imageStorage.StoreImage(imageData, device.ID, plugin.Type())
+					if err != nil {
+						logging.Logf("[PLUGIN] Failed to store image data for %s: %v", plugin.Type(), err)
+						response = gin.H{
+							"image_url": getImageURLForDevice(device),
+							"filename":  fmt.Sprintf("store_error_%s", time.Now().Format("20060102150405")),
+						}
+					} else {
+						// Replace image_data with image_url
+						response = gin.H{
+							"image_url":    imageURL,
+							"filename":     filename,
+							"refresh_rate": response["refresh_rate"],
+						}
+						logging.Logf("[PLUGIN] Stored image data for %s at %s (current)", plugin.Type(), imageURL)
+					}
+				} else {
+					// Already has URL, ready to serve
+					logging.Logf("[PLUGIN] Image plugin %s processed successfully (current)", plugin.Type())
 				}
 			}
 		}

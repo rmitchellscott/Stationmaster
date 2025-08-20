@@ -205,9 +205,6 @@ func main() {
 	router.GET("/api/trmnl/firmware/:version/download", trmnl.FirmwareDownloadHandler)
 	router.POST("/api/trmnl/firmware/update-complete", trmnl.FirmwareUpdateCompleteHandler)
 
-	// Static assets (no authentication required)
-	router.Static("/assets", "./assets")
-	router.Static("/static/rendered", "./static/rendered")
 
 	// Public firmware downloads (no authentication required)
 	// Custom handler to serve firmware files - supports both proxy and download modes
@@ -474,6 +471,25 @@ func main() {
 	// Config endpoint
 	router.GET("/api/config", handlers.ConfigHandler)
 
+	// Static images (no authentication required)
+	// Use explicit handlers to serve static files
+	router.GET("/images/*filepath", func(c *gin.Context) {
+		filepath := c.Param("filepath")
+		// Remove leading slash from filepath
+		if strings.HasPrefix(filepath, "/") {
+			filepath = filepath[1:]
+		}
+		c.File("./images/" + filepath)
+	})
+	router.GET("/static/rendered/*filepath", func(c *gin.Context) {
+		filepath := c.Param("filepath")
+		// Remove leading slash from filepath
+		if strings.HasPrefix(filepath, "/") {
+			filepath = filepath[1:]
+		}
+		c.File("./static/rendered/" + filepath)
+	})
+
 	// Serve UI
 	router.NoRoute(func(c *gin.Context) {
 			p := strings.TrimPrefix(c.Request.URL.Path, "/")
@@ -493,10 +509,6 @@ func main() {
 			}
 
 			if stat, err := fs.Stat(uiFS, p); err != nil || stat.IsDir() {
-				if strings.HasPrefix(p, "assets/") {
-					c.AbortWithStatus(http.StatusNotFound)
-					return
-				}
 				p = "index.html"
 				if p == "index.html" {
 					envUsername := config.Get("AUTH_USERNAME", "")

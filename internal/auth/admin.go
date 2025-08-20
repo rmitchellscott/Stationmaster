@@ -76,7 +76,7 @@ func GetSystemStatusHandler(c *gin.Context) {
 	}
 
 	// Get system settings
-	registrationEnabled, _ := database.GetSystemSetting("registration_enabled")
+	registrationEnabled, registrationLocked := database.GetRegistrationSetting()
 	maxAPIKeys, _ := database.GetSystemSetting("max_api_keys_per_user")
 	siteURL, _ := database.GetSystemSetting("site_url")
 
@@ -107,9 +107,10 @@ func GetSystemStatusHandler(c *gin.Context) {
 			"status":     smtpStatus,
 		},
 		"settings": gin.H{
-			"registration_enabled":  registrationEnabled,
-			"max_api_keys_per_user": maxAPIKeys,
-			"site_url":              siteURL,
+			"registration_enabled":        registrationEnabled,
+			"registration_enabled_locked": registrationLocked,
+			"max_api_keys_per_user":       maxAPIKeys,
+			"site_url":                    siteURL,
 		},
 		"auth": gin.H{
 			"oidc_enabled":       oidcEnabled,
@@ -139,6 +140,12 @@ func UpdateSystemSettingHandler(c *gin.Context) {
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error_type": "invalid_request"})
+		return
+	}
+
+	// Check if registration_enabled is locked by environment variable
+	if req.Key == "registration_enabled" && database.IsRegistrationSettingLocked() {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Registration setting is controlled by environment variable"})
 		return
 	}
 

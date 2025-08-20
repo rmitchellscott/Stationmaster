@@ -56,13 +56,8 @@ func GetRegistrationStatusHandler(c *gin.Context) {
 		return
 	}
 
-	// Check if registration is enabled
-	regEnabled, err := database.GetSystemSetting("registration_enabled")
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"enabled": false})
-		return
-	}
-
+	// Check if registration is enabled (environment variable takes precedence)
+	regEnabled, _ := database.GetRegistrationSetting()
 	c.JSON(http.StatusOK, gin.H{"enabled": regEnabled == "true"})
 }
 
@@ -82,8 +77,8 @@ func PublicRegisterHandler(c *gin.Context) {
 
 	// Allow registration if no users exist, otherwise check if registration is enabled
 	if userCount > 0 {
-		regEnabled, err := database.GetSystemSetting("registration_enabled")
-		if err != nil || regEnabled != "true" {
+		regEnabled, _ := database.GetRegistrationSetting()
+		if regEnabled != "true" {
 			c.JSON(http.StatusForbidden, gin.H{"error": "User registration is disabled"})
 			return
 		}

@@ -8,7 +8,8 @@ import { Logo } from '@/components/Logo';
 import { AuthProvider, useAuth } from '@/components/AuthProvider';
 import { ConfigProvider } from '@/components/ConfigProvider';
 import { LogoutButton } from '@/components/LogoutButton';
-import { UserSettings } from '@/components/UserSettings';
+import { UserSettingsPage } from '@/components/UserSettingsPage';
+import { AdminPage } from '@/components/AdminPage';
 import { AdminPanel } from '@/components/AdminPanel';
 import { PasswordReset } from '@/components/PasswordReset';
 import { RegisterForm } from '@/components/RegisterForm';
@@ -19,11 +20,12 @@ import { MobileMenu } from '@/components/MobileMenu';
 function AppContent() {
   const { t } = useTranslation();
   const { isAuthenticated, multiUserMode, user } = useAuth();
-  const [showUserSettings, setShowUserSettings] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   
   const isPasswordResetPage = window.location.pathname === '/reset-password' || window.location.search.includes('token=');
   const isRegistrationPage = window.location.pathname === '/register';
+  const isSettingsPage = window.location.pathname === '/settings';
+  const isAdminPage = window.location.pathname === '/admin';
 
   if (isPasswordResetPage) {
     return (
@@ -63,6 +65,52 @@ function AppContent() {
     );
   }
 
+  if (isSettingsPage) {
+    const handleNavigateBack = () => {
+      window.history.back();
+    };
+
+    return (
+      <>
+        <header className="flex items-center justify-between px-8 py-2 bg-background">
+          <button onClick={handleNavigateBack} className="cursor-pointer">
+            <Logo className="h-16 w-32 text-foreground dark:text-foreground-dark" />
+          </button>
+          <div className="flex items-center gap-4">
+            <LanguageSwitcher />
+            <ThemeSwitcher size={24} />
+          </div>
+        </header>
+        <main>
+          <UserSettingsPage onNavigateBack={handleNavigateBack} />
+        </main>
+      </>
+    );
+  }
+
+  if (isAdminPage) {
+    const handleNavigateBack = () => {
+      window.history.back();
+    };
+
+    return (
+      <>
+        <header className="flex items-center justify-between px-8 py-2 bg-background">
+          <button onClick={handleNavigateBack} className="cursor-pointer">
+            <Logo className="h-16 w-32 text-foreground dark:text-foreground-dark" />
+          </button>
+          <div className="flex items-center gap-4">
+            <LanguageSwitcher />
+            <ThemeSwitcher size={24} />
+          </div>
+        </header>
+        <main>
+          <AdminPage onNavigateBack={handleNavigateBack} />
+        </main>
+      </>
+    );
+  }
+
   return (
     <>
       <header className="flex items-center justify-between px-8 py-2 bg-background">
@@ -73,7 +121,7 @@ function AppContent() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setShowUserSettings(true)}
+                onClick={() => window.location.href = '/settings'}
                 className="flex items-center gap-2"
               >
                 <Settings className="h-4 w-4" />
@@ -84,7 +132,7 @@ function AppContent() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => setShowAdminPanel(true)}
+                  onClick={() => window.location.href = '/admin'}
                   className="flex items-center gap-2"
                 >
                   <Shield className="h-4 w-4" />
@@ -101,8 +149,8 @@ function AppContent() {
           <MobileMenu
             showSettings={isAuthenticated && multiUserMode}
             showAdmin={isAuthenticated && multiUserMode && !!user?.is_admin}
-            onOpenSettings={() => setShowUserSettings(true)}
-            onOpenAdmin={() => setShowAdminPanel(true)}
+            onOpenSettings={() => window.location.href = '/settings'}
+            onOpenAdmin={() => window.location.href = '/admin'}
           />
         </div>
       </header>
@@ -111,10 +159,6 @@ function AppContent() {
       </main>
       
       {/* Modals */}
-      <UserSettings 
-        isOpen={showUserSettings} 
-        onClose={() => setShowUserSettings(false)} 
-      />
       <AdminPanel 
         isOpen={showAdminPanel} 
         onClose={() => setShowAdminPanel(false)} 

@@ -36,8 +36,10 @@ import (
 	// Plugin imports for auto-registration
 	_ "github.com/rmitchellscott/stationmaster/internal/plugins/alias"
 	_ "github.com/rmitchellscott/stationmaster/internal/plugins/core_proxy"
+	_ "github.com/rmitchellscott/stationmaster/internal/plugins/days_left"
 	_ "github.com/rmitchellscott/stationmaster/internal/plugins/image_display"
 	_ "github.com/rmitchellscott/stationmaster/internal/plugins/redirect"
+	_ "github.com/rmitchellscott/stationmaster/internal/plugins/screenshot"
 )
 
 //go:generate npm --prefix ui install

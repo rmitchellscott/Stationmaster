@@ -70,6 +70,12 @@ func (p *CoreProxyPlugin) ConfigSchema() string {
 				"default": 5,
 				"minimum": 1,
 				"maximum": 15
+			},
+			"pass_through_refresh_rate": {
+				"type": "boolean",
+				"title": "Pass through refresh rate from core",
+				"description": "Use refresh rate from TRMNL core response",
+				"default": false
 			}
 		},
 		"required": ["device_mac", "access_token"]
@@ -188,20 +194,27 @@ func (p *CoreProxyPlugin) Process(ctx plugins.PluginContext) (plugins.PluginResp
 		filename = fname
 	}
 
-	// Extract refresh rate with fallback
-	refreshRate := 3600 // Default 1 hour
-	if rate, ok := trmnlResponse["refresh_rate"]; ok {
-		if rateFloat, ok := rate.(float64); ok {
-			refreshRate = int(rateFloat)
-		} else if rateStr, ok := rate.(string); ok {
-			var parsedRate int
-			if _, err := fmt.Sscanf(rateStr, "%d", &parsedRate); err == nil {
-				refreshRate = parsedRate
+	// Check if we should pass through refresh rate from core
+	passThrough := ctx.GetBoolSetting("pass_through_refresh_rate", false)
+
+	if passThrough {
+		// Extract refresh rate with fallback
+		refreshRate := 3600 // Default 1 hour
+		if rate, ok := trmnlResponse["refresh_rate"]; ok {
+			if rateFloat, ok := rate.(float64); ok {
+				refreshRate = int(rateFloat)
+			} else if rateStr, ok := rate.(string); ok {
+				var parsedRate int
+				if _, err := fmt.Sscanf(rateStr, "%d", &parsedRate); err == nil {
+					refreshRate = parsedRate
+				}
 			}
 		}
+		return plugins.CreateImageResponse(imageURL, filename, refreshRate), nil
+	} else {
+		// Don't use refresh rate from core
+		return plugins.CreateImageResponseWithoutRefresh(imageURL, filename), nil
 	}
-
-	return plugins.CreateImageResponse(imageURL, filename, refreshRate), nil
 }
 
 // Register the plugin when this package is imported

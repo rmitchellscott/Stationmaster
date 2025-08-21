@@ -48,7 +48,8 @@ func syncSinglePlugin(pluginService *database.PluginService, pluginInfo plugins.
 			log.Printf("[PLUGIN_SYNC] Updating existing plugin '%s' (was type '%s', now type '%s')", 
 				pluginInfo.Name, nameConflictPlugin.Type, pluginInfo.Type)
 			
-			// Update the existing plugin to match the registry (except name)
+			// Update the existing plugin to match the registry
+			nameConflictPlugin.Name = pluginInfo.Name
 			nameConflictPlugin.Type = pluginInfo.Type
 			nameConflictPlugin.Description = pluginInfo.Description
 			nameConflictPlugin.ConfigSchema = pluginInfo.ConfigSchema
@@ -56,7 +57,6 @@ func syncSinglePlugin(pluginService *database.PluginService, pluginInfo plugins.
 			nameConflictPlugin.Author = pluginInfo.Author
 			nameConflictPlugin.RequiresProcessing = pluginInfo.RequiresProcessing
 			nameConflictPlugin.IsActive = true
-			// Keep existing name to avoid conflicts
 			
 			return pluginService.UpdatePlugin(&nameConflictPlugin)
 		}
@@ -75,13 +75,13 @@ func syncSinglePlugin(pluginService *database.PluginService, pluginInfo plugins.
 		return err
 	}
 	
-	// Plugin exists by type, update it to ensure it's current (except name)
+	// Plugin exists by type, update it to ensure it's current
 	log.Printf("[PLUGIN_SYNC] Updating existing plugin: %s (%s)", pluginInfo.Name, pluginInfo.Type)
+	existingPlugin.Name = pluginInfo.Name
 	existingPlugin.Description = pluginInfo.Description
 	existingPlugin.ConfigSchema = pluginInfo.ConfigSchema
 	existingPlugin.RequiresProcessing = pluginInfo.RequiresProcessing
 	existingPlugin.IsActive = true
-	// Keep existing name to avoid conflicts
 	
 	return pluginService.UpdatePlugin(existingPlugin)
 }

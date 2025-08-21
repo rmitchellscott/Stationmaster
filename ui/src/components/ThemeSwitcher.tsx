@@ -81,6 +81,7 @@ export default function ThemeSwitcher({
 
   const { t } = useTranslation();
 
+  
   if (!mounted || !theme || !systemTheme) {
     return null;
   }

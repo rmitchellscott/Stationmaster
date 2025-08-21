@@ -1,6 +1,7 @@
 'use client'
 
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
+import { createContext, useContext, useEffect, useState, useCallback, useRef, ReactNode } from 'react'
+import { useLocation } from 'react-router-dom'
 import { useConfig } from './ConfigProvider'
 
 const AUTH_CHECK_EXPIRY_MS = 5 * 60 * 1000; // 5 minutes
@@ -45,6 +46,14 @@ interface AuthProviderProps {
 }
 
 export function AuthProvider({ children }: AuthProviderProps) {
+  const location = useLocation();
+  const isPublicRoute = ['/reset-password', '/register'].includes(location.pathname);
+  
+  // Track route transitions to detect public → protected transitions
+  const [prevRoute, setPrevRoute] = useState<string | null>(null);
+  const [wasOnPublicRoute, setWasOnPublicRoute] = useState<boolean>(false);
+  
+  
   const storedConf =
     typeof window !== 'undefined' ? localStorage.getItem('authConfigured') : null
   const initialAuthConfigured = storedConf === 'true'
@@ -57,7 +66,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const { config: configData } = useConfig()
   
   // Add request deduplication for auth checks
-  const [authPromise, setAuthPromise] = useState<Promise<void> | null>(null)
+  const authPromise = useRef<Promise<void> | null>(null)
+  // Track when auth has been explicitly cleared to prevent re-authentication
+  const explicitlyCleared = useRef<boolean>(false)
   
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
@@ -86,12 +97,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
   })
   const [isLoading, setIsLoading] = useState<boolean>(true) // Always start loading
 
-  const checkAuth = async () => {
+  const checkAuth = useCallback(async () => {
     if (!configData) return
     
     // If an auth check is already in progress, return the existing promise
-    if (authPromise) {
-      return authPromise
+    if (authPromise.current) {
+      return authPromise.current
     }
 
     const promise = (async () => {
@@ -213,13 +224,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
       if (typeof window !== 'undefined') {
         document.documentElement.classList.remove('auth-check')
       }
-      setAuthPromise(null) // Clear promise after completion
+      authPromise.current = null // Clear promise after completion
     }
     })()
 
-    setAuthPromise(promise)
+    authPromise.current = promise
     return promise
-  }
+  }, [configData])
 
   const login = async () => {
     // Don't set isAuthenticated immediately
@@ -252,16 +263,103 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   }
 
+  // Track route transitions
   useEffect(() => {
-    if (configData) {
+    if (prevRoute !== null) { // Skip initial load
+      const wasPublic = ['/reset-password', '/register'].includes(prevRoute);
+      const isPublicToProtected = wasPublic && !isPublicRoute;
+      
+      if (isPublicToProtected) {
+        // Clear any potentially corrupted auth state
+        authPromise.current = null;
+        setIsLoading(true);
+        setIsAuthenticated(false); // Force unauthenticated state initially
+        setUser(null);
+        
+        if (explicitlyCleared.current) {
+          // Auth was explicitly cleared - force login requirement without checkAuth
+          setAuthConfigured(true);
+          setIsLoading(false);
+          explicitlyCleared.current = false; // Reset flag
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('authConfigured', 'true');
+            localStorage.setItem('authExpiry', '0');
+            localStorage.setItem('lastAuthCheck', '0');
+          }
+        } else {
+          // Normal transition - set up auth and check
+          setAuthConfigured(true); // Ensure auth is required to show login form
+          // Clear localStorage auth state
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('authExpiry', '0');
+            localStorage.setItem('lastAuthCheck', '0');
+            localStorage.setItem('authConfigured', 'true'); // Force auth required state
+          }
+          // Force fresh auth check
+          if (configData) {
+            checkAuth();
+          }
+        }
+      }
+      
+      // When navigating TO a public route, fully logout to prevent stale data
+      if (!wasPublic && isPublicRoute) {
+        // Mark as explicitly cleared to prevent re-authentication
+        explicitlyCleared.current = true;
+        
+        // Call logout endpoint to invalidate backend session/JWT
+        if (authConfigured) {
+          try {
+            fetch('/api/auth/logout', { 
+              method: 'POST',
+              credentials: 'include'
+            }).catch(() => {
+              // Handle error silently - we're clearing state anyway
+            });
+          } catch {
+            // Handle error silently
+          }
+        }
+        
+        // Clear all frontend state
+        setIsAuthenticated(false);
+        setUser(null);
+        setAuthConfigured(false);
+        setUiSecret(null);
+        
+        // Clear all localStorage auth data
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('authExpiry', '0');
+          localStorage.setItem('lastAuthCheck', '0');
+          localStorage.removeItem('authConfigured');
+        }
+      }
+    }
+    
+    // Update tracking state
+    setPrevRoute(location.pathname);
+    setWasOnPublicRoute(isPublicRoute);
+  }, [location.pathname, isPublicRoute, configData]);
+
+  useEffect(() => {
+    if (configData && !isPublicRoute) {
       // Set multi-user mode and auth methods from config
       setMultiUserMode(configData.multiUserMode || false)
       setOidcEnabled(configData.oidcEnabled || false)
       setProxyAuthEnabled(configData.proxyAuthEnabled || false)
       
-      checkAuth()
+      // Only run auth check if we haven't already done it via route transition
+      if (!authPromise.current) {
+        checkAuth()
+      }
+    } else if (isPublicRoute) {
+      // For public routes, we should also remove the auth-check class and stop loading
+      setIsLoading(false)
+      if (typeof window !== 'undefined') {
+        document.documentElement.classList.remove('auth-check')
+      }
     }
-  }, [configData])
+  }, [configData, isPublicRoute])
 
   useEffect(() => {
     if (!isLoading && typeof window !== 'undefined') {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +15,7 @@ interface LoginFormProps {
 }
 
 export function LoginForm({ onLogin }: LoginFormProps) {
+  const navigate = useNavigate();
   const { t } = useTranslation();
   const { multiUserMode } = useAuth();
   const { config } = useConfig();
@@ -169,7 +171,7 @@ export function LoginForm({ onLogin }: LoginFormProps) {
                     type="button" 
                     variant="link" 
                     size="sm"
-                    onClick={() => window.location.href = '/reset-password'}
+                    onClick={() => navigate('/reset-password')}
                     disabled={loading}
                     className="text-sm text-muted-foreground hover:text-foreground p-0 h-auto justify-start"
                   >
@@ -181,7 +183,7 @@ export function LoginForm({ onLogin }: LoginFormProps) {
                     type="button" 
                     variant="link" 
                     size="sm"
-                    onClick={() => window.location.href = '/register'}
+                    onClick={() => navigate('/register')}
                     disabled={loading}
                     className="text-sm text-muted-foreground hover:text-foreground p-0 h-auto justify-start"
                   >

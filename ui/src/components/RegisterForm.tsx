@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,8 +9,12 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { ArrowLeft } from "lucide-react";
+import { Logo } from "@/components/Logo";
+import ThemeSwitcher from "@/components/ThemeSwitcher";
+import LanguageSwitcher from "@/components/LanguageSwitcher";
 
 export function RegisterForm() {
+  const navigate = useNavigate();
   const { t } = useTranslation();
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
@@ -123,7 +128,7 @@ export function RegisterForm() {
               <Button 
                 variant="outline" 
                 className="w-full"
-                onClick={() => window.location.href = '/login'}
+                onClick={() => navigate('/')}
               >
                 <ArrowLeft className="mr-2 h-4 w-4" />
                 {t("register.back_to_login")}
@@ -151,7 +156,7 @@ export function RegisterForm() {
             <div className="mt-4">
               <Button 
                 className="w-full"
-                onClick={() => window.location.href = '/login'}
+                onClick={() => navigate('/')}
               >
                 {t("register.login_now")}
               </Button>
@@ -163,8 +168,18 @@ export function RegisterForm() {
   }
 
   return (
-    <div className="bg-background pt-0 pb-8 px-8">
-      <Card className="max-w-md mx-auto bg-card">
+    <>
+      <header className="flex items-center justify-between px-8 py-2 bg-background">
+        <button onClick={() => navigate('/')} className="cursor-pointer">
+          <Logo className="h-16 w-32 text-foreground dark:text-foreground-dark" />
+        </button>
+        <div className="flex items-center gap-4">
+          <LanguageSwitcher />
+          <ThemeSwitcher size={24} />
+        </div>
+      </header>
+      <main className="bg-background pt-0 pb-8 px-8">
+        <Card className="max-w-md mx-auto bg-card">
         <CardHeader>
           <CardTitle className="text-xl">
             {t("register.title")}
@@ -244,7 +259,7 @@ export function RegisterForm() {
               </Button>
               <Button 
                 variant="outline" 
-                onClick={() => window.location.href = '/login'}
+                onClick={() => navigate('/')}
                 className="w-full"
               >
                 {t("register.already_have_account")}
@@ -252,7 +267,8 @@ export function RegisterForm() {
             </div>
           </form>
         </CardContent>
-      </Card>
-    </div>
+        </Card>
+      </main>
+    </>
   );
 }

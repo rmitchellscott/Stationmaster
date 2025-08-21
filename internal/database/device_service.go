@@ -61,7 +61,7 @@ func (ds *DeviceService) CreateUnclaimedDevice(macAddress string, modelName stri
 			// Model exists, set the device_model_id
 			device.DeviceModelID = &deviceModel.ID
 		} else {
-			logging.Logf("[CREATE DEVICE] Model %s not found in device_models table", mappedModelName)
+			logging.Warn("[CREATE DEVICE] Model not found in device_models table", "model", mappedModelName)
 		}
 	}
 
@@ -103,22 +103,22 @@ func (ds *DeviceService) ClaimDeviceByIdentifier(userID uuid.UUID, identifier, n
 	if ds.isMAC(identifier) {
 		// Normalize MAC address to colon format (AA:BB:CC:DD:EE:FF) to match database storage
 		normalizedMAC := ds.normalizeMAC(identifier)
-		logging.Logf("[CLAIM DEVICE] Looking up MAC address: %s -> %s", identifier, normalizedMAC)
+		logging.Debug("[CLAIM DEVICE] Looking up MAC address", "identifier", identifier, "normalized_mac", normalizedMAC)
 		device, err = ds.GetDeviceByMacAddress(normalizedMAC)
 	} else {
 		// Treat as friendly ID (convert to uppercase for consistency)
 		upperID := strings.ToUpper(identifier)
-		logging.Logf("[CLAIM DEVICE] Looking up friendly ID: %s -> %s", identifier, upperID)
+		logging.Debug("[CLAIM DEVICE] Looking up friendly ID", "identifier", identifier, "upper_id", upperID)
 		device, err = ds.GetDeviceByFriendlyID(upperID)
 	}
 	
 	if err != nil {
-		logging.Logf("[CLAIM DEVICE] Device lookup failed: %v", err)
+		logging.Error("[CLAIM DEVICE] Device lookup failed", "error", err)
 		return nil, err
 	}
 
 	if device.IsClaimed {
-		logging.Logf("[CLAIM DEVICE] Device %s already claimed", device.FriendlyID)
+		logging.Warn("[CLAIM DEVICE] Device already claimed", "friendly_id", device.FriendlyID)
 		return nil, fmt.Errorf("device already claimed")
 	}
 
@@ -130,7 +130,7 @@ func (ds *DeviceService) ClaimDeviceByIdentifier(userID uuid.UUID, identifier, n
 		return nil, err
 	}
 
-	logging.Logf("[CLAIM DEVICE] Successfully claimed device %s for user %s", device.FriendlyID, userID)
+	logging.Info("[CLAIM DEVICE] Successfully claimed device", "friendly_id", device.FriendlyID, "user_id", userID)
 	return device, nil
 }
 
@@ -240,8 +240,7 @@ func (ds *DeviceService) UpdateDevice(device *Device) error {
 		"firmware_update_end_time":   device.FirmwareUpdateEndTime,
 	}
 	
-	logging.Logf("[DEVICE UPDATE] Updating device %s with sleep settings: enabled=%v, start=%s, end=%s, show_screen=%v", 
-		device.ID, device.SleepEnabled, device.SleepStartTime, device.SleepEndTime, device.SleepShowScreen)
+	logging.Debug("[DEVICE UPDATE] Updating device sleep settings", "device_id", device.ID, "enabled", device.SleepEnabled, "start_time", device.SleepStartTime, "end_time", device.SleepEndTime, "show_screen", device.SleepShowScreen)
 	
 	// Use Select to only update specified fields, preventing GORM from trying to save associations
 	err := ds.db.Model(device).Select(
@@ -253,9 +252,9 @@ func (ds *DeviceService) UpdateDevice(device *Device) error {
 	).Updates(updates).Error
 	
 	if err != nil {
-		logging.Logf("[DEVICE UPDATE] Database update failed: %v", err)
+		logging.Error("[DEVICE UPDATE] Database update failed", "error", err)
 	} else {
-		logging.Logf("[DEVICE UPDATE] Database update successful for device %s", device.ID)
+		logging.Debug("[DEVICE UPDATE] Database update successful", "device_id", device.ID)
 	}
 	return err
 }
@@ -376,10 +375,10 @@ func (ds *DeviceService) UpdateDeviceStatus(macAddress string, firmwareVersion s
 						updateFields["device_model_id"] = deviceModel.ID
 						selectFields = append(selectFields, "device_model_id")
 					} else {
-						logging.Logf("[DEVICE UPDATE] Model %s not found in device_models table", mappedModelName)
+						logging.Warn("[DEVICE UPDATE] Model not found in device_models table", "model", mappedModelName)
 					}
 				} else {
-					logging.Logf("[DEVICE UPDATE] Device has manual model override, not updating model")
+					logging.Debug("[DEVICE UPDATE] Device has manual model override, not updating model")
 				}
 			}
 		}

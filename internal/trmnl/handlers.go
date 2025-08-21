@@ -20,32 +20,22 @@ import (
 // SetupHandler handles device setup requests from TRMNL devices
 // GET /api/setup with header 'ID': 'MAC_ADDRESS'
 func SetupHandler(c *gin.Context) {
-	debugMode := os.Getenv("DEBUG") != ""
-
-	if debugMode {
-		logging.Logf("[/api/setup] Request from %s %s %s", c.ClientIP(), c.Request.Method, c.Request.URL.Path)
-	}
+	logging.Debug("[/api/setup] Request received", "client_ip", c.ClientIP(), "method", c.Request.Method, "path", c.Request.URL.Path)
 
 	macAddress := c.GetHeader("ID")
 	modelHeader := c.GetHeader("Model") // Device model identifier (e.g., "og")
 
 	if macAddress == "" {
-		if debugMode {
-			logging.Logf("[/api/setup] Error: Missing device ID header")
-		}
+		logging.Debug("[/api/setup] Error: Missing device ID header")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing device ID header"})
 		return
 	}
 
-	if debugMode {
-		logging.Logf("[/api/setup] Device MAC address: %s, Model: %s", macAddress, modelHeader)
+	logging.Debug("[/api/setup] Device details", "mac_address", macAddress, "model", modelHeader)
 
-		// Log all headers for debugging
-		logging.Logf("[/api/setup] All request headers:")
-		for name, values := range c.Request.Header {
-			for _, value := range values {
-				logging.Logf("[/api/setup] Header %s: %s", name, value)
-			}
+	for name, values := range c.Request.Header {
+		for _, value := range values {
+			logging.Debug("[/api/setup] Request header", "name", name, "value", value)
 		}
 	}
 
@@ -64,9 +54,9 @@ func SetupHandler(c *gin.Context) {
 			"filename":    "empty_state",
 		}
 
-		if debugMode {
+		if logging.IsDebugEnabled() {
 			responseBytes, _ := json.Marshal(response)
-			logging.Logf("[/api/setup] Response for existing device %s: %s", macAddress, string(responseBytes))
+			logging.Debug("[/api/setup] Response for existing device", "mac_address", macAddress, "response", string(responseBytes))
 		}
 
 		c.JSON(http.StatusOK, response)
@@ -76,16 +66,12 @@ func SetupHandler(c *gin.Context) {
 	// Device doesn't exist, auto-register it as unclaimed
 	device, err = deviceService.CreateUnclaimedDevice(macAddress, modelHeader)
 	if err != nil {
-		if debugMode {
-			logging.Logf("[/api/setup] Error creating device for MAC %s: %v", macAddress, err)
-		}
+		logging.Error("[/api/setup] Error creating device", "mac_address", macAddress, "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to register device"})
 		return
 	}
 
-	if debugMode {
-		logging.Logf("[/api/setup] Created new device for MAC %s with friendly_id %s", macAddress, device.FriendlyID)
-	}
+	logging.Debug("[/api/setup] Created new device", "mac_address", macAddress, "friendly_id", device.FriendlyID)
 
 	// Return the new device information
 	response := gin.H{
@@ -96,9 +82,9 @@ func SetupHandler(c *gin.Context) {
 		"filename":    "empty_state",
 	}
 
-	if debugMode {
+	if logging.IsDebugEnabled() {
 		responseBytes, _ := json.Marshal(response)
-		logging.Logf("[/api/setup] Response for new device %s: %s", macAddress, string(responseBytes))
+		logging.Debug("[/api/setup] Response for new device", "mac_address", macAddress, "response", string(responseBytes))
 	}
 
 	c.JSON(http.StatusOK, response)
@@ -108,12 +94,8 @@ func SetupHandler(c *gin.Context) {
 // GET /api/display with headers for device authentication and status
 func DisplayHandler(c *gin.Context) {
 	startTime := time.Now()
-	debugMode := os.Getenv("DEBUG") != ""
 
-	if debugMode {
-		// Log request details
-		logging.Logf("[/api/display] Request from %s %s %s", c.ClientIP(), c.Request.Method, c.Request.URL.Path)
-	}
+	logging.Debug("[/api/display] Request received", "client_ip", c.ClientIP(), "method", c.Request.Method, "path", c.Request.URL.Path)
 
 	// Extract headers
 	deviceID := c.GetHeader("ID")
@@ -126,35 +108,29 @@ func DisplayHandler(c *gin.Context) {
 	widthStr := c.GetHeader("Width")             // Screen width
 	heightStr := c.GetHeader("Height")           // Screen height
 
-	if debugMode {
-		// Log all headers sent by device
-		logging.Logf("[/api/display] Device headers - ID: %s, Access-Token: %s, Refresh-Rate: %s, Battery-Voltage: %s, Fw-Version: %s, Rssi: %s, Model: %s, Width: %s, Height: %s",
-			deviceID, accessToken, refreshRateStr, batteryVoltageStr, firmwareVersion, rssiStr, modelHeader, widthStr, heightStr)
+	logging.Debug("[/api/display] Device headers", 
+		"device_id", deviceID, "access_token", accessToken, "refresh_rate", refreshRateStr,
+		"battery_voltage", batteryVoltageStr, "firmware_version", firmwareVersion, 
+		"rssi", rssiStr, "model", modelHeader, "width", widthStr, "height", heightStr)
 
-		// Log User-Agent if present
-		if userAgent := c.GetHeader("User-Agent"); userAgent != "" {
-			logging.Logf("[/api/display] User-Agent: %s", userAgent)
-		}
+	if userAgent := c.GetHeader("User-Agent"); userAgent != "" {
+		logging.Debug("[/api/display] User-Agent", "user_agent", userAgent)
+	}
 
-		// Log all other headers for debugging
-		logging.Logf("[/api/display] All request headers:")
-		for name, values := range c.Request.Header {
-			for _, value := range values {
-				logging.Logf("[/api/display] Header %s: %s", name, value)
-			}
+	for name, values := range c.Request.Header {
+		for _, value := range values {
+			logging.Debug("[/api/display] Request header", "name", name, "value", value)
 		}
 	}
 
 	if deviceID == "" || accessToken == "" {
-		if debugMode {
-			if deviceID == "" {
-				logging.Logf("[/api/display] Authentication failed: Missing device ID")
-			}
-			if accessToken == "" {
-				logging.Logf("[/api/display] Authentication failed: Missing or empty access token - device may not have stored API key properly")
-			}
-			logging.Logf("[/api/display] Rejecting request with 401 Unauthorized")
+		if deviceID == "" {
+			logging.Debug("[/api/display] Authentication failed: Missing device ID")
 		}
+		if accessToken == "" {
+			logging.Debug("[/api/display] Authentication failed: Missing or empty access token - device may not have stored API key properly")
+		}
+		logging.Debug("[/api/display] Rejecting request with 401 Unauthorized")
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Missing device ID or access token"})
 		return
 	}
@@ -165,25 +141,19 @@ func DisplayHandler(c *gin.Context) {
 	// Get device by API key
 	device, err := deviceService.GetDeviceByAPIKey(accessToken)
 	if err != nil {
-		if debugMode {
-			logging.Logf("[/api/display] Authentication failed: Invalid access token '%s' for device ID '%s' - %v", accessToken, deviceID, err)
-		}
+		logging.Debug("[/api/display] Authentication failed: Invalid access token", "access_token", accessToken, "device_id", deviceID, "error", err)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid access token"})
 		return
 	}
 
 	// Verify device ID matches (deviceID header should contain the MAC address)
 	if device.MacAddress != deviceID {
-		if debugMode {
-			logging.Logf("[/api/display] Authentication failed: Device ID mismatch - expected '%s', got '%s'", device.MacAddress, deviceID)
-		}
+		logging.Debug("[/api/display] Authentication failed: Device ID mismatch", "expected", device.MacAddress, "got", deviceID)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Device ID mismatch"})
 		return
 	}
 
-	if debugMode {
-		logging.Logf("[/api/display] Authentication successful for device %s (friendly_id: %s)", device.MacAddress, device.FriendlyID)
-	}
+	logging.Debug("[/api/display] Authentication successful", "mac_address", device.MacAddress, "friendly_id", device.FriendlyID)
 
 	// Get user timezone for sleep mode calculations
 	userTimezone := "UTC" // Default fallback
@@ -217,13 +187,13 @@ func DisplayHandler(c *gin.Context) {
 	// Update device status in database FIRST, then check firmware
 	err = deviceService.UpdateDeviceStatus(device.MacAddress, firmwareVersion, batteryVoltage, rssi, modelHeader)
 	if err != nil {
-		logging.Logf("[/api/display] Failed to update device status for %s: %v", device.MacAddress, err)
+		logging.Error("[/api/display] Failed to update device status", "mac_address", device.MacAddress, "error", err)
 	}
 
 	// Refresh device data from database after status update
 	device, err = deviceService.GetDeviceByAPIKey(accessToken)
 	if err != nil {
-		logging.Logf("[/api/display] Failed to refresh device data for %s: %v", device.MacAddress, err)
+		logging.Error("[/api/display] Failed to refresh device data", "mac_address", device.MacAddress, "error", err)
 	} else {
 		// Broadcast device status update to connected SSE clients
 		sseService := sse.GetSSEService()
@@ -244,20 +214,18 @@ func DisplayHandler(c *gin.Context) {
 	// Get current playlist items for this device
 	playlistService := database.NewPlaylistService(db)
 	
-	logging.Logf("[/api/display] Querying playlist items for device %s (friendly_id: %s, user_id: %s, claimed: %t)", 
-		device.MacAddress, device.FriendlyID, 
-		func() string { if device.UserID != nil { return device.UserID.String() } else { return "nil" } }(), 
-		device.IsClaimed)
+	logging.Debug("[/api/display] Querying playlist items", 
+		"mac_address", device.MacAddress, "friendly_id", device.FriendlyID, 
+		"user_id", func() string { if device.UserID != nil { return device.UserID.String() } else { return "nil" } }(), 
+		"claimed", device.IsClaimed)
 	
 	activeItems, err := playlistService.GetActivePlaylistItemsForTime(device.ID, time.Now())
 	if err != nil {
-		if debugMode {
-			logging.Logf("[/api/display] No playlist items found for device %s (this is normal for unclaimed devices): %v", device.MacAddress, err)
-		}
+		logging.Debug("[/api/display] No playlist items found for device (this is normal for unclaimed devices)", "mac_address", device.MacAddress, "error", err)
 		// For unclaimed devices or devices without playlists, use empty activeItems slice
 		activeItems = []database.PlaylistItem{}
 	} else {
-		logging.Logf("[/api/display] Successfully retrieved %d active items for device %s", len(activeItems), device.MacAddress)
+		logging.Info("[/api/display] Successfully retrieved active items", "count", len(activeItems), "mac_address", device.MacAddress)
 	}
 
 	// Note: We no longer update the device's refresh rate in the database
@@ -281,9 +249,7 @@ func DisplayHandler(c *gin.Context) {
 
 	// Check for low battery condition FIRST - takes precedence over everything
 	if device.BatteryVoltage > 0 && device.BatteryVoltage < 3.2 {
-		if debugMode {
-			logging.Logf("[/api/display] Device %s has low battery (%.2fV), returning low battery image", device.MacAddress, device.BatteryVoltage)
-		}
+		logging.Warn("[/api/display] Device has low battery, returning low battery image", "mac_address", device.MacAddress, "voltage", device.BatteryVoltage)
 
 		// Use relative path for low battery image URL, then convert to absolute
 		imageURL := "/images/low_battery.png"
@@ -301,13 +267,11 @@ func DisplayHandler(c *gin.Context) {
 			"reset_firmware":  false,
 		}
 
-		if debugMode {
+		if logging.IsDebugEnabled() {
 			responseBytes, _ := json.Marshal(response)
-			logging.Logf("[/api/display] Low battery response to device %s: %s", device.MacAddress, string(responseBytes))
-
-			duration := time.Since(startTime)
-			logging.Logf("[/api/display] Request processing time: %v", duration)
+			logging.Debug("[/api/display] Low battery response", "mac_address", device.MacAddress, "response", string(responseBytes))
 		}
+		logging.Debug("[/api/display] Request processing time", "duration", time.Since(startTime))
 
 		c.JSON(http.StatusOK, response)
 		return
@@ -346,9 +310,7 @@ func DisplayHandler(c *gin.Context) {
 	}
 	if pluginErr != nil {
 		// Fall back to default response if plugin processing fails
-		if debugMode {
-			logging.Logf("[/api/display] No active plugins for device %s, using default response (status: %d)", device.MacAddress, status)
-		}
+		logging.Debug("[/api/display] No active plugins, using default response", "mac_address", device.MacAddress, "status", status)
 
 		// For unclaimed devices (status 202), provide setup image
 		imageURL := getImageURLForDevice(device)
@@ -418,15 +380,11 @@ func DisplayHandler(c *gin.Context) {
 	response["firmware_url"] = firmwareUpdate.FirmwareURL
 	response["reset_firmware"] = firmwareUpdate.ResetFirmware
 
-	if debugMode {
-		// Log response being sent back to device
+	if logging.IsDebugEnabled() {
 		responseBytes, _ := json.Marshal(response)
-		logging.Logf("[/api/display] Response to device %s: %s", deviceID, string(responseBytes))
-
-		// Log request processing time
-		duration := time.Since(startTime)
-		logging.Logf("[/api/display] Request processing time: %v", duration)
+		logging.Debug("[/api/display] Response to device", "device_id", deviceID, "response", string(responseBytes))
 	}
+	logging.Debug("[/api/display] Request processing time", "duration", time.Since(startTime))
 
 	c.JSON(http.StatusOK, response)
 }
@@ -434,35 +392,25 @@ func DisplayHandler(c *gin.Context) {
 // LogsHandler handles log submissions from TRMNL devices
 // POST /api/logs
 func LogsHandler(c *gin.Context) {
-	debugMode := os.Getenv("DEBUG") != ""
-
-	if debugMode {
-		logging.Logf("[/api/logs] Request from %s %s %s", c.ClientIP(), c.Request.Method, c.Request.URL.Path)
-	}
+	logging.Debug("[/api/logs] Request received", "client_ip", c.ClientIP(), "method", c.Request.Method, "path", c.Request.URL.Path)
 
 	deviceID := c.GetHeader("ID")
 	accessToken := c.GetHeader("Access-Token")
 
-	if debugMode {
-		logging.Logf("[/api/logs] Device headers - ID: %s, Access-Token: %s", deviceID, accessToken)
+	logging.Debug("[/api/logs] Device headers", "device_id", deviceID, "access_token", accessToken)
 
-		// Log all headers for debugging
-		logging.Logf("[/api/logs] All request headers:")
-		for name, values := range c.Request.Header {
-			for _, value := range values {
-				logging.Logf("[/api/logs] Header %s: %s", name, value)
-			}
+	for name, values := range c.Request.Header {
+		for _, value := range values {
+			logging.Debug("[/api/logs] Request header", "name", name, "value", value)
 		}
 	}
 
 	if deviceID == "" || accessToken == "" {
-		if debugMode {
-			if deviceID == "" {
-				logging.Logf("[/api/logs] Authentication failed: Missing device ID")
-			}
-			if accessToken == "" {
-				logging.Logf("[/api/logs] Authentication failed: Missing access token")
-			}
+		if deviceID == "" {
+			logging.Debug("[/api/logs] Authentication failed: Missing device ID")
+		}
+		if accessToken == "" {
+			logging.Debug("[/api/logs] Authentication failed: Missing access token")
 		}
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Missing device ID or access token"})
 		return
@@ -474,34 +422,28 @@ func LogsHandler(c *gin.Context) {
 	// Verify device
 	device, err := deviceService.GetDeviceByAPIKey(accessToken)
 	if err != nil || device.MacAddress != deviceID {
-		if debugMode {
-			if err != nil {
-				logging.Logf("[/api/logs] Authentication failed: Invalid access token '%s' for device ID '%s' - %v", accessToken, deviceID, err)
-			} else {
-				logging.Logf("[/api/logs] Authentication failed: Device ID mismatch - expected '%s', got '%s'", device.MacAddress, deviceID)
-			}
+		if err != nil {
+			logging.Debug("[/api/logs] Authentication failed: Invalid access token", "access_token", accessToken, "device_id", deviceID, "error", err)
+		} else {
+			logging.Debug("[/api/logs] Authentication failed: Device ID mismatch", "expected", device.MacAddress, "got", deviceID)
 		}
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid device credentials"})
 		return
 	}
 
-	if debugMode {
-		logging.Logf("[/api/logs] Authentication successful for device %s (friendly_id: %s)", device.MacAddress, device.FriendlyID)
-	}
+	logging.Debug("[/api/logs] Authentication successful", "mac_address", device.MacAddress, "friendly_id", device.FriendlyID)
 
 	// Parse log data
 	var logData map[string]interface{}
 	if err := c.ShouldBindJSON(&logData); err != nil {
-		if debugMode {
-			logging.Logf("[/api/logs] Failed to parse JSON data from device %s: %v", deviceID, err)
-		}
+		logging.Debug("[/api/logs] Failed to parse JSON data", "device_id", deviceID, "error", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid log data"})
 		return
 	}
 
-	if debugMode {
+	if logging.IsDebugEnabled() {
 		logDataBytes, _ := json.Marshal(logData)
-		logging.Logf("[/api/logs] Received log data from device %s: %s", deviceID, string(logDataBytes))
+		logging.Debug("[/api/logs] Received log data", "device_id", deviceID, "data", string(logDataBytes))
 	}
 
 	// Extract log level if provided
@@ -510,16 +452,12 @@ func LogsHandler(c *gin.Context) {
 		level = levelStr
 	}
 
-	if debugMode {
-		logging.Logf("[/api/logs] Log level for device %s: %s", deviceID, level)
-	}
+	logging.Debug("[/api/logs] Log level determined", "device_id", deviceID, "level", level)
 
 	// Convert log data back to JSON string for storage
 	logDataBytes, err := json.Marshal(logData)
 	if err != nil {
-		if debugMode {
-			logging.Logf("[/api/logs] Failed to marshal log data for device %s: %v", deviceID, err)
-		}
+		logging.Error("[/api/logs] Failed to marshal log data", "device_id", deviceID, "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process log data"})
 		return
 	}
@@ -527,14 +465,12 @@ func LogsHandler(c *gin.Context) {
 	// Store the log entry
 	deviceLog, err := deviceService.CreateDeviceLog(device.ID, string(logDataBytes), level)
 	if err != nil {
-		logging.Logf("[/api/logs] Failed to store log data for device %s: %v", deviceID, err)
+		logging.Error("[/api/logs] Failed to store log data", "device_id", deviceID, "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to store log data"})
 		return
 	}
 
-	if debugMode {
-		logging.Logf("[/api/logs] Successfully stored log entry %s for device %s (level: %s)", deviceLog.ID, deviceID, level)
-	}
+	logging.Debug("[/api/logs] Successfully stored log entry", "log_id", deviceLog.ID, "device_id", deviceID, "level", level)
 
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
@@ -647,7 +583,7 @@ func processActivePlugins(device *database.Device, activeItems []database.Playli
 		if err := deviceService.UpdateLastPlaylistIndex(device.ID, nextIndex); err != nil {
 			// Log error but don't fail the request
 			// The rotation will still work, just might repeat an item next time
-			logging.Logf("[PLAYLIST] Failed to update last playlist index for device %s: %v", device.MacAddress, err)
+			logging.Error("[PLAYLIST] Failed to update last playlist index", "mac_address", device.MacAddress, "error", err)
 		} else {
 			// Get user timezone for sleep calculations
 			userTimezone := "UTC" // Default fallback
@@ -967,10 +903,9 @@ func checkFirmwareUpdate(c *gin.Context, device *database.Device) FirmwareUpdate
 	baseURL := fmt.Sprintf("%s://%s", scheme, c.Request.Host)
 	firmwareURL := fmt.Sprintf("%s/files/firmware/firmware_%s.bin", baseURL, latestFirmware.Version)
 	
-	logging.Logf("[FIRMWARE UPDATE] Using request-based URL: %s", firmwareURL)
+	logging.Debug("[FIRMWARE UPDATE] Using request-based URL", "url", firmwareURL)
 
-	logging.Logf("[FIRMWARE UPDATE] Device %s (v%s) will be updated to v%s",
-		device.MacAddress, device.FirmwareVersion, latestFirmware.Version)
+	logging.Info("[FIRMWARE UPDATE] Device will be updated", "mac_address", device.MacAddress, "current_version", device.FirmwareVersion, "new_version", latestFirmware.Version)
 
 	return FirmwareUpdateResponse{
 		UpdateFirmware: true,
@@ -1029,7 +964,7 @@ func FirmwareDownloadHandler(c *gin.Context) {
 		}
 
 		// Log the proxy request
-		logging.Logf("[FIRMWARE PROXY] Device %s requesting firmware %s, proxying to %s", device.MacAddress, firmwareVersion, fwVersion.DownloadURL)
+		logging.Info("[FIRMWARE PROXY] Device requesting firmware, proxying", "mac_address", device.MacAddress, "version", firmwareVersion, "url", fwVersion.DownloadURL)
 
 		// Create HTTP client for proxying
 		client := &http.Client{
@@ -1039,7 +974,7 @@ func FirmwareDownloadHandler(c *gin.Context) {
 		// Create request to TRMNL API
 		req, err := http.NewRequest("GET", fwVersion.DownloadURL, nil)
 		if err != nil {
-			logging.Logf("[FIRMWARE PROXY] Failed to create proxy request: %v", err)
+			logging.Error("[FIRMWARE PROXY] Failed to create proxy request", "error", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to proxy firmware request"})
 			return
 		}
@@ -1047,7 +982,7 @@ func FirmwareDownloadHandler(c *gin.Context) {
 		// Make request to TRMNL
 		resp, err := client.Do(req)
 		if err != nil {
-			logging.Logf("[FIRMWARE PROXY] Failed to fetch from TRMNL: %v", err)
+			logging.Error("[FIRMWARE PROXY] Failed to fetch from TRMNL", "error", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch firmware from upstream"})
 			return
 		}
@@ -1055,7 +990,7 @@ func FirmwareDownloadHandler(c *gin.Context) {
 
 		// Check response status
 		if resp.StatusCode != http.StatusOK {
-			logging.Logf("[FIRMWARE PROXY] TRMNL returned status %d for firmware %s", resp.StatusCode, firmwareVersion)
+			logging.Error("[FIRMWARE PROXY] TRMNL returned error status", "status_code", resp.StatusCode, "version", firmwareVersion)
 			c.JSON(http.StatusBadGateway, gin.H{"error": "Upstream firmware server error"})
 			return
 		}
@@ -1071,11 +1006,11 @@ func FirmwareDownloadHandler(c *gin.Context) {
 		c.Status(http.StatusOK)
 		_, err = io.Copy(c.Writer, resp.Body)
 		if err != nil {
-			logging.Logf("[FIRMWARE PROXY] Failed to stream firmware %s to device %s: %v", firmwareVersion, device.MacAddress, err)
+			logging.Error("[FIRMWARE PROXY] Failed to stream firmware", "version", firmwareVersion, "mac_address", device.MacAddress, "error", err)
 			return
 		}
 
-		logging.Logf("[FIRMWARE PROXY] Successfully proxied firmware %s to device %s", firmwareVersion, device.MacAddress)
+		logging.Info("[FIRMWARE PROXY] Successfully proxied firmware", "version", firmwareVersion, "mac_address", device.MacAddress)
 	} else {
 		// Download mode - serve local file
 		// Check if firmware file exists and is downloaded
@@ -1093,11 +1028,11 @@ func FirmwareDownloadHandler(c *gin.Context) {
 		}
 
 		// Log the download
-		logging.Logf("[FIRMWARE] Device %s downloading firmware %s", device.MacAddress, firmwareVersion)
+		logging.Info("[FIRMWARE] Device downloading firmware", "mac_address", device.MacAddress, "version", firmwareVersion)
 
 		c.File(fwVersion.FilePath)
 
-		logging.Logf("[FIRMWARE DOWNLOAD] Device %s successfully downloaded firmware %s", device.MacAddress, firmwareVersion)
+		logging.Info("[FIRMWARE DOWNLOAD] Device successfully downloaded firmware", "mac_address", device.MacAddress, "version", firmwareVersion)
 	}
 }
 
@@ -1139,20 +1074,18 @@ func FirmwareUpdateCompleteHandler(c *gin.Context) {
 		if req.NewVersion != "" {
 			device.FirmwareVersion = req.NewVersion
 			if err := deviceService.UpdateDevice(device); err != nil {
-				logging.Logf("[FIRMWARE UPDATE] Failed to update device %s firmware version: %v", device.MacAddress, err)
+				logging.Error("[FIRMWARE UPDATE] Failed to update device firmware version", "mac_address", device.MacAddress, "error", err)
 			}
 		}
 
-		logging.Logf("[FIRMWARE UPDATE] Device %s successfully updated to firmware v%s",
-			device.MacAddress, req.NewVersion)
+		logging.Info("[FIRMWARE UPDATE] Device successfully updated", "mac_address", device.MacAddress, "new_version", req.NewVersion)
 
 		c.JSON(http.StatusOK, gin.H{
 			"status":  "ok",
 			"message": "Firmware update completion recorded",
 		})
 	} else if req.Status == "failed" {
-		logging.Logf("[FIRMWARE UPDATE] Device %s firmware update failed: %s",
-			device.MacAddress, req.Message)
+		logging.Error("[FIRMWARE UPDATE] Device firmware update failed", "mac_address", device.MacAddress, "message", req.Message)
 
 		c.JSON(http.StatusOK, gin.H{
 			"status":  "ok",
@@ -1167,23 +1100,16 @@ func FirmwareUpdateCompleteHandler(c *gin.Context) {
 // GET /api/current_screen with Access-Token header only
 func CurrentScreenHandler(c *gin.Context) {
 	startTime := time.Now()
-	debugMode := os.Getenv("DEBUG") != ""
 
-	if debugMode {
-		logging.Logf("[/api/current_screen] Request from %s %s %s", c.ClientIP(), c.Request.Method, c.Request.URL.Path)
-	}
+	logging.Debug("[/api/current_screen] Request received", "client_ip", c.ClientIP(), "method", c.Request.Method, "path", c.Request.URL.Path)
 
 	// Extract Access-Token header only (simpler auth than /api/display)
 	accessToken := c.GetHeader("Access-Token")
 
-	if debugMode {
-		logging.Logf("[/api/current_screen] Access-Token: %s", accessToken)
-	}
+	logging.Debug("[/api/current_screen] Access token received", "access_token", accessToken)
 
 	if accessToken == "" {
-		if debugMode {
-			logging.Logf("[/api/current_screen] Authentication failed: Missing access token")
-		}
+		logging.Debug("[/api/current_screen] Authentication failed: Missing access token")
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Missing access token"})
 		return
 	}
@@ -1194,24 +1120,18 @@ func CurrentScreenHandler(c *gin.Context) {
 	// Get device by API key
 	device, err := deviceService.GetDeviceByAPIKey(accessToken)
 	if err != nil {
-		if debugMode {
-			logging.Logf("[/api/current_screen] Authentication failed: Invalid access token '%s' - %v", accessToken, err)
-		}
+		logging.Debug("[/api/current_screen] Authentication failed: Invalid access token", "access_token", accessToken, "error", err)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid access token"})
 		return
 	}
 
-	if debugMode {
-		logging.Logf("[/api/current_screen] Authentication successful for device %s (friendly_id: %s)", device.MacAddress, device.FriendlyID)
-	}
+	logging.Debug("[/api/current_screen] Authentication successful", "mac_address", device.MacAddress, "friendly_id", device.FriendlyID)
 
 	// Get current playlist items for this device
 	playlistService := database.NewPlaylistService(db)
 	activeItems, err := playlistService.GetActivePlaylistItemsForTime(device.ID, time.Now())
 	if err != nil {
-		if debugMode {
-			logging.Logf("[/api/current_screen] No playlist items found for device %s: %v", device.MacAddress, err)
-		}
+		logging.Debug("[/api/current_screen] No playlist items found", "mac_address", device.MacAddress, "error", err)
 		activeItems = []database.PlaylistItem{}
 	}
 
@@ -1257,9 +1177,7 @@ func CurrentScreenHandler(c *gin.Context) {
 	}
 	if pluginErr != nil {
 		// Fall back to default response if plugin processing fails
-		if debugMode {
-			logging.Logf("[/api/current_screen] No active plugins for device %s, using default response (status: %d)", device.MacAddress, status)
-		}
+		logging.Debug("[/api/current_screen] No active plugins, using default response", "mac_address", device.MacAddress, "status", status)
 
 		// For unclaimed devices (status 202), provide setup image
 		imageURL := getImageURLForDevice(device)
@@ -1288,13 +1206,11 @@ func CurrentScreenHandler(c *gin.Context) {
 		}
 	}
 
-	if debugMode {
+	if logging.IsDebugEnabled() {
 		responseBytes, _ := json.Marshal(response)
-		logging.Logf("[/api/current_screen] Response to device %s: %s", device.MacAddress, string(responseBytes))
-
-		duration := time.Since(startTime)
-		logging.Logf("[/api/current_screen] Request processing time: %v", duration)
+		logging.Debug("[/api/current_screen] Response to device", "mac_address", device.MacAddress, "response", string(responseBytes))
 	}
+	logging.Debug("[/api/current_screen] Request processing time", "duration", time.Since(startTime))
 
 	c.JSON(http.StatusOK, response)
 }
@@ -1476,7 +1392,7 @@ func isInFirmwareUpdatePeriod(device *database.Device, userTimezone string) bool
 	// Parse timezone
 	loc, err := time.LoadLocation(userTimezone)
 	if err != nil {
-		logging.Logf("[FIRMWARE UPDATE] Invalid timezone %s for device %s, using UTC", userTimezone, device.MacAddress)
+		logging.Warn("[FIRMWARE UPDATE] Invalid timezone, using UTC", "timezone", userTimezone, "mac_address", device.MacAddress)
 		loc = time.UTC
 	}
 
@@ -1486,13 +1402,13 @@ func isInFirmwareUpdatePeriod(device *database.Device, userTimezone string) bool
 	// Parse firmware update start and end times
 	startTime, err := parseSleepTime(device.FirmwareUpdateStartTime, now)
 	if err != nil {
-		logging.Logf("[FIRMWARE UPDATE] Invalid start time %s for device %s: %v", device.FirmwareUpdateStartTime, device.MacAddress, err)
+		logging.Warn("[FIRMWARE UPDATE] Invalid start time", "start_time", device.FirmwareUpdateStartTime, "mac_address", device.MacAddress, "error", err)
 		return true // Default to allow if invalid time
 	}
 	
 	endTime, err := parseSleepTime(device.FirmwareUpdateEndTime, now)
 	if err != nil {
-		logging.Logf("[FIRMWARE UPDATE] Invalid end time %s for device %s: %v", device.FirmwareUpdateEndTime, device.MacAddress, err)
+		logging.Warn("[FIRMWARE UPDATE] Invalid end time", "end_time", device.FirmwareUpdateEndTime, "mac_address", device.MacAddress, "error", err)
 		return true // Default to allow if invalid time
 	}
 

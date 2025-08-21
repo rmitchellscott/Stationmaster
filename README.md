@@ -172,11 +172,12 @@ npm run dev
 | `FIRMWARE_STORAGE_DIR` | `/data/firmware` | Directory for firmware storage |
 | `FIRMWARE_AUTO_DOWNLOAD` | `true` | Automatically download new firmware |
 
-### Development & Debugging
+### Logging & Debugging
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DEBUG` | `false` | Enable debug mode |
+| `LOG_LEVEL` | `INFO` | Logging level (`DEBUG`, `INFO`, `WARN`, `ERROR`) |
+| `LOG_FORMAT` | `text` | Log output format (`text`, `json`) |
 | `DRY_RUN` | `false` | Enable dry-run mode (no actual changes) |
 
 ### File-based Secrets

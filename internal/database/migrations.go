@@ -10,7 +10,7 @@ import (
 
 // RunMigrations runs any pending database migrations using gormigrate
 func RunMigrations(logPrefix string) error {
-	logging.Logf("[%s] Running database migrations...", logPrefix)
+	logging.Info("Running database migrations", "database", logPrefix)
 
 	// Define migrations
 	migrations := []*gormigrate.Migration{
@@ -19,10 +19,10 @@ func RunMigrations(logPrefix string) error {
 			Migrate: func(tx *gorm.DB) error {
 				// Check if column exists before trying to drop it
 				if tx.Migrator().HasColumn(&Device{}, "model_name") {
-					logging.Logf("[MIGRATION] Dropping model_name column from devices table")
+					logging.Info("[MIGRATION] Dropping model_name column from devices table")
 					return tx.Migrator().DropColumn(&Device{}, "model_name")
 				}
-				logging.Logf("[MIGRATION] model_name column already removed")
+				logging.Info("[MIGRATION] model_name column already removed")
 				return nil
 			},
 			Rollback: func(tx *gorm.DB) error {
@@ -52,6 +52,6 @@ func RunMigrations(logPrefix string) error {
 		return fmt.Errorf("failed to run migrations: %w", err)
 	}
 
-	logging.Logf("[%s] Migrations completed successfully", logPrefix)
+	logging.Info("Migrations completed successfully", "database", logPrefix)
 	return nil
 }

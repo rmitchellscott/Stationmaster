@@ -1,10 +1,10 @@
 package database
 
 import (
-	"log"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/rmitchellscott/stationmaster/internal/logging"
 	"github.com/rmitchellscott/stationmaster/internal/utils"
 	"gorm.io/gorm"
 )
@@ -177,35 +177,35 @@ func (pls *PlaylistService) DeletePlaylistItem(itemID uuid.UUID) error {
 		// First, verify the playlist item exists
 		var existingItem PlaylistItem
 		if err := tx.Where("id = ?", itemID).First(&existingItem).Error; err != nil {
-			log.Printf("[DeletePlaylistItem] Playlist item not found: %s, error: %v", itemID.String(), err)
+			logging.Debug("[DeletePlaylistItem] Playlist item not found", "item_id", itemID.String(), "error", err)
 			return err
 		}
 
 		playlistID := existingItem.PlaylistID
-		log.Printf("[DeletePlaylistItem] Deleting item %s from playlist %s", itemID.String(), playlistID.String())
+		logging.Debug("[DeletePlaylistItem] Deleting item from playlist", "item_id", itemID.String(), "playlist_id", playlistID.String())
 
 		// Delete playlist item (schedules will cascade due to foreign key constraints)
 		result := tx.Delete(&PlaylistItem{}, "id = ?", itemID)
 		if result.Error != nil {
-			log.Printf("[DeletePlaylistItem] Failed to delete playlist item %s: %v", itemID.String(), result.Error)
+			logging.Error("[DeletePlaylistItem] Failed to delete playlist item", "item_id", itemID.String(), "error", result.Error)
 			return result.Error
 		}
 
 		// Verify the item was actually deleted
 		if result.RowsAffected == 0 {
-			log.Printf("[DeletePlaylistItem] No rows affected when deleting item %s", itemID.String())
+			logging.Debug("[DeletePlaylistItem] No rows affected when deleting item", "item_id", itemID.String())
 			return gorm.ErrRecordNotFound
 		}
 
-		log.Printf("[DeletePlaylistItem] Successfully deleted item %s, rows affected: %d", itemID.String(), result.RowsAffected)
+		logging.Debug("[DeletePlaylistItem] Successfully deleted item", "item_id", itemID.String(), "rows_affected", result.RowsAffected)
 
 		// Compact the order for the playlist
 		if err := pls.compactPlaylistOrderInTx(tx, playlistID); err != nil {
-			log.Printf("[DeletePlaylistItem] Failed to compact order for playlist %s: %v", playlistID.String(), err)
+			logging.Error("[DeletePlaylistItem] Failed to compact order for playlist", "playlist_id", playlistID.String(), "error", err)
 			return err
 		}
 
-		log.Printf("[DeletePlaylistItem] Successfully compacted order for playlist %s", playlistID.String())
+		logging.Debug("[DeletePlaylistItem] Successfully compacted order for playlist", "playlist_id", playlistID.String())
 		return nil
 	})
 }
@@ -239,7 +239,7 @@ func (pls *PlaylistService) compactPlaylistOrderInTx(tx *gorm.DB, playlistID uui
 // ConsolidateDevicePlaylists ensures each device has exactly one default playlist
 // Merges multiple playlists into a single default playlist per device
 func (pls *PlaylistService) ConsolidateDevicePlaylists() error {
-	log.Printf("[CONSOLIDATE] Starting playlist consolidation for all devices")
+	logging.Info("[CONSOLIDATE] Starting playlist consolidation for all devices")
 	
 	// Get all devices
 	var devices []Device
@@ -250,13 +250,13 @@ func (pls *PlaylistService) ConsolidateDevicePlaylists() error {
 	consolidatedCount := 0
 	for _, device := range devices {
 		if err := pls.consolidatePlaylistsForDevice(device.ID); err != nil {
-			log.Printf("[CONSOLIDATE] Error consolidating playlists for device %s: %v", device.ID.String(), err)
+			logging.Error("[CONSOLIDATE] Error consolidating playlists for device", "device_id", device.ID.String(), "error", err)
 			return err
 		}
 		consolidatedCount++
 	}
 	
-	log.Printf("[CONSOLIDATE] Successfully consolidated playlists for %d devices", consolidatedCount)
+	logging.Info("[CONSOLIDATE] Successfully consolidated playlists", "device_count", consolidatedCount)
 	return nil
 }
 
@@ -275,12 +275,12 @@ func (pls *PlaylistService) consolidatePlaylistsForDevice(deviceID uuid.UUID) er
 			if err := pls.db.Save(&playlists[0]).Error; err != nil {
 				return err
 			}
-			log.Printf("[CONSOLIDATE] Marked single playlist as default for device %s", deviceID.String())
+			logging.Debug("[CONSOLIDATE] Marked single playlist as default", "device_id", deviceID.String())
 		}
 		return nil
 	}
 	
-	log.Printf("[CONSOLIDATE] Device %s has %d playlists, consolidating...", deviceID.String(), len(playlists))
+	logging.Debug("[CONSOLIDATE] Device has multiple playlists, consolidating", "device_id", deviceID.String(), "playlist_count", len(playlists))
 	
 	return pls.db.Transaction(func(tx *gorm.DB) error {
 		// Find or create the target default playlist
@@ -301,8 +301,7 @@ func (pls *PlaylistService) consolidatePlaylistsForDevice(deviceID uuid.UUID) er
 			}
 		}
 		
-		log.Printf("[CONSOLIDATE] Using playlist '%s' as target default for device %s", 
-			targetPlaylist.Name, deviceID.String())
+		logging.Debug("[CONSOLIDATE] Using playlist as target default", "playlist_name", targetPlaylist.Name, "device_id", deviceID.String())
 		
 		// Collect all items from all playlists and move them to the target playlist
 		orderIndex := 1
@@ -319,8 +318,7 @@ func (pls *PlaylistService) consolidatePlaylistsForDevice(deviceID uuid.UUID) er
 				return err
 			}
 			
-			log.Printf("[CONSOLIDATE] Moving %d items from playlist '%s' to default playlist", 
-				len(items), playlist.Name)
+			logging.Debug("[CONSOLIDATE] Moving items from playlist to default", "item_count", len(items), "playlist_name", playlist.Name)
 			
 			// Move each item to the target playlist
 			for _, item := range items {
@@ -348,8 +346,7 @@ func (pls *PlaylistService) consolidatePlaylistsForDevice(deviceID uuid.UUID) er
 			}
 		}
 		
-		log.Printf("[CONSOLIDATE] Deleted %d extra playlists for device %s", 
-			len(playlistsToDelete), deviceID.String())
+		logging.Debug("[CONSOLIDATE] Deleted extra playlists for device", "deleted_count", len(playlistsToDelete), "device_id", deviceID.String())
 		
 		return nil
 	})
@@ -512,14 +509,13 @@ func (pls *PlaylistService) CopyPlaylistItems(sourceDeviceID, targetDeviceID uui
 			if err := pls.db.Create(&targetPlaylist).Error; err != nil {
 				return err
 			}
-			log.Printf("[MIRROR] Created default playlist for target device %s", targetDeviceID.String())
+			logging.Debug("[MIRROR] Created default playlist for target device", "device_id", targetDeviceID.String())
 		} else {
 			return err
 		}
 	}
 
-	log.Printf("[MIRROR] Using target device default playlist: %s (ID: %s)", 
-		targetPlaylist.Name, targetPlaylist.ID.String())
+	logging.Debug("[MIRROR] Using target device default playlist", "name", targetPlaylist.Name, "id", targetPlaylist.ID.String())
 
 	// Get all playlists from source device to copy their items
 	var sourcePlaylists []Playlist
@@ -527,8 +523,7 @@ func (pls *PlaylistService) CopyPlaylistItems(sourceDeviceID, targetDeviceID uui
 		return err
 	}
 
-	log.Printf("[MIRROR] Starting to copy items from %d source playlists to target device %s", 
-		len(sourcePlaylists), targetDeviceID.String())
+	logging.Debug("[MIRROR] Starting to copy items from source playlists", "source_count", len(sourcePlaylists), "target_device_id", targetDeviceID.String())
 
 	// Begin transaction
 	return pls.db.Transaction(func(tx *gorm.DB) error {
@@ -536,13 +531,12 @@ func (pls *PlaylistService) CopyPlaylistItems(sourceDeviceID, targetDeviceID uui
 		if err := tx.Where("playlist_id = ?", targetPlaylist.ID).Delete(&PlaylistItem{}).Error; err != nil {
 			return err
 		}
-		log.Printf("[MIRROR] Cleared existing items from target playlist")
+		logging.Debug("[MIRROR] Cleared existing items from target playlist")
 
 		// Copy items from all source playlists into the single target default playlist
 		orderIndex := 1
 		for playlistIndex, sourcePlaylist := range sourcePlaylists {
-			log.Printf("[MIRROR] Processing source playlist %d/%d: %s (ID: %s)", 
-				playlistIndex+1, len(sourcePlaylists), sourcePlaylist.Name, sourcePlaylist.ID.String())
+			logging.Debug("[MIRROR] Processing source playlist", "current", playlistIndex+1, "total", len(sourcePlaylists), "name", sourcePlaylist.Name, "id", sourcePlaylist.ID.String())
 
 			// Get all playlist items from source playlist
 			var sourceItems []PlaylistItem
@@ -550,12 +544,11 @@ func (pls *PlaylistService) CopyPlaylistItems(sourceDeviceID, targetDeviceID uui
 				return err
 			}
 			
-			log.Printf("[MIRROR] Found %d items in source playlist %s", len(sourceItems), sourcePlaylist.Name)
+			logging.Debug("[MIRROR] Found items in source playlist", "item_count", len(sourceItems), "playlist_name", sourcePlaylist.Name)
 
 			// Copy each playlist item to the target default playlist
 			for itemIndex, sourceItem := range sourceItems {
-				log.Printf("[MIRROR] Copying item %d/%d: UserPluginID=%s, IsVisible=%t, OrderIndex=%d", 
-					itemIndex+1, len(sourceItems), sourceItem.UserPluginID, sourceItem.IsVisible, sourceItem.OrderIndex)
+				logging.Debug("[MIRROR] Copying item", "current", itemIndex+1, "total", len(sourceItems), "user_plugin_id", sourceItem.UserPluginID, "is_visible", sourceItem.IsVisible, "order_index", sourceItem.OrderIndex)
 
 				// Create item with minimum required fields to avoid foreign key constraint errors
 				targetItem := PlaylistItem{
@@ -563,11 +556,11 @@ func (pls *PlaylistService) CopyPlaylistItems(sourceDeviceID, targetDeviceID uui
 					UserPluginID: sourceItem.UserPluginID,
 				}
 				if err := tx.Create(&targetItem).Error; err != nil {
-					log.Printf("[MIRROR] Error creating target item with required fields: %v", err)
+					logging.Error("[MIRROR] Error creating target item with required fields", "error", err)
 					return err
 				}
 
-				log.Printf("[MIRROR] Target item before update: IsVisible=%t", sourceItem.IsVisible)
+				logging.Debug("[MIRROR] Target item before update", "is_visible", sourceItem.IsVisible)
 
 				// Use Updates to set remaining fields including false values
 				// Use a sequential order index across all source playlists
@@ -581,16 +574,16 @@ func (pls *PlaylistService) CopyPlaylistItems(sourceDeviceID, targetDeviceID uui
 				orderIndex++ // Increment for next item
 
 				if err := tx.Model(&targetItem).Updates(updates).Error; err != nil {
-					log.Printf("[MIRROR] Error updating target item: %v", err)
+					logging.Error("[MIRROR] Error updating target item", "error", err)
 					return err
 				}
 
 				// Verify the item was created correctly
 				var verifyItem PlaylistItem
 				if err := tx.First(&verifyItem, "id = ?", targetItem.ID).Error; err == nil {
-					log.Printf("[MIRROR] Created item verified: ID=%s, IsVisible=%t", verifyItem.ID, verifyItem.IsVisible)
+					logging.Debug("[MIRROR] Created item verified", "id", verifyItem.ID, "is_visible", verifyItem.IsVisible)
 				} else {
-					log.Printf("[MIRROR] Error verifying created item: %v", err)
+					logging.Error("[MIRROR] Error verifying created item", "error", err)
 				}
 
 				// Copy schedules associated with this playlist item
@@ -599,11 +592,10 @@ func (pls *PlaylistService) CopyPlaylistItems(sourceDeviceID, targetDeviceID uui
 					return err
 				}
 				
-				log.Printf("[MIRROR] Found %d schedules for item %s", len(sourceSchedules), sourceItem.ID.String())
+				logging.Debug("[MIRROR] Found schedules for item", "schedule_count", len(sourceSchedules), "item_id", sourceItem.ID.String())
 
 				for scheduleIndex, sourceSchedule := range sourceSchedules {
-					log.Printf("[MIRROR] Copying schedule %d/%d: %s (Active: %t, Days: %d)", 
-						scheduleIndex+1, len(sourceSchedules), sourceSchedule.Name, sourceSchedule.IsActive, sourceSchedule.DayMask)
+					logging.Debug("[MIRROR] Copying schedule", "current", scheduleIndex+1, "total", len(sourceSchedules), "name", sourceSchedule.Name, "is_active", sourceSchedule.IsActive, "day_mask", sourceSchedule.DayMask)
 					targetSchedule := Schedule{
 						PlaylistItemID: targetItem.ID,
 						Name:           sourceSchedule.Name,
@@ -617,16 +609,15 @@ func (pls *PlaylistService) CopyPlaylistItems(sourceDeviceID, targetDeviceID uui
 					}
 
 					if err := tx.Create(&targetSchedule).Error; err != nil {
-						log.Printf("[MIRROR] Error creating schedule: %v", err)
+						logging.Error("[MIRROR] Error creating schedule", "error", err)
 						return err
 					}
-					log.Printf("[MIRROR] Successfully created schedule %s with ID %s", targetSchedule.Name, targetSchedule.ID.String())
+					logging.Debug("[MIRROR] Successfully created schedule", "name", targetSchedule.Name, "id", targetSchedule.ID.String())
 				}
 			}
 		}
 		
-		log.Printf("[MIRROR] Successfully completed mirroring transaction from %s to %s", 
-			sourceDeviceID.String(), targetDeviceID.String())
+		logging.Info("[MIRROR] Successfully completed mirroring transaction", "source_device_id", sourceDeviceID.String(), "target_device_id", targetDeviceID.String())
 
 		return nil
 	})

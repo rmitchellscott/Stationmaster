@@ -46,8 +46,8 @@ func NewRenderWorker(db *gorm.DB, staticDir string) (*RenderWorker, error) {
 	}
 	renderer, err := NewHTMLRenderer(defaultOpts)
 	if err != nil {
-		logging.Logf("[RENDER_WORKER] Warning: Failed to create HTML renderer: %v", err)
-		logging.Logf("[RENDER_WORKER] Background HTML rendering will be disabled. Install Chromium to enable pre-rendering.")
+		logging.Warn("[RENDER_WORKER] Failed to create HTML renderer", "error", err)
+		logging.Info("[RENDER_WORKER] Background HTML rendering disabled - install Chromium to enable pre-rendering")
 		renderer = nil // Continue without renderer
 	}
 
@@ -116,7 +116,7 @@ func (w *RenderWorker) ProcessRenderQueue(ctx context.Context) error {
 		return fmt.Errorf("failed to fetch render jobs: %w", err)
 	}
 
-	logging.Logf("[RENDER_WORKER] Processing %d render jobs", len(jobs))
+	logging.Info("[RENDER_WORKER] Processing render jobs", "job_count", len(jobs))
 
 	for _, job := range jobs {
 		if ctx.Err() != nil {
@@ -124,7 +124,7 @@ func (w *RenderWorker) ProcessRenderQueue(ctx context.Context) error {
 		}
 
 		if err := w.processRenderJob(ctx, job); err != nil {
-			logging.Logf("[RENDER_WORKER] Failed to process job %s: %v", job.ID, err)
+			logging.Error("[RENDER_WORKER] Failed to process job", "job_id", job.ID, "error", err)
 		}
 	}
 
@@ -171,7 +171,7 @@ func (w *RenderWorker) processRenderJob(ctx context.Context, job database.Render
 		// No active devices, skip rendering
 		err = w.db.WithContext(ctx).Model(&job).Update("status", "completed").Error
 		if err != nil {
-			logging.Logf("[RENDER_WORKER] Failed to mark job as completed: %v", err)
+			logging.Error("[RENDER_WORKER] Failed to mark job as completed", "error", err)
 		}
 		return nil
 	}
@@ -184,8 +184,7 @@ func (w *RenderWorker) processRenderJob(ctx context.Context, job database.Render
 
 		err := w.renderForDeviceModel(ctx, userPlugin, deviceModel)
 		if err != nil {
-			logging.Logf("[RENDER_WORKER] Failed to render for device model %dx%d: %v",
-				deviceModel.ScreenWidth, deviceModel.ScreenHeight, err)
+			logging.Error("[RENDER_WORKER] Failed to render for device model", "width", deviceModel.ScreenWidth, "height", deviceModel.ScreenHeight, "error", err)
 			continue // Continue with other resolutions
 		}
 	}
@@ -193,7 +192,7 @@ func (w *RenderWorker) processRenderJob(ctx context.Context, job database.Render
 	// Mark job as completed
 	err = w.db.WithContext(ctx).Model(&job).Update("status", "completed").Error
 	if err != nil {
-		logging.Logf("[RENDER_WORKER] Failed to mark job as completed: %v", err)
+		logging.Error("[RENDER_WORKER] Failed to mark job as completed", "error", err)
 	}
 
 	// Clean up any other pending jobs for this plugin instance to prevent duplicates
@@ -201,7 +200,7 @@ func (w *RenderWorker) processRenderJob(ctx context.Context, job database.Render
 		Where("user_plugin_id = ? AND status = ? AND id != ?", userPlugin.ID, "pending", job.ID).
 		Update("status", "cancelled").Error
 	if err != nil {
-		logging.Logf("[RENDER_WORKER] Failed to clean up duplicate pending jobs: %v", err)
+		logging.Error("[RENDER_WORKER] Failed to clean up duplicate pending jobs", "error", err)
 	}
 
 	// Schedule next render
@@ -220,7 +219,7 @@ func (w *RenderWorker) renderForDeviceModel(ctx context.Context, userPlugin data
 
 	// Skip rendering for plugins that don't require processing
 	if !plugin.RequiresProcessing() {
-		logging.Logf("[RENDER_WORKER] Skipping render for %s - plugin doesn't require processing", userPlugin.Plugin.Type)
+		logging.Debug("[RENDER_WORKER] Skipping render - plugin doesn't require processing", "plugin_type", userPlugin.Plugin.Type)
 		return nil
 	}
 
@@ -274,7 +273,7 @@ func (w *RenderWorker) renderForDeviceModel(ctx context.Context, userPlugin data
 	} else if plugin.PluginType() == plugins.PluginTypeData {
 		// Check if renderer is available for data plugins
 		if w.renderer == nil {
-			logging.Logf("[RENDER_WORKER] Skipping data plugin %s rendering - HTML renderer not available", userPlugin.Plugin.Type)
+			logging.Debug("[RENDER_WORKER] Skipping data plugin rendering - HTML renderer not available", "plugin_type", userPlugin.Plugin.Type)
 			return nil // Skip this render, don't error
 		}
 
@@ -333,15 +332,15 @@ func (w *RenderWorker) renderForDeviceModel(ctx context.Context, userPlugin data
 			userPlugin.ID, deviceModel.ScreenWidth, deviceModel.ScreenHeight, deviceModel.BitDepth).
 		Find(&oldContent).Error
 	if err != nil {
-		logging.Logf("[RENDER_WORKER] Failed to find old content: %v", err)
+		logging.Error("[RENDER_WORKER] Failed to find old content", "error", err)
 	} else {
 		// Delete old image files
 		for _, content := range oldContent {
 			if filepath.IsAbs(content.ImagePath) && filepath.HasPrefix(content.ImagePath, w.renderedDir) {
 				if err := os.Remove(content.ImagePath); err != nil && !os.IsNotExist(err) {
-					logging.Logf("[RENDER_WORKER] Failed to delete old image %s: %v", content.ImagePath, err)
+					logging.Error("[RENDER_WORKER] Failed to delete old image", "path", content.ImagePath, "error", err)
 				} else if err == nil {
-					logging.Logf("[RENDER_WORKER] Deleted old image: %s", content.ImagePath)
+					logging.Debug("[RENDER_WORKER] Deleted old image", "path", content.ImagePath)
 				}
 			}
 		}
@@ -352,7 +351,7 @@ func (w *RenderWorker) renderForDeviceModel(ctx context.Context, userPlugin data
 				userPlugin.ID, deviceModel.ScreenWidth, deviceModel.ScreenHeight, deviceModel.BitDepth).
 			Delete(&database.RenderedContent{}).Error
 		if err != nil {
-			logging.Logf("[RENDER_WORKER] Failed to clean up old content records: %v", err)
+			logging.Error("[RENDER_WORKER] Failed to clean up old content records", "error", err)
 		}
 	}
 
@@ -373,8 +372,7 @@ func (w *RenderWorker) renderForDeviceModel(ctx context.Context, userPlugin data
 		return fmt.Errorf("failed to store rendered content: %w", err)
 	}
 
-	logging.Logf("[RENDER_WORKER] Rendered %s for %dx%d (%d-bit): %s",
-		userPlugin.Plugin.Type, deviceModel.ScreenWidth, deviceModel.ScreenHeight, deviceModel.BitDepth, imagePath)
+	logging.Info("[RENDER_WORKER] Rendered plugin", "type", userPlugin.Plugin.Type, "width", deviceModel.ScreenWidth, "height", deviceModel.ScreenHeight, "bit_depth", deviceModel.BitDepth, "path", imagePath)
 
 	return nil
 }
@@ -388,7 +386,7 @@ func (w *RenderWorker) scheduleNextRender(ctx context.Context, userPlugin databa
 	// Check if plugin requires processing before scheduling
 	plugin, exists := plugins.Get(userPlugin.Plugin.Type)
 	if !exists || !plugin.RequiresProcessing() {
-		logging.Logf("[RENDER_WORKER] Skipping next render schedule for %s - doesn't require processing", userPlugin.Plugin.Type)
+		logging.Info("[RENDER_WORKER] Skipping next render schedule for %s - doesn't require processing", userPlugin.Plugin.Type)
 		return
 	}
 
@@ -398,12 +396,12 @@ func (w *RenderWorker) scheduleNextRender(ctx context.Context, userPlugin databa
 		Where("user_plugin_id = ? AND status = ?", userPlugin.ID, "pending").
 		Count(&existingCount).Error
 	if err != nil {
-		logging.Logf("[RENDER_WORKER] Failed to check existing jobs for %s: %v", userPlugin.ID, err)
+		logging.Info("[RENDER_WORKER] Failed to check existing jobs for %s: %v", userPlugin.ID, err)
 		return
 	}
 
 	if existingCount > 0 {
-		logging.Logf("[RENDER_WORKER] Skipping next render schedule for %s - already has pending job", userPlugin.Name)
+		logging.Info("[RENDER_WORKER] Skipping next render schedule for %s - already has pending job", userPlugin.Name)
 		return
 	}
 
@@ -419,9 +417,9 @@ func (w *RenderWorker) scheduleNextRender(ctx context.Context, userPlugin databa
 
 	err = w.db.WithContext(ctx).Create(&renderJob).Error
 	if err != nil {
-		logging.Logf("[RENDER_WORKER] Failed to schedule next render: %v", err)
+		logging.Info("[RENDER_WORKER] Failed to schedule next render: %v", err)
 	} else {
-		logging.Logf("[RENDER_WORKER] Scheduled next render for %s at %s",
+		logging.Info("[RENDER_WORKER] Scheduled next render for %s at %s",
 			userPlugin.Name, nextRender.Format(time.RFC3339))
 	}
 }
@@ -433,7 +431,7 @@ func (w *RenderWorker) markJobFailed(ctx context.Context, job database.RenderQue
 		ErrorMessage: errorMsg,
 	}).Error
 	if err != nil {
-		logging.Logf("[RENDER_WORKER] Failed to mark job as failed: %v", err)
+		logging.Info("[RENDER_WORKER] Failed to mark job as failed: %v", err)
 	}
 }
 
@@ -454,7 +452,7 @@ func (w *RenderWorker) CleanupOldContent(ctx context.Context, maxAge time.Durati
 		// Delete file if it's a local file (not a URL)
 		if filepath.IsAbs(content.ImagePath) && filepath.HasPrefix(content.ImagePath, w.renderedDir) {
 			if err := os.Remove(content.ImagePath); err != nil && !os.IsNotExist(err) {
-				logging.Logf("[RENDER_WORKER] Failed to delete file %s: %v", content.ImagePath, err)
+				logging.Info("[RENDER_WORKER] Failed to delete file %s: %v", content.ImagePath, err)
 			}
 		}
 	}
@@ -468,7 +466,7 @@ func (w *RenderWorker) CleanupOldContent(ctx context.Context, maxAge time.Durati
 	}
 
 	if len(oldContent) > 0 {
-		logging.Logf("[RENDER_WORKER] Cleaned up %d old rendered content items", len(oldContent))
+		logging.Info("[RENDER_WORKER] Cleaned up %d old rendered content items", len(oldContent))
 	}
 
 	return nil
@@ -493,7 +491,7 @@ func (w *RenderWorker) CleanupOldContentSmart(ctx context.Context) error {
 		var userPlugin database.UserPlugin
 		err := w.db.WithContext(ctx).First(&userPlugin, userPluginID).Error
 		if err != nil {
-			logging.Logf("[RENDER_WORKER] Skipping cleanup for missing plugin %s: %v", userPluginID, err)
+			logging.Info("[RENDER_WORKER] Skipping cleanup for missing plugin %s: %v", userPluginID, err)
 			continue
 		}
 
@@ -519,7 +517,7 @@ func (w *RenderWorker) CleanupOldContentSmart(ctx context.Context) error {
 			Where("user_plugin_id = ? AND rendered_at < ?", userPluginID, cutoff).
 			Find(&oldContent).Error
 		if err != nil {
-			logging.Logf("[RENDER_WORKER] Failed to find old content for plugin %s: %v", userPluginID, err)
+			logging.Info("[RENDER_WORKER] Failed to find old content for plugin %s: %v", userPluginID, err)
 			continue
 		}
 		
@@ -532,7 +530,7 @@ func (w *RenderWorker) CleanupOldContentSmart(ctx context.Context) error {
 		for _, content := range oldContent {
 			if filepath.IsAbs(content.ImagePath) && filepath.HasPrefix(content.ImagePath, w.renderedDir) {
 				if err := os.Remove(content.ImagePath); err != nil && !os.IsNotExist(err) {
-					logging.Logf("[RENDER_WORKER] Failed to delete old image %s: %v", content.ImagePath, err)
+					logging.Error("[RENDER_WORKER] Failed to delete old image", "path", content.ImagePath, "error", err)
 				} else if err == nil {
 					filesDeleted++
 				}
@@ -544,19 +542,19 @@ func (w *RenderWorker) CleanupOldContentSmart(ctx context.Context) error {
 			Where("user_plugin_id = ? AND rendered_at < ?", userPluginID, cutoff).
 			Delete(&database.RenderedContent{}).Error
 		if err != nil {
-			logging.Logf("[RENDER_WORKER] Failed to delete old content records for plugin %s: %v", userPluginID, err)
+			logging.Info("[RENDER_WORKER] Failed to delete old content records for plugin %s: %v", userPluginID, err)
 			continue
 		}
 		
 		totalCleaned += len(oldContent)
 		if len(oldContent) > 0 {
-			logging.Logf("[RENDER_WORKER] Plugin %s (refresh: %v): cleaned up %d items (retention: %v)",
+			logging.Info("[RENDER_WORKER] Plugin %s (refresh: %v): cleaned up %d items (retention: %v)",
 				userPlugin.Name, refreshInterval, len(oldContent), retentionPeriod)
 		}
 	}
 
 	if totalCleaned > 0 {
-		logging.Logf("[RENDER_WORKER] Smart cleanup completed: %d total items removed", totalCleaned)
+		logging.Info("[RENDER_WORKER] Smart cleanup completed: %d total items removed", totalCleaned)
 	}
 
 	return nil

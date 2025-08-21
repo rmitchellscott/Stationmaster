@@ -42,11 +42,11 @@ func (p *BasePoller) Start(ctx context.Context) error {
 	}
 
 	if !p.config.Enabled {
-		logging.Logf("[POLLER] %s is disabled, skipping start", p.config.Name)
+		logging.Info("[POLLER] Poller is disabled, skipping start", "name", p.config.Name)
 		return nil
 	}
 
-	logging.Logf("[POLLER] Starting %s with interval %v", p.config.Name, p.config.Interval)
+	logging.Info("[POLLER] Starting poller", "name", p.config.Name, "interval", p.config.Interval)
 
 	p.ctx, p.cancel = context.WithCancel(ctx)
 	p.running = true
@@ -66,13 +66,13 @@ func (p *BasePoller) Stop() error {
 		return nil // Already stopped
 	}
 
-	logging.Logf("[POLLER] Stopping %s", p.config.Name)
+	logging.Info("[POLLER] Stopping poller", "name", p.config.Name)
 
 	p.cancel()
 	p.wg.Wait()
 	p.running = false
 
-	logging.Logf("[POLLER] %s stopped", p.config.Name)
+	logging.Info("[POLLER] Poller stopped", "name", p.config.Name)
 	return nil
 }
 
@@ -95,7 +95,7 @@ func (p *BasePoller) SetInterval(interval time.Duration) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.config.Interval = interval
-	logging.Logf("[POLLER] Updated %s interval to %v", p.config.Name, interval)
+	logging.Info("[POLLER] Updated poller interval", "name", p.config.Name, "interval", interval)
 }
 
 // pollLoop runs the main polling loop
@@ -133,8 +133,7 @@ func (p *BasePoller) executeWithRetry() {
 			return // Success
 		}
 
-		logging.Logf("[POLLER] %s attempt %d/%d failed: %v",
-			p.config.Name, attempt+1, p.config.MaxRetries, err)
+		logging.Warn("[POLLER] Poller attempt failed", "name", p.config.Name, "attempt", attempt+1, "max_retries", p.config.MaxRetries, "error", err)
 
 		if attempt < p.config.MaxRetries-1 {
 			// Wait before retrying, but check for context cancellation
@@ -147,5 +146,5 @@ func (p *BasePoller) executeWithRetry() {
 		}
 	}
 
-	logging.Logf("[POLLER] %s failed after %d attempts", p.config.Name, p.config.MaxRetries)
+	logging.Error("[POLLER] Poller failed after all attempts", "name", p.config.Name, "max_retries", p.config.MaxRetries)
 }

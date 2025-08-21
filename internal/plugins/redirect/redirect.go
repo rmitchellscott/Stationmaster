@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/rmitchellscott/stationmaster/internal/plugins"
+	"github.com/rmitchellscott/stationmaster/internal/utils"
 )
 
 // RedirectPlugin implements a plugin that fetches JSON from external endpoints
@@ -78,6 +79,10 @@ func (p *RedirectPlugin) Validate(settings map[string]interface{}) error {
 		return fmt.Errorf("endpoint_url is required")
 	}
 
+	if err := utils.ValidateURL(endpointURL); err != nil {
+		return fmt.Errorf("endpoint_url validation failed: %w", err)
+	}
+
 	if timeout, ok := settings["timeout_seconds"]; ok {
 		if timeoutFloat, ok := timeout.(float64); ok {
 			if timeoutFloat < 1 || timeoutFloat > 10 {
@@ -102,6 +107,11 @@ func (p *RedirectPlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespo
 	timeoutSeconds := ctx.GetIntSetting("timeout_seconds", 2)
 	if timeoutSeconds > 10 {
 		timeoutSeconds = 10 // Cap at 10 seconds
+	}
+
+	if err := utils.ValidateURL(endpointURL); err != nil {
+		return plugins.CreateErrorResponse(fmt.Sprintf("Endpoint URL validation failed: %v", err)),
+			fmt.Errorf("endpoint URL validation failed: %w", err)
 	}
 
 	// Create HTTP client with timeout

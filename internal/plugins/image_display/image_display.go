@@ -8,6 +8,7 @@ import (
 
 	"github.com/rmitchellscott/stationmaster/internal/imageprocessing"
 	"github.com/rmitchellscott/stationmaster/internal/plugins"
+	"github.com/rmitchellscott/stationmaster/internal/utils"
 )
 
 // ImageDisplayPlugin implements an image plugin that displays a single image from a URL
@@ -75,6 +76,10 @@ func (p *ImageDisplayPlugin) Validate(settings map[string]interface{}) error {
 	// Basic URL validation
 	if len(imageURL) < 7 || (imageURL[:7] != "http://" && imageURL[:8] != "https://") {
 		return fmt.Errorf("image_url must be a valid HTTP or HTTPS URL")
+	}
+
+	if err := utils.ValidateURL(imageURL); err != nil {
+		return fmt.Errorf("image_url validation failed: %w", err)
 	}
 
 	return nil

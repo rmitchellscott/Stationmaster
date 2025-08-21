@@ -18,6 +18,7 @@ services:
       - ADMIN_PASSWORD=password
       - ADMIN_EMAIL=mitchell@example.com
       - PORT=8000
+      - BLOCKED_DOMAINS=test.com
       # OIDC Configuration (optional)
       - OIDC_ENABLED=${OIDC_ENABLED:-false}
       - OIDC_ISSUER=${OIDC_ISSUER}

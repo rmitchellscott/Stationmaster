@@ -110,6 +110,8 @@ npm run dev
 | `AUTH_USERNAME` | - | Basic auth username for legacy auth |
 | `AUTH_PASSWORD` | - | Basic auth password for legacy auth |
 | `API_KEY` | - | Global API key for legacy auth |
+| `BLOCK_PRIVATE_IPS` | `false` | Block requests to private IP addresses |
+| `BLOCKED_DOMAINS` | - | Comma-separated list of domains to block |
 
 ### User Management
 

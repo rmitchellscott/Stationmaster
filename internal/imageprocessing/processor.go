@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/rmitchellscott/stationmaster/internal/database"
+	"github.com/rmitchellscott/stationmaster/internal/utils"
 )
 
 // ProcessingOptions allows customization of the image processing pipeline
@@ -50,8 +51,11 @@ func ProcessForDeviceWithOptions(img image.Image, deviceModel *database.DeviceMo
 	return dithered, nil
 }
 
-// LoadImageFromURL downloads and decodes an image from a URL
 func LoadImageFromURL(url string, timeout time.Duration) (image.Image, string, error) {
+	if err := utils.ValidateURL(url); err != nil {
+		return nil, "", fmt.Errorf("URL validation failed: %w", err)
+	}
+
 	client := &http.Client{Timeout: timeout}
 	
 	resp, err := client.Get(url)

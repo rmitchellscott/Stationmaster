@@ -299,6 +299,21 @@ func UpdateUserPluginHandler(c *gin.Context) {
 		userPlugin.Name = req.Name
 	}
 	if req.Settings != nil {
+		// Get plugin from registry to validate settings
+		plugin, exists := plugins.Get(userPlugin.Plugin.Type)
+		if !exists {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Plugin type not found in registry"})
+			return
+		}
+		
+		if err := plugin.Validate(req.Settings); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "Settings validation failed",
+				"details": err.Error(),
+			})
+			return
+		}
+		
 		settingsJSON, err := json.Marshal(req.Settings)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid settings format"})

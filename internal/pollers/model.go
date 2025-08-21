@@ -76,7 +76,7 @@ func NewModelPoller(db *gorm.DB) *ModelPoller {
 
 // poll performs the model polling operation
 func (p *ModelPoller) poll(ctx context.Context) error {
-	logging.Info("[MODEL POLLER] Starting model information sync")
+	logging.InfoWithComponent(logging.ComponentModelPoller, "Starting model information sync")
 
 	// Fetch model information from API
 	models, err := p.fetchDeviceModels(ctx)
@@ -84,19 +84,19 @@ func (p *ModelPoller) poll(ctx context.Context) error {
 		return fmt.Errorf("failed to fetch device models: %w", err)
 	}
 
-	logging.Info("[MODEL POLLER] Found device models", "count", len(models))
+	logging.InfoWithComponent(logging.ComponentModelPoller, "Found device models", "count", len(models))
 
 	// Process each model
 	processed := 0
 	for _, modelInfo := range models {
 		if err := p.processDeviceModel(ctx, modelInfo); err != nil {
-			logging.Error("[MODEL POLLER] Error processing model", "model", modelInfo.Name, "error", err)
+			logging.ErrorWithComponent(logging.ComponentModelPoller, "Error processing model", "model", modelInfo.Name, "error", err)
 			continue
 		}
 		processed++
 	}
 
-	logging.Info("[MODEL POLLER] Model sync completed", "processed", processed, "total", len(models))
+	logging.InfoWithComponent(logging.ComponentModelPoller, "Model sync completed", "processed", processed, "total", len(models))
 	return nil
 }
 

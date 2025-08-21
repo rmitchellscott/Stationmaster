@@ -156,7 +156,7 @@ func initSQLite(config *DatabaseConfig) (*gorm.DB, error) {
 
 // runMigrations runs GORM auto-migration for all models
 func runMigrations(logPrefix string) error {
-	logging.Info("Running GORM auto-migrations", "database", logPrefix)
+	logging.Info("Running GORM auto-migrations", "component", logPrefix)
 
 	models := GetAllModels()
 
@@ -167,7 +167,7 @@ func runMigrations(logPrefix string) error {
 		}
 	}
 
-	logging.Info("GORM auto-migration completed successfully", "database", logPrefix)
+	logging.Info("GORM auto-migration completed successfully", "component", logPrefix)
 	return nil
 }
 

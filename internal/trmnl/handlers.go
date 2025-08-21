@@ -95,7 +95,7 @@ func SetupHandler(c *gin.Context) {
 func DisplayHandler(c *gin.Context) {
 	startTime := time.Now()
 
-	logging.Debug("[/api/display] Request received", "client_ip", c.ClientIP(), "method", c.Request.Method, "path", c.Request.URL.Path)
+	logging.DebugWithComponent(logging.ComponentAPIDisplay, "Request received", "client_ip", c.ClientIP(), "method", c.Request.Method, "path", c.Request.URL.Path)
 
 	// Extract headers
 	deviceID := c.GetHeader("ID")

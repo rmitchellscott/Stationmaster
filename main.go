@@ -48,7 +48,7 @@ var embeddedUI embed.FS
 
 func main() {
 	_ = godotenv.Load()
-	logging.Info("[STARTUP] Starting Stationmaster", "version", version.String())
+	logging.InfoWithComponent(logging.ComponentStartup, "Starting Stationmaster", "version", version.String())
 
 	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "-v") {
 		fmt.Println(version.String())
@@ -57,13 +57,13 @@ func main() {
 
 	// Initialize database (always in multi-user mode)
 	if err := database.Initialize(); err != nil {
-		logging.Error("[STARTUP] Failed to initialize database", "error", err)
+		logging.ErrorWithComponent(logging.ComponentStartup, "Failed to initialize database", "error", err)
 		os.Exit(1)
 	}
 	defer database.Close()
 
 	if err := database.MigrateToMultiUser(); err != nil {
-		logging.Error("[STARTUP] Failed to setup initial user", "error", err)
+		logging.ErrorWithComponent(logging.ComponentStartup, "Failed to setup initial user", "error", err)
 		os.Exit(1)
 	}
 

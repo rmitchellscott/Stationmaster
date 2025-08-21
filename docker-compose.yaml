@@ -38,6 +38,23 @@ services:
       - PROXY_AUTH_ENABLED=${PROXY_AUTH_ENABLED:-false}
       - PROXY_AUTH_HEADER=${PROXY_AUTH_HEADER:-X-Remote-User}
       - PROXY_AUTH_AUTO_CREATE=${PROXY_AUTH_AUTO_CREATE:-false}
+      # Browserless Configuration
+      - BROWSERLESS_URL=${BROWSERLESS_URL:-http://browserless:3000}
+
+  # Browserless service for HTML rendering
+  browserless:
+    image: ghcr.io/browserless/chromium:latest
+    container_name: stationmaster-browserless
+    restart: unless-stopped
+    environment:
+      - CONCURRENT=2
+      - MAX_QUEUE_LENGTH=10
+      - TIMEOUT=30000
+      - DEBUG=browserless:*
+    ports:
+      - "3000:3000"
+    networks:
+      - default
 
 #   # Optional PostgreSQL database for production use
 #   postgres:

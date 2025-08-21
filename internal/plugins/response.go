@@ -7,7 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// CreateImageResponse creates a response for image-type plugins
+// CreateImageResponse creates a response for image-type plugins with refresh rate
 func CreateImageResponse(imageURL, filename string, refreshRate int) PluginResponse {
 	return gin.H{
 		"plugin_type":  string(PluginTypeImage),
@@ -17,13 +17,21 @@ func CreateImageResponse(imageURL, filename string, refreshRate int) PluginRespo
 	}
 }
 
-// CreateImageDataResponse creates a response for image-type plugins with raw image data
-func CreateImageDataResponse(imageData []byte, filename string, refreshRate int) PluginResponse {
+// CreateImageResponseWithoutRefresh creates a response for image-type plugins without refresh rate
+func CreateImageResponseWithoutRefresh(imageURL, filename string) PluginResponse {
 	return gin.H{
-		"plugin_type":  string(PluginTypeImage),
-		"image_data":   imageData,
-		"filename":     filename,
-		"refresh_rate": fmt.Sprintf("%d", refreshRate),
+		"plugin_type": string(PluginTypeImage),
+		"image_url":   imageURL,
+		"filename":    filename,
+	}
+}
+
+// CreateImageDataResponse creates a response for image-type plugins with raw image data
+func CreateImageDataResponse(imageData []byte, filename string) PluginResponse {
+	return gin.H{
+		"plugin_type": string(PluginTypeImage),
+		"image_data":  imageData,
+		"filename":    filename,
 	}
 }
 

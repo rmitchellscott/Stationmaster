@@ -28,6 +28,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
+import { DatePicker } from "@/components/ui/date-picker";
+import { TimePicker } from "@/components/ui/time-picker";
+import { DateTimePicker } from "@/components/ui/datetime-picker";
 import {
   Select,
   SelectContent,
@@ -399,6 +403,130 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
           const value = settings[key] || prop.default || "";
 
           if (prop.type === "string") {
+            // Handle different string formats
+            if (prop.format === "date") {
+              const dateValue = value ? new Date(value) : undefined;
+              return (
+                <div key={key}>
+                  <Label htmlFor={key}>{prop.title || key}</Label>
+                  <DatePicker
+                    date={dateValue}
+                    onDateChange={(date) => onChange(key, date ? date.toISOString().split('T')[0] : "")}
+                    placeholder={prop.placeholder || "Select date"}
+                    className="mt-2"
+                  />
+                  {prop.description && (
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {prop.description}
+                    </p>
+                  )}
+                </div>
+              );
+            }
+
+            if (prop.format === "time") {
+              return (
+                <div key={key}>
+                  <Label htmlFor={key}>{prop.title || key}</Label>
+                  <TimePicker
+                    value={value}
+                    onChange={(time) => onChange(key, time)}
+                    placeholder={prop.placeholder || "HH:MM"}
+                    className="mt-2"
+                  />
+                  {prop.description && (
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {prop.description}
+                    </p>
+                  )}
+                </div>
+              );
+            }
+
+            if (prop.format === "date-time") {
+              return (
+                <div key={key}>
+                  <Label htmlFor={key}>{prop.title || key}</Label>
+                  <DateTimePicker
+                    value={value}
+                    onChange={(datetime) => onChange(key, datetime)}
+                    placeholder={prop.placeholder || "Select date and time"}
+                    className="mt-2"
+                  />
+                  {prop.description && (
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {prop.description}
+                    </p>
+                  )}
+                </div>
+              );
+            }
+
+            if (prop.format === "password") {
+              return (
+                <div key={key}>
+                  <Label htmlFor={key}>{prop.title || key}</Label>
+                  <Input
+                    id={key}
+                    type="password"
+                    placeholder={prop.placeholder || ""}
+                    value={value}
+                    onChange={(e) => onChange(key, e.target.value)}
+                    className="mt-2"
+                  />
+                  {prop.description && (
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {prop.description}
+                    </p>
+                  )}
+                </div>
+              );
+            }
+
+            if (prop.format === "uri") {
+              return (
+                <div key={key}>
+                  <Label htmlFor={key}>{prop.title || key}</Label>
+                  <Input
+                    id={key}
+                    type="url"
+                    placeholder={prop.placeholder || "https://example.com"}
+                    value={value}
+                    onChange={(e) => onChange(key, e.target.value)}
+                    className="mt-2"
+                  />
+                  {prop.description && (
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {prop.description}
+                    </p>
+                  )}
+                </div>
+              );
+            }
+
+            // Check if it should be a textarea (long text)
+            if (prop.maxLength && prop.maxLength > 200) {
+              return (
+                <div key={key}>
+                  <Label htmlFor={key}>{prop.title || key}</Label>
+                  <Textarea
+                    id={key}
+                    placeholder={prop.placeholder || ""}
+                    value={value}
+                    onChange={(e) => onChange(key, e.target.value)}
+                    className="mt-2"
+                    rows={4}
+                  />
+                  {prop.description && (
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {prop.description}
+                    </p>
+                  )}
+                </div>
+              );
+            }
+
+            // Default string input
             return (
               <div key={key}>
                 <Label htmlFor={key}>{prop.title || key}</Label>
@@ -418,23 +546,89 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
             );
           }
 
+          // Handle enum (select dropdown)
+          if (prop.enum && Array.isArray(prop.enum)) {
+            return (
+              <div key={key}>
+                <Label htmlFor={key}>{prop.title || key}</Label>
+                <Select value={value} onValueChange={(val) => onChange(key, val)}>
+                  <SelectTrigger className="mt-2">
+                    <SelectValue placeholder={prop.placeholder || "Select an option"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {prop.enum.map((option) => (
+                      <SelectItem key={option} value={option}>
+                        {option}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {prop.description && (
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {prop.description}
+                  </p>
+                )}
+              </div>
+            );
+          }
+
           if (prop.type === "integer" || prop.type === "number") {
+            const numValue = typeof value === 'number' ? value : (prop.default || 0);
+            const isInvalid = (prop.minimum !== undefined && numValue < prop.minimum) ||
+                              (prop.maximum !== undefined && numValue > prop.maximum);
+            
             return (
               <div key={key}>
                 <Label htmlFor={key}>{prop.title || key}</Label>
                 <Input
                   id={key}
                   type="number"
+                  min={prop.minimum}
+                  max={prop.maximum}
+                  step={prop.type === "integer" ? 1 : "any"}
                   placeholder={prop.placeholder || ""}
                   value={value}
                   onChange={(e) => onChange(key, prop.type === "integer" ? parseInt(e.target.value) || 0 : parseFloat(e.target.value) || 0)}
-                  className="mt-2"
+                  className={`mt-2 ${isInvalid ? 'border-red-500' : ''}`}
                 />
+                {isInvalid && (
+                  <p className="text-sm text-red-500 mt-1">
+                    Value must be between {prop.minimum || 'any'} and {prop.maximum || 'any'}
+                  </p>
+                )}
                 {prop.description && (
                   <p className="text-sm text-muted-foreground mt-1">
                     {prop.description}
+                    {(prop.minimum !== undefined || prop.maximum !== undefined) && (
+                      <span className="text-xs block">
+                        Range: {prop.minimum || 'any'} - {prop.maximum || 'any'}
+                      </span>
+                    )}
                   </p>
                 )}
+              </div>
+            );
+          }
+
+          if (prop.type === "boolean") {
+            const boolValue = typeof value === 'boolean' ? value : prop.default || false;
+            return (
+              <div key={key} className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label htmlFor={key}>{prop.title || key}</Label>
+                    {prop.description && (
+                      <p className="text-sm text-muted-foreground">
+                        {prop.description}
+                      </p>
+                    )}
+                  </div>
+                  <Switch
+                    id={key}
+                    checked={boolValue}
+                    onCheckedChange={(checked) => onChange(key, checked)}
+                  />
+                </div>
               </div>
             );
           }

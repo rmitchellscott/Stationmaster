@@ -376,9 +376,8 @@ func UpdatePlaylistItemHandler(c *gin.Context) {
 	if req.Importance != nil {
 		item.Importance = *req.Importance
 	}
-	if req.DurationOverride != nil {
-		item.DurationOverride = req.DurationOverride
-	}
+	// Always update duration_override field when provided (including null values)
+	item.DurationOverride = req.DurationOverride
 
 	err = playlistService.UpdatePlaylistItem(item)
 	if err != nil {

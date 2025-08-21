@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useConfig } from "@/components/ConfigProvider";
 import { useAuth } from "@/components/AuthProvider";
@@ -348,6 +349,7 @@ interface AdminPanelProps {
 }
 
 export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
+  const navigate = useNavigate();
   const { t } = useTranslation();
   const { user: currentUser } = useAuth();
   const { config } = useConfig();
@@ -560,7 +562,7 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
     const response = await fetch(url, options);
     if (response.status === 401) {
       logout();
-      window.location.href = '/';
+      navigate('/');
       throw new Error('Session expired after restore. Please log in again.');
     }
     return response;

@@ -46,16 +46,13 @@ export function ConfigProvider({ children }: ConfigProviderProps) {
   const fetchConfig = async () => {
     // If a request is already in progress, return the existing promise
     if (configPromise) {
-      console.log('ConfigProvider: Reusing existing config promise');
       return configPromise;
     }
 
-    console.log('ConfigProvider: Creating new config request');
     const promise = (async () => {
       try {
         setLoading(true);
         setError(null);
-        console.log('ConfigProvider: Fetching /api/config');
         const response = await fetch('/api/config', {
           credentials: 'include',
         });
@@ -63,7 +60,6 @@ export function ConfigProvider({ children }: ConfigProviderProps) {
         if (response.ok) {
           const configData = await response.json();
           setConfig(configData);
-          console.log('ConfigProvider: Config loaded successfully');
         } else {
           setError('Failed to fetch configuration');
         }
@@ -73,7 +69,6 @@ export function ConfigProvider({ children }: ConfigProviderProps) {
       } finally {
         setLoading(false);
         setConfigPromise(null); // Clear promise after completion
-        console.log('ConfigProvider: Promise cleared');
       }
     })();
 

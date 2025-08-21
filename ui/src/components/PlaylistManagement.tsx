@@ -1461,18 +1461,13 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
                   setSelectedUserPlugin(plugin || null);
                 }}
               >
-                <SelectTrigger>
+                <SelectTrigger className="mt-2">
                   <SelectValue placeholder="Choose a plugin instance..." />
                 </SelectTrigger>
                 <SelectContent>
                   {getAvailableUserPlugins().map((userPlugin) => (
                     <SelectItem key={userPlugin.id} value={userPlugin.id}>
-                      <div>
-                        <div className="font-medium">{userPlugin.name}</div>
-                        <div className="text-sm text-muted-foreground">
-                          {userPlugin.plugin?.name || "Unknown Plugin"}
-                        </div>
-                      </div>
+                      {userPlugin.name}
                     </SelectItem>
                   ))}
                 </SelectContent>

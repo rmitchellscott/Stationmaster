@@ -13,6 +13,8 @@ interface MobileMenuProps {
   showAdmin?: boolean
   onOpenSettings: () => void
   onOpenAdmin: () => void
+  isOpen?: boolean
+  onOpenChange?: (open: boolean) => void
 }
 
 export function MobileMenu({
@@ -20,6 +22,8 @@ export function MobileMenu({
   showAdmin,
   onOpenSettings,
   onOpenAdmin,
+  isOpen,
+  onOpenChange,
 }: MobileMenuProps) {
   const { t } = useTranslation()
   const { multiUserMode } = useAuth()
@@ -37,7 +41,7 @@ export function MobileMenu({
 
   // Multi-user mode enabled, show hamburger menu
   return (
-    <Popover>
+    <Popover open={isOpen} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
         <Button variant="ghost" size="icon" aria-label="Menu">
           <MenuIcon className="h-5 w-5" />
@@ -48,7 +52,10 @@ export function MobileMenu({
           <Button
             variant="ghost"
             size="sm"
-            onClick={onOpenSettings}
+            onClick={() => {
+              onOpenSettings()
+              onOpenChange?.(false)
+            }}
             className="justify-start gap-2"
           >
             <Settings className="h-4 w-4" />
@@ -59,7 +66,10 @@ export function MobileMenu({
           <Button
             variant="ghost"
             size="sm"
-            onClick={onOpenAdmin}
+            onClick={() => {
+              onOpenAdmin()
+              onOpenChange?.(false)
+            }}
             className="justify-start gap-2"
           >
             <Shield className="h-4 w-4" />

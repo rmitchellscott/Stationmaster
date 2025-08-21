@@ -124,7 +124,7 @@ func UpdateDeviceHandler(c *gin.Context) {
 		RefreshRate             int     `json:"refresh_rate"`
 		IsActive                *bool   `json:"is_active"`
 		AllowFirmwareUpdates    *bool   `json:"allow_firmware_updates"`
-		ModelName               *string `json:"model_name"`
+		DeviceModelID           *uint   `json:"device_model_id"`
 		ClearModelOverride      *bool   `json:"clear_model_override"`
 		IsShareable             *bool   `json:"is_shareable"`
 		SleepEnabled            *bool   `json:"sleep_enabled"`
@@ -181,28 +181,25 @@ func UpdateDeviceHandler(c *gin.Context) {
 		device.IsShareable = *req.IsShareable
 	}
 
-	// Handle model name updates
+	// Handle model updates
 	if req.ClearModelOverride != nil && *req.ClearModelOverride {
 		// Clear manual override - reset to device-reported model or empty
 		device.ManualModelOverride = false
-		if device.ReportedModelName != nil && *device.ReportedModelName != "" {
-			device.ModelName = device.ReportedModelName
-		} else {
-			device.ModelName = nil
-		}
-	} else if req.ModelName != nil {
-		// Validate the model exists if not empty
-		if *req.ModelName != "" {
-			if err := deviceService.ValidateDeviceModel(*req.ModelName); err != nil {
+		device.DeviceModelID = nil
+		// TODO: In future, set DeviceModelID based on ReportedModelName
+	} else if req.DeviceModelID != nil {
+		// Validate the model exists if not zero
+		if *req.DeviceModelID != 0 {
+			if _, err := deviceService.ValidateDeviceModelByID(*req.DeviceModelID); err != nil {
 				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 				return
 			}
-			device.ModelName = req.ModelName
+			device.DeviceModelID = req.DeviceModelID
 			device.ManualModelOverride = true
 		} else {
-			// Empty string means clear the model
-			device.ModelName = nil
-			device.ManualModelOverride = true
+			// Zero means clear the model
+			device.DeviceModelID = nil
+			device.ManualModelOverride = false
 		}
 	}
 

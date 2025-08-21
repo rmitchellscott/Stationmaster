@@ -42,19 +42,11 @@ RUN --mount=type=cache,target=/root/.cache \
 # Final image
 FROM alpine:3.22
 
-# Install runtime dependencies including Chromium for HTML rendering
+# Install runtime dependencies
 RUN apk add --no-cache \
       ca-certificates \
-      imagemagick \
       postgresql-client \
       tzdata \
-      chromium \
-      chromium-chromedriver \
-      nss \
-      freetype \
-      freetype-dev \
-      harfbuzz \
-      ttf-freefont \
     && update-ca-certificates
 
 WORKDIR /app
@@ -67,9 +59,6 @@ RUN mkdir -p /data /app/static/rendered \
     && adduser -u 1000 -S appuser -G appuser \
     && chown -R appuser:appuser /app /data
 
-# Environment variables for Chromium
-ENV CHROMIUM_BIN=/usr/bin/chromium-browser
-ENV CHROME_BIN=/usr/bin/chromium-browser
 
 USER appuser
 

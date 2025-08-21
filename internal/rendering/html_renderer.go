@@ -26,7 +26,10 @@ type HTMLRenderer struct {
 // NewHTMLRenderer creates a new HTML renderer
 func NewHTMLRenderer(options RenderOptions) (*HTMLRenderer, error) {
 	// Get Chromium binary path from environment or use default system paths
-	chromiumBin := getChromiumBinary()
+	chromiumBin, err := getChromiumBinary()
+	if err != nil {
+		return nil, fmt.Errorf("failed to find Chromium binary: %w", err)
+	}
 	
 	log.Printf("[HTML_RENDERER] Using Chromium binary: %s", chromiumBin)
 	
@@ -43,12 +46,8 @@ func NewHTMLRenderer(options RenderOptions) (*HTMLRenderer, error) {
 		Set("no-first-run").
 		Set("disable-background-timer-throttling").
 		Set("disable-backgrounding-occluded-windows").
-		Set("disable-renderer-backgrounding")
-	
-	// Set the binary path if we found one
-	if chromiumBin != "" {
-		l = l.Bin(chromiumBin)
-	}
+		Set("disable-renderer-backgrounding").
+		Bin(chromiumBin)
 
 	// Try to launch browser
 	url, err := l.Launch()
@@ -69,13 +68,19 @@ func NewHTMLRenderer(options RenderOptions) (*HTMLRenderer, error) {
 }
 
 // getChromiumBinary attempts to find the Chromium binary path
-func getChromiumBinary() string {
+func getChromiumBinary() (string, error) {
 	// Check environment variables first
 	if bin := os.Getenv("CHROMIUM_BIN"); bin != "" {
-		return bin
+		if _, err := os.Stat(bin); err == nil {
+			return bin, nil
+		}
+		return "", fmt.Errorf("CHROMIUM_BIN path does not exist: %s", bin)
 	}
 	if bin := os.Getenv("CHROME_BIN"); bin != "" {
-		return bin
+		if _, err := os.Stat(bin); err == nil {
+			return bin, nil
+		}
+		return "", fmt.Errorf("CHROME_BIN path does not exist: %s", bin)
 	}
 	
 	// Try common system paths
@@ -89,12 +94,12 @@ func getChromiumBinary() string {
 	
 	for _, path := range commonPaths {
 		if _, err := os.Stat(path); err == nil {
-			return path
+			return path, nil
 		}
 	}
 	
-	// Return empty string to let launcher auto-detect/download
-	return ""
+	// No Chromium binary found
+	return "", fmt.Errorf("no Chromium binary found - install Chromium or set CHROMIUM_BIN/CHROME_BIN environment variable")
 }
 
 // RenderToImage renders HTML content to an image

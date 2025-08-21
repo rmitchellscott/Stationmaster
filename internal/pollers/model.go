@@ -157,51 +157,25 @@ func (p *ModelPoller) processDeviceModel(ctx context.Context, modelInfo DeviceMo
 		capabilitiesJSON = string(capBytes)
 	}
 
-	// Check if model already exists
+	// Check if this exact model version already exists (not deleted)
 	var existingModel database.DeviceModel
-	err := p.db.Where("model_name = ?", modelName).First(&existingModel).Error
+	err := p.db.Where("model_name = ? AND deleted_at IS NULL", modelName).
+		Where("display_name = ?", displayName).
+		Where("description = ?", modelInfo.Description).
+		Where("screen_width = ?", int(modelInfo.Width)).
+		Where("screen_height = ?", int(modelInfo.Height)).
+		Where("color_depth = ?", int(modelInfo.Colors)).
+		Where("bit_depth = ?", int(modelInfo.BitDepth)).
+		First(&existingModel).Error
 
+	now := time.Now()
+	
 	if err == nil {
-		// Model exists, check if we need to update it
-		updated := false
-
-		if existingModel.DisplayName != displayName ||
-			existingModel.Description != modelInfo.Description ||
-			existingModel.ScreenWidth != int(modelInfo.Width) ||
-			existingModel.ScreenHeight != int(modelInfo.Height) ||
-			existingModel.ColorDepth != int(modelInfo.Colors) ||
-			existingModel.BitDepth != int(modelInfo.BitDepth) ||
-			existingModel.HasWiFi != hasWiFi ||
-			existingModel.HasBattery != hasBattery ||
-			existingModel.HasButtons != hasButtons ||
-			existingModel.Capabilities != capabilitiesJSON ||
-			existingModel.MinFirmware != minFirmware ||
-			existingModel.IsActive != isActive {
-			updated = true
+		// Exact model exists, just update last seen time
+		existingModel.ApiLastSeenAt = &now
+		if err := p.db.Save(&existingModel).Error; err != nil {
+			return fmt.Errorf("failed to update last seen time: %w", err)
 		}
-
-		if updated {
-			// Update existing model
-			existingModel.DisplayName = displayName
-			existingModel.Description = modelInfo.Description
-			existingModel.ScreenWidth = int(modelInfo.Width)
-			existingModel.ScreenHeight = int(modelInfo.Height)
-			existingModel.ColorDepth = int(modelInfo.Colors)
-			existingModel.BitDepth = int(modelInfo.BitDepth)
-			existingModel.HasWiFi = hasWiFi
-			existingModel.HasBattery = hasBattery
-			existingModel.HasButtons = hasButtons
-			existingModel.Capabilities = capabilitiesJSON
-			existingModel.MinFirmware = minFirmware
-			existingModel.IsActive = isActive
-
-			if err := p.db.Save(&existingModel).Error; err != nil {
-				return fmt.Errorf("failed to update device model: %w", err)
-			}
-
-			logging.Logf("[MODEL POLLER] Updated device model: %s", modelName)
-		}
-
 		return nil
 	}
 
@@ -209,28 +183,29 @@ func (p *ModelPoller) processDeviceModel(ctx context.Context, modelInfo DeviceMo
 		return fmt.Errorf("database error: %w", err)
 	}
 
-	// New model, create database record
+	// Model with these exact specs doesn't exist, create new version
 	deviceModel := database.DeviceModel{
-		ModelName:    modelName,
-		DisplayName:  displayName,
-		Description:  modelInfo.Description,
-		ScreenWidth:  int(modelInfo.Width),
-		ScreenHeight: int(modelInfo.Height),
-		ColorDepth:   int(modelInfo.Colors),
-		BitDepth:     int(modelInfo.BitDepth),
-		HasWiFi:      hasWiFi,
-		HasBattery:   hasBattery,
-		HasButtons:   hasButtons,
-		Capabilities: capabilitiesJSON,
-		MinFirmware:  minFirmware,
-		IsActive:     isActive,
+		ModelName:     modelName,
+		DisplayName:   displayName,
+		Description:   modelInfo.Description,
+		ScreenWidth:   int(modelInfo.Width),
+		ScreenHeight:  int(modelInfo.Height),
+		ColorDepth:    int(modelInfo.Colors),
+		BitDepth:      int(modelInfo.BitDepth),
+		HasWiFi:       hasWiFi,
+		HasBattery:    hasBattery,
+		HasButtons:    hasButtons,
+		Capabilities:  capabilitiesJSON,
+		MinFirmware:   minFirmware,
+		IsActive:      isActive,
+		ApiLastSeenAt: &now,
 	}
 
 	if err := p.db.Create(&deviceModel).Error; err != nil {
 		return fmt.Errorf("failed to create device model: %w", err)
 	}
 
-	logging.Logf("[MODEL POLLER] Added new device model: %s", modelName)
+	logging.Logf("[MODEL POLLER] Added new device model version: %s (%s)", modelName, displayName)
 	return nil
 }
 

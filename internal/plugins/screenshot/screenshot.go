@@ -29,7 +29,7 @@ func (p *ScreenshotPlugin) PluginType() plugins.PluginType {
 
 // Name returns the human-readable name
 func (p *ScreenshotPlugin) Name() string {
-	return "Website Screenshot"
+	return "Screenshot"
 }
 
 // Description returns the plugin description

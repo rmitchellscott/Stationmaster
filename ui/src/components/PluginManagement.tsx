@@ -51,6 +51,7 @@ import {
   Settings as SettingsIcon,
   AlertTriangle,
   CheckCircle,
+  RefreshCw,
 } from "lucide-react";
 
 interface Plugin {
@@ -62,6 +63,7 @@ interface Plugin {
   version: string;
   author: string;
   is_active: boolean;
+  requires_processing: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -72,11 +74,18 @@ interface UserPlugin {
   plugin_id: string;
   name: string;
   settings: string;
+  refresh_interval: number;
   is_active: boolean;
   created_at: string;
   updated_at: string;
   plugin: Plugin;
   is_used_in_playlists: boolean;
+}
+
+interface RefreshRateOption {
+  label: string;
+  value: number;
+  default?: boolean;
 }
 
 interface PluginManagementProps {
@@ -88,6 +97,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
   const { t } = useTranslation();
   const [userPlugins, setUserPlugins] = useState<UserPlugin[]>([]);
   const [plugins, setPlugins] = useState<Plugin[]>([]);
+  const [refreshRateOptions, setRefreshRateOptions] = useState<RefreshRateOption[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -97,6 +107,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
   const [selectedPlugin, setSelectedPlugin] = useState<Plugin | null>(null);
   const [instanceName, setInstanceName] = useState("");
   const [instanceSettings, setInstanceSettings] = useState<Record<string, any>>({});
+  const [instanceRefreshRate, setInstanceRefreshRate] = useState<number>(86400); // Default to daily
   const [createLoading, setCreateLoading] = useState(false);
 
   // Edit plugin dialog
@@ -104,7 +115,13 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
   const [editUserPlugin, setEditUserPlugin] = useState<UserPlugin | null>(null);
   const [editInstanceName, setEditInstanceName] = useState("");
   const [editInstanceSettings, setEditInstanceSettings] = useState<Record<string, any>>({});
+  const [editInstanceRefreshRate, setEditInstanceRefreshRate] = useState<number>(86400);
   const [updateLoading, setUpdateLoading] = useState(false);
+  const [forceRefreshLoading, setForceRefreshLoading] = useState(false);
+  
+  // Edit dialog specific alerts
+  const [editDialogError, setEditDialogError] = useState<string | null>(null);
+  const [editDialogSuccess, setEditDialogSuccess] = useState<string | null>(null);
 
   // Delete confirmation dialog
   const [deletePluginDialog, setDeletePluginDialog] = useState<{
@@ -145,6 +162,20 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
     }
   };
 
+  const fetchRefreshRateOptions = async () => {
+    try {
+      const response = await fetch("/api/plugins/refresh-rate-options", {
+        credentials: "include",
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setRefreshRateOptions(data.refresh_rate_options || []);
+      }
+    } catch (error) {
+      console.error("Failed to fetch refresh rate options:", error);
+    }
+  };
+
   const createUserPlugin = async () => {
     if (!selectedPlugin || !instanceName.trim()) {
       setError("Please provide a name for the plugin instance");
@@ -155,17 +186,24 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
       setCreateLoading(true);
       setError(null);
 
+      const requestBody: any = {
+        plugin_type: selectedPlugin.type,
+        name: instanceName.trim(),
+        settings: instanceSettings,
+      };
+
+      // Only include refresh_interval for plugins that require processing
+      if (selectedPlugin.requires_processing) {
+        requestBody.refresh_interval = instanceRefreshRate;
+      }
+
       const response = await fetch("/api/user-plugins", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         credentials: "include",
-        body: JSON.stringify({
-          plugin_id: selectedPlugin.id,
-          name: instanceName.trim(),
-          settings: instanceSettings,
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       if (response.ok) {
@@ -174,6 +212,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
         setSelectedPlugin(null);
         setInstanceName("");
         setInstanceSettings({});
+        setInstanceRefreshRate(86400);
         await fetchUserPlugins();
         onUpdate?.();
       } else {
@@ -214,16 +253,23 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
       setUpdateLoading(true);
       setError(null);
 
+      const requestBody: any = {
+        name: editInstanceName.trim(),
+        settings: editInstanceSettings,
+      };
+
+      // Only include refresh_interval for plugins that require processing
+      if (editUserPlugin.plugin?.requires_processing) {
+        requestBody.refresh_interval = editInstanceRefreshRate;
+      }
+
       const response = await fetch(`/api/user-plugins/${editUserPlugin.id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
         },
         credentials: "include",
-        body: JSON.stringify({
-          name: editInstanceName.trim(),
-          settings: editInstanceSettings,
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       if (response.ok) {
@@ -232,6 +278,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
         setEditUserPlugin(null);
         setEditInstanceName("");
         setEditInstanceSettings({});
+        setEditInstanceRefreshRate(86400);
         await fetchUserPlugins();
         onUpdate?.();
       } else {
@@ -242,6 +289,35 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
       setError("Network error occurred");
     } finally {
       setUpdateLoading(false);
+    }
+  };
+
+  const forceRefreshUserPlugin = async () => {
+    if (!editUserPlugin) {
+      setEditDialogError("No plugin selected");
+      return;
+    }
+
+    try {
+      setForceRefreshLoading(true);
+      setEditDialogError(null);
+      setEditDialogSuccess(null);
+
+      const response = await fetch(`/api/user-plugins/${editUserPlugin.id}/force-refresh`, {
+        method: "POST",
+        credentials: "include",
+      });
+
+      if (response.ok) {
+        setEditDialogSuccess("Plugin refresh triggered successfully! Content will be re-rendered on next request.");
+      } else {
+        const errorData = await response.json();
+        setEditDialogError(errorData.error || "Failed to force refresh plugin");
+      }
+    } catch (error) {
+      setEditDialogError("Network error occurred");
+    } finally {
+      setForceRefreshLoading(false);
     }
   };
 
@@ -269,6 +345,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
   useEffect(() => {
     fetchUserPlugins();
     fetchPlugins();
+    fetchRefreshRateOptions();
   }, [selectedDeviceId]);
 
   useEffect(() => {
@@ -284,6 +361,13 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
       return () => clearTimeout(timer);
     }
   }, [error]);
+
+  useEffect(() => {
+    if (editDialogSuccess) {
+      const timer = setTimeout(() => setEditDialogSuccess(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [editDialogSuccess]);
 
   const renderSettingsForm = (plugin: Plugin, settings: Record<string, any>, onChange: (key: string, value: any) => void) => {
     let schema;
@@ -455,6 +539,12 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                             }
                             
                             setEditInstanceSettings(parsedSettings);
+                            setEditInstanceRefreshRate(userPlugin.refresh_interval || 86400);
+                            
+                            // Clear dialog-specific alerts when opening
+                            setEditDialogError(null);
+                            setEditDialogSuccess(null);
+                            
                             setShowEditDialog(true);
                           }}
                         >
@@ -521,7 +611,6 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                                   v{plugin.version} by {plugin.author}
                                 </div>
                               </div>
-                              <Badge variant="outline" className="flex-shrink-0 text-xs">{plugin.type}</Badge>
                             </CardTitle>
                           </CardHeader>
                           <CardContent className="flex flex-col flex-grow pt-0">
@@ -578,6 +667,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                         setSelectedPlugin(null);
                         setInstanceName("");
                         setInstanceSettings({});
+                        setInstanceRefreshRate(86400);
                       }}
                       className="mb-2"
                     >
@@ -590,7 +680,6 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                           v{selectedPlugin.version} by {selectedPlugin.author}
                         </div>
                       </div>
-                      <Badge variant="outline" className="text-xs">{selectedPlugin.type}</Badge>
                     </div>
                   </div>
 
@@ -604,6 +693,27 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                       className="mt-1"
                     />
                   </div>
+
+                  {selectedPlugin.requires_processing && (
+                    <div>
+                      <Label htmlFor="instanceRefreshRate" className="text-sm">Refresh Rate</Label>
+                      <Select
+                        value={instanceRefreshRate.toString()}
+                        onValueChange={(value) => setInstanceRefreshRate(Number(value))}
+                      >
+                        <SelectTrigger className="mt-1">
+                          <SelectValue placeholder="Select refresh rate" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {refreshRateOptions.map((option) => (
+                            <SelectItem key={option.value} value={option.value.toString()}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
 
                   <div>
                     <Label className="text-sm">Plugin Configuration</Label>
@@ -626,6 +736,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                 setSelectedPlugin(null);
                 setInstanceName("");
                 setInstanceSettings({});
+                setInstanceRefreshRate(86400);
               }}
             >
               Cancel
@@ -643,7 +754,14 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
       </Dialog>
 
       {/* Edit Plugin Dialog */}
-      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+      <Dialog open={showEditDialog} onOpenChange={(open) => {
+        setShowEditDialog(open);
+        if (!open) {
+          // Clear dialog-specific alerts when closing
+          setEditDialogError(null);
+          setEditDialogSuccess(null);
+        }
+      }}>
         <DialogContent 
           className="sm:max-w-2xl max-h-[80vh] overflow-y-auto"
           onOpenAutoFocus={(e) => e.preventDefault()}
@@ -656,6 +774,20 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
           </DialogHeader>
 
           <div className="space-y-6">
+            {editDialogError && (
+              <Alert variant="destructive">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription>{editDialogError}</AlertDescription>
+              </Alert>
+            )}
+
+            {editDialogSuccess && (
+              <Alert>
+                <CheckCircle className="h-4 w-4" />
+                <AlertDescription>{editDialogSuccess}</AlertDescription>
+              </Alert>
+            )}
+
             <div>
               <Label htmlFor="edit-instance-name">Instance Name</Label>
               <Input
@@ -666,6 +798,38 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                 className="mt-2"
               />
             </div>
+
+            {editUserPlugin?.plugin?.requires_processing && (
+              <div>
+                <Label htmlFor="edit-instance-refresh-rate">Refresh Rate</Label>
+                <div className="flex gap-2 mt-2">
+                  <Select
+                    value={editInstanceRefreshRate.toString()}
+                    onValueChange={(value) => setEditInstanceRefreshRate(Number(value))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select refresh rate" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {refreshRateOptions.map((option) => (
+                        <SelectItem key={option.value} value={option.value.toString()}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    variant="outline"
+                    onClick={forceRefreshUserPlugin}
+                    disabled={forceRefreshLoading}
+                    className="gap-2"
+                  >
+                    <RefreshCw className={`h-4 w-4 ${forceRefreshLoading ? "animate-spin" : ""}`} />
+                    {forceRefreshLoading ? "Refreshing..." : "Force Refresh"}
+                  </Button>
+                </div>
+              </div>
+            )}
 
             {editUserPlugin?.plugin && (
               <>
@@ -692,7 +856,11 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowEditDialog(false)}>
+            <Button variant="outline" onClick={() => {
+              setShowEditDialog(false);
+              setEditDialogError(null);
+              setEditDialogSuccess(null);
+            }}>
               Cancel
             </Button>
             <Button

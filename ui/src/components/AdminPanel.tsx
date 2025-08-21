@@ -461,7 +461,6 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
   
   // Plugin form state
   const [pluginName, setPluginName] = useState("");
-  const [pluginType, setPluginType] = useState("");
   const [pluginDescription, setPluginDescription] = useState("");
   const [pluginConfigSchema, setPluginConfigSchema] = useState("");
   const [pluginVersion, setPluginVersion] = useState("");
@@ -1474,7 +1473,7 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
 
   // Plugin management functions
   const createPlugin = async () => {
-    if (!pluginName.trim() || !pluginType.trim()) {
+    if (!pluginName.trim()) {
       setError("Please fill in required fields");
       return;
     }
@@ -1491,7 +1490,7 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
         credentials: "include",
         body: JSON.stringify({
           name: pluginName.trim(),
-          type: pluginType.trim(),
+          type: "widget",
           description: pluginDescription.trim(),
           config_schema: pluginConfigSchema.trim(),
           version: pluginVersion.trim(),
@@ -1530,7 +1529,7 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
         credentials: "include",
         body: JSON.stringify({
           name: pluginName.trim(),
-          type: pluginType.trim(),
+          type: "widget",
           description: pluginDescription.trim(),
           config_schema: pluginConfigSchema.trim(),
           version: pluginVersion.trim(),
@@ -1613,7 +1612,6 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
   const openEditPluginDialog = (plugin: Plugin) => {
     setEditPlugin(plugin);
     setPluginName(plugin.name);
-    setPluginType(plugin.type);
     setPluginDescription(plugin.description);
     setPluginConfigSchema(plugin.config_schema);
     setPluginVersion(plugin.version);
@@ -1624,7 +1622,6 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
     if (!editPlugin) return false;
     return (
       pluginName.trim() !== editPlugin.name ||
-      pluginType.trim() !== editPlugin.type ||
       pluginDescription.trim() !== editPlugin.description ||
       pluginConfigSchema.trim() !== editPlugin.config_schema ||
       pluginVersion.trim() !== editPlugin.version ||
@@ -1634,7 +1631,6 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
 
   const resetPluginForm = () => {
     setPluginName("");
-    setPluginType("");
     setPluginDescription("");
     setPluginConfigSchema("");
     setPluginVersion("");
@@ -3110,7 +3106,6 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
                     <TableHeader>
                       <TableRow>
                         <TableHead>Name</TableHead>
-                        <TableHead>Type</TableHead>
                         <TableHead className="hidden md:table-cell">Version</TableHead>
                         <TableHead className="hidden lg:table-cell">Author</TableHead>
                         <TableHead>Status</TableHead>
@@ -3122,9 +3117,6 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
                       {plugins.map((plugin) => (
                         <TableRow key={plugin.id}>
                           <TableCell className="font-medium">{plugin.name}</TableCell>
-                          <TableCell>
-                            <Badge variant="outline">{plugin.type}</Badge>
-                          </TableCell>
                           <TableCell className="hidden md:table-cell">
                             {plugin.version || <span className="text-muted-foreground">N/A</span>}
                           </TableCell>
@@ -3689,9 +3681,6 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
           {viewPlugin && (
             <div className="space-y-2 text-sm">
               <p>
-                <strong>Type:</strong> <Badge variant="outline">{viewPlugin.type}</Badge>
-              </p>
-              <p>
                 <strong>Description:</strong> {viewPlugin.description || "No description"}
               </p>
               <p>
@@ -3744,16 +3733,6 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
               />
             </div>
             <div>
-              <Label htmlFor="plugin-type">Type *</Label>
-              <Input
-                id="plugin-type"
-                value={pluginType}
-                onChange={(e) => setPluginType(e.target.value)}
-                placeholder="e.g., widget, data-source, utility"
-                className="mt-2"
-              />
-            </div>
-            <div>
               <Label htmlFor="plugin-description">Description</Label>
               <Input
                 id="plugin-description"
@@ -3802,7 +3781,7 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
             </Button>
             <Button
               onClick={createPlugin}
-              disabled={creatingPlugin || !pluginName.trim() || !pluginType.trim()}
+              disabled={creatingPlugin || !pluginName.trim()}
             >
               {creatingPlugin ? "Creating..." : "Create Plugin"}
             </Button>
@@ -3828,16 +3807,6 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
                 value={pluginName}
                 onChange={(e) => setPluginName(e.target.value)}
                 placeholder="e.g., Weather Display"
-                className="mt-2"
-              />
-            </div>
-            <div>
-              <Label htmlFor="edit-plugin-type">Type *</Label>
-              <Input
-                id="edit-plugin-type"
-                value={pluginType}
-                onChange={(e) => setPluginType(e.target.value)}
-                placeholder="e.g., widget, data-source, utility"
                 className="mt-2"
               />
             </div>
@@ -3890,7 +3859,7 @@ export function AdminPanel({ isOpen, onClose }: AdminPanelProps) {
             </Button>
             <Button
               onClick={updatePlugin}
-              disabled={!pluginName.trim() || !pluginType.trim() || !hasPluginChanges()}
+              disabled={!pluginName.trim() || !hasPluginChanges()}
             >
               Update Plugin
             </Button>

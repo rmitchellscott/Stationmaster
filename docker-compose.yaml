@@ -9,6 +9,7 @@ services:
       - "8000:8000"
     volumes:
       - ./data:/data
+      - ./static:/app/static
     environment:
       - DATABASE_URL=${DATABASE_URL:-/data/stationmaster.db}
       - PUBLIC_REGISTRATION_ENABLED=${PUBLIC_REGISTRATION_ENABLED:-false}

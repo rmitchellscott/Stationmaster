@@ -196,7 +196,7 @@ func (ds *DeviceService) GetDeviceByFriendlyID(friendlyID string) (*Device, erro
 // GetDeviceByAPIKey returns a device by its API key
 func (ds *DeviceService) GetDeviceByAPIKey(apiKey string) (*Device, error) {
 	var device Device
-	err := ds.db.First(&device, "api_key = ? AND is_active = ?", apiKey, true).Error
+	err := ds.db.Preload("DeviceModel").First(&device, "api_key = ? AND is_active = ?", apiKey, true).Error
 	if err != nil {
 		return nil, err
 	}

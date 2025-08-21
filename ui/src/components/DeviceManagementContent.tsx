@@ -97,7 +97,7 @@ interface Device {
   mac_address: string;
   friendly_id: string;
   name?: string;
-  model_name?: string;
+  device_model_id?: number;
   manual_model_override?: boolean;
   reported_model_name?: string;
   api_key: string;

@@ -101,12 +101,13 @@ func (s *FirmwareService) UpdateDeviceModel(model *DeviceModel) error {
 // CanUpdateFirmware checks if a device can be updated to a specific firmware version
 func (s *FirmwareService) CanUpdateFirmware(device *Device, firmwareVersion *FirmwareVersion) error {
 	// Check if device has a model
-	if device.ModelName == nil || *device.ModelName == "" {
+	if device.DeviceModelID == nil {
 		return errors.New("device model not specified")
 	}
 
-	// Get device model
-	model, err := s.GetDeviceModel(*device.ModelName)
+	// Get device model by ID
+	var model DeviceModel
+	err := s.db.Where("id = ?", *device.DeviceModelID).First(&model).Error
 	if err != nil {
 		return errors.New("device model not found")
 	}

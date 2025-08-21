@@ -159,7 +159,7 @@ func (w *RenderWorker) processRenderJob(ctx context.Context, job database.Render
 	var deviceModels []database.DeviceModel
 	err = w.db.WithContext(ctx).
 		Distinct("device_models.id", "device_models.screen_width", "device_models.screen_height", "device_models.bit_depth").
-		Joins("JOIN devices ON devices.model_name = device_models.model_name").
+		Joins("JOIN devices ON devices.device_model_id = device_models.id").
 		Where("devices.user_id = ? AND devices.is_active = ?", userPlugin.UserID, true).
 		Find(&deviceModels).Error
 	if err != nil {

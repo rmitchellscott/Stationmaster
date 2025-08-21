@@ -202,7 +202,6 @@ type Device struct {
 	FriendlyID              string     `gorm:"size:10;not null;uniqueIndex" json:"friendly_id"`  // Generated short ID like "917F0B"
 	Name                    string     `gorm:"size:255" json:"name,omitempty"`                   // User-defined name, empty until claimed
 	DeviceModelID           *uint      `gorm:"index" json:"device_model_id,omitempty"`           // Foreign key to DeviceModel.ID
-	ModelName               *string    `gorm:"size:100;index" json:"model_name,omitempty"`       // Deprecated - kept for migration
 	ManualModelOverride     bool       `gorm:"default:false" json:"manual_model_override"`       // True if model was manually set by user
 	ReportedModelName       *string    `gorm:"size:100" json:"reported_model_name,omitempty"`    // Last model reported by device
 	APIKey                  string     `gorm:"size:255;not null;index" json:"api_key"`

@@ -10,7 +10,7 @@ import (
 
 // RunMigrations runs any pending database migrations using gormigrate
 func RunMigrations(logPrefix string) error {
-	logging.Info("Running database migrations", "database", logPrefix)
+	logging.Info("Running database migrations", "component", logPrefix)
 
 	// Define migrations
 	migrations := []*gormigrate.Migration{
@@ -52,6 +52,6 @@ func RunMigrations(logPrefix string) error {
 		return fmt.Errorf("failed to run migrations: %w", err)
 	}
 
-	logging.Info("Migrations completed successfully", "database", logPrefix)
+	logging.Info("Migrations completed successfully", "component", logPrefix)
 	return nil
 }

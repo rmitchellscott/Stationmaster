@@ -38,8 +38,7 @@ func (qm *QueueManager) ScheduleRender(ctx context.Context, userPluginID uuid.UU
 		return fmt.Errorf("failed to create render job: %w", err)
 	}
 
-	logging.Logf("[QUEUE_MANAGER] Scheduled render job for plugin %s at %s",
-		userPluginID, scheduledFor.Format(time.RFC3339))
+	logging.Info("[QUEUE_MANAGER] Scheduled render job", "plugin_id", userPluginID, "scheduled_for", scheduledFor.Format(time.RFC3339))
 
 	return nil
 }
@@ -60,18 +59,18 @@ func (qm *QueueManager) ScheduleInitialRenders(ctx context.Context) error {
 		return fmt.Errorf("failed to load active user plugins: %w", err)
 	}
 
-	logging.Logf("[QUEUE_MANAGER] Scheduling initial renders for %d plugins", len(userPlugins))
+	logging.Info("[QUEUE_MANAGER] Scheduling initial renders", "plugin_count", len(userPlugins))
 
 	for _, userPlugin := range userPlugins {
 		// Check if plugin requires processing before scheduling
 		plugin, exists := plugins.Get(userPlugin.Plugin.Type)
 		if !exists {
-			logging.Logf("[QUEUE_MANAGER] Skipping %s - plugin type not found in registry", userPlugin.Plugin.Type)
+			logging.Debug("[QUEUE_MANAGER] Skipping plugin - type not found in registry", "plugin_type", userPlugin.Plugin.Type)
 			continue
 		}
 
 		if !plugin.RequiresProcessing() {
-			logging.Logf("[QUEUE_MANAGER] Skipping %s - plugin doesn't require processing", userPlugin.Plugin.Type)
+			logging.Debug("[QUEUE_MANAGER] Skipping plugin - doesn't require processing", "plugin_type", userPlugin.Plugin.Type)
 			continue
 		}
 
@@ -81,18 +80,18 @@ func (qm *QueueManager) ScheduleInitialRenders(ctx context.Context) error {
 			Where("user_plugin_id = ? AND status = ?", userPlugin.ID, "pending").
 			Count(&existingCount).Error
 		if err != nil {
-			logging.Logf("[QUEUE_MANAGER] Failed to check existing jobs for %s: %v", userPlugin.ID, err)
+			logging.Error("[QUEUE_MANAGER] Failed to check existing jobs", "plugin_id", userPlugin.ID, "error", err)
 			continue
 		}
 
 		if existingCount > 0 {
-			logging.Logf("[QUEUE_MANAGER] Skipping %s - already has pending job", userPlugin.ID)
+			logging.Debug("[QUEUE_MANAGER] Skipping plugin - already has pending job", "plugin_id", userPlugin.ID)
 			continue
 		}
 
 		// Schedule immediate render for plugin activation
 		if err := qm.ScheduleImmediateRender(ctx, userPlugin.ID); err != nil {
-			logging.Logf("[QUEUE_MANAGER] Failed to schedule render for %s: %v", userPlugin.ID, err)
+			logging.Error("[QUEUE_MANAGER] Failed to schedule render", "plugin_id", userPlugin.ID, "error", err)
 		}
 	}
 
@@ -114,7 +113,7 @@ func (qm *QueueManager) UpdateRefreshInterval(ctx context.Context, userPluginID 
 		Where("user_plugin_id = ? AND status = ?", userPluginID, "pending").
 		Update("status", "cancelled").Error
 	if err != nil {
-		logging.Logf("[QUEUE_MANAGER] Failed to cancel pending jobs: %v", err)
+		logging.Error("[QUEUE_MANAGER] Failed to cancel pending jobs", "error", err)
 	}
 
 	// Schedule a new job with the updated interval
@@ -131,7 +130,7 @@ func (qm *QueueManager) CancelPendingJobs(ctx context.Context, userPluginID uuid
 		return fmt.Errorf("failed to cancel pending jobs: %w", err)
 	}
 
-	logging.Logf("[QUEUE_MANAGER] Cancelled pending jobs for plugin %s", userPluginID)
+	logging.Info("[QUEUE_MANAGER] Cancelled pending jobs for plugin", "plugin_id", userPluginID)
 	return nil
 }
 
@@ -199,7 +198,7 @@ func (qm *QueueManager) RetryFailedJobs(ctx context.Context, maxAttempts int) er
 		return nil
 	}
 
-	logging.Logf("[QUEUE_MANAGER] Retrying %d failed jobs", len(failedJobs))
+	logging.Info("[QUEUE_MANAGER] Retrying failed jobs", "job_count", len(failedJobs))
 
 	// Schedule retry in 5 minutes
 	retryTime := time.Now().Add(5 * time.Minute)
@@ -211,7 +210,7 @@ func (qm *QueueManager) RetryFailedJobs(ctx context.Context, maxAttempts int) er
 			ErrorMessage: "", // Clear error message
 		}).Error
 		if err != nil {
-			logging.Logf("[QUEUE_MANAGER] Failed to retry job %s: %v", job.ID, err)
+			logging.Error("[QUEUE_MANAGER] Failed to retry job", "job_id", job.ID, "error", err)
 		}
 	}
 
@@ -231,7 +230,7 @@ func (qm *QueueManager) CleanupOldJobs(ctx context.Context, maxAge time.Duration
 	}
 
 	if result.RowsAffected > 0 {
-		logging.Logf("[QUEUE_MANAGER] Cleaned up %d old jobs", result.RowsAffected)
+		logging.Info("[QUEUE_MANAGER] Cleaned up old jobs", "count", result.RowsAffected)
 	}
 
 	return nil

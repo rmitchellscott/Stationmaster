@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -49,7 +48,7 @@ var embeddedUI embed.FS
 
 func main() {
 	_ = godotenv.Load()
-	logging.Logf("[STARTUP] Starting Stationmaster %s", version.String())
+	logging.Info("[STARTUP] Starting Stationmaster", "version", version.String())
 
 	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "-v") {
 		fmt.Println(version.String())
@@ -58,17 +57,20 @@ func main() {
 
 	// Initialize database (always in multi-user mode)
 	if err := database.Initialize(); err != nil {
-		log.Fatalf("Failed to initialize database: %v", err)
+		logging.Error("[STARTUP] Failed to initialize database", "error", err)
+		os.Exit(1)
 	}
 	defer database.Close()
 
 	if err := database.MigrateToMultiUser(); err != nil {
-		log.Fatalf("Failed to setup initial user: %v", err)
+		logging.Error("[STARTUP] Failed to setup initial user", "error", err)
+		os.Exit(1)
 	}
 
 	// Initialize OIDC if configured
 	if err := auth.InitOIDC(); err != nil {
-		log.Fatalf("Failed to initialize OIDC: %v", err)
+		logging.Error("[STARTUP] Failed to initialize OIDC", "error", err)
+		os.Exit(1)
 	}
 
 	// Initialize proxy auth if configured
@@ -85,17 +87,18 @@ func main() {
 	
 	// Sync plugin registry with database
 	if err := sync.SyncPluginRegistry(db); err != nil {
-		logging.Logf("Warning: Failed to sync plugin registry: %v", err)
+		logging.Warn("Failed to sync plugin registry", "error", err)
 		// Don't fail startup, but log the warning
 	}
 	
 	// Initialize plugin processor with database
 	if err := trmnl.InitPluginProcessor(db); err != nil {
-		log.Fatalf("Failed to initialize plugin processor: %v", err)
+		logging.Error("[STARTUP] Failed to initialize plugin processor", "error", err)
+		os.Exit(1)
 	}
 	defer func() {
 		if err := trmnl.CleanupPluginProcessor(); err != nil {
-			logging.Logf("Failed to cleanup plugin processor: %v", err)
+			logging.Error("Failed to cleanup plugin processor", "error", err)
 		}
 	}()
 	firmwarePoller := pollers.NewFirmwarePoller(db)
@@ -113,7 +116,8 @@ func main() {
 	}
 	renderPoller, err := pollers.NewRenderPoller(db, staticDir, renderPollerConfig)
 	if err != nil {
-		log.Fatalf("Failed to create render poller: %v", err)
+		logging.Error("[STARTUP] Failed to create render poller", "error", err)
+		os.Exit(1)
 	}
 
 	pollerManager.Register(firmwarePoller)
@@ -125,13 +129,14 @@ func main() {
 	defer cancel()
 
 	if err := pollerManager.Start(ctx); err != nil {
-		log.Fatalf("Failed to start pollers: %v", err)
+		logging.Error("[STARTUP] Failed to start pollers", "error", err)
+		os.Exit(1)
 	}
 
 	// Schedule initial renders for existing active plugins
 	queueManager := rendering.NewQueueManager(db)
 	if err := queueManager.ScheduleInitialRenders(ctx); err != nil {
-		logging.Logf("Failed to schedule initial renders: %v", err)
+		logging.Error("Failed to schedule initial renders", "error", err)
 	}
 
 	// Start SSE keep-alive service
@@ -146,7 +151,8 @@ func main() {
 
 	uiFS, err := fs.Sub(embeddedUI, "ui/dist")
 	if err != nil {
-		log.Fatalf("embed error: %v", err)
+		logging.Error("[STARTUP] Failed to create embedded UI filesystem", "error", err)
+		os.Exit(1)
 	}
 
 	if mode := config.Get("GIN_MODE", ""); mode != "" {
@@ -283,7 +289,7 @@ func main() {
 			_, err = io.Copy(c.Writer, resp.Body)
 			if err != nil {
 				// Log error but can't return JSON at this point since we've started streaming
-				logging.Logf("[FIRMWARE PROXY] Failed to stream firmware %s: %v", version, err)
+				logging.Error("[FIRMWARE PROXY] Failed to stream firmware", "version", version, "error", err)
 				return
 			}
 		} else {
@@ -540,9 +546,10 @@ func main() {
 
 	// Start server in a goroutine
 	go func() {
-		logging.Logf("[STARTUP] Listening on %s", addr)
+		logging.Info("[STARTUP] Listening", "address", addr)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Failed to start server: %v", err)
+			logging.Error("[STARTUP] Failed to start server", "error", err)
+			os.Exit(1)
 		}
 	}()
 
@@ -551,11 +558,11 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	logging.Logf("[SHUTDOWN] Shutting down server and pollers...")
+	logging.Info("[SHUTDOWN] Shutting down server and pollers")
 
 	// Stop pollers first
 	if err := pollerManager.Stop(); err != nil {
-		logging.Logf("[SHUTDOWN] Error stopping pollers: %v", err)
+		logging.Error("[SHUTDOWN] Error stopping pollers", "error", err)
 	}
 
 	// Give a timeout context for shutdown
@@ -564,8 +571,9 @@ func main() {
 
 	// Shutdown HTTP server
 	if err := srv.Shutdown(ctx); err != nil {
-		log.Fatalf("Server forced to shutdown: %v", err)
+		logging.Error("[SHUTDOWN] Server forced to shutdown", "error", err)
+		os.Exit(1)
 	}
 
-	logging.Logf("[SHUTDOWN] Server and pollers stopped")
+	logging.Info("[SHUTDOWN] Server and pollers stopped")
 }

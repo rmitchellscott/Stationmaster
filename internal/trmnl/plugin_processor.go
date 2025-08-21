@@ -50,8 +50,8 @@ func NewPluginProcessor(db *gorm.DB) (*PluginProcessor, error) {
 	}
 	renderer, err := rendering.NewHTMLRenderer(defaultOpts)
 	if err != nil {
-		logging.Logf("[PLUGIN_PROCESSOR] Warning: Failed to create HTML renderer: %v", err)
-		logging.Logf("[PLUGIN_PROCESSOR] HTML rendering will be disabled. Install Chromium to enable HTML-based plugins.")
+		logging.Warn("[PLUGIN_PROCESSOR] Failed to create HTML renderer", "error", err)
+		logging.Warn("[PLUGIN_PROCESSOR] HTML rendering will be disabled")
 		renderer = nil // Continue without renderer
 	}
 
@@ -106,7 +106,7 @@ func (pp *PluginProcessor) scheduleRenderIfNeeded(userPluginID uuid.UUID) {
 
 	err := pp.queueManager.ScheduleImmediateRender(ctx, userPluginID)
 	if err != nil {
-		logging.Logf("[PLUGIN_PROCESSOR] Failed to schedule render for %s: %v", userPluginID, err)
+		logging.Error("[PLUGIN_PROCESSOR] Failed to schedule render", "plugin_id", userPluginID, "error", err)
 	}
 }
 
@@ -142,7 +142,7 @@ func (pp *PluginProcessor) processActivePluginsNew(device *database.Device, acti
 		var err error
 		renderedContent, err = pp.getPreRenderedContent(userPlugin.ID, device)
 		if err != nil {
-			logging.Logf("[PLUGIN] Failed to check for pre-rendered content: %v", err)
+			logging.Error("[PLUGIN] Failed to check for pre-rendered content", "error", err)
 		}
 	}
 
@@ -159,7 +159,7 @@ func (pp *PluginProcessor) processActivePluginsNew(device *database.Device, acti
 			// Local file path - convert to URL
 			relPath, err := filepath.Rel(pp.imageStorage.GetBasePath(), renderedContent.ImagePath)
 			if err != nil {
-				logging.Logf("[PLUGIN] Failed to compute relative path for %s: %v", renderedContent.ImagePath, err)
+				logging.Error("[PLUGIN] Failed to compute relative path", "path", renderedContent.ImagePath, "error", err)
 				imageURL = renderedContent.ImagePath // Fallback to original path
 			} else {
 				imageURL = "/static/rendered/" + relPath
@@ -175,15 +175,15 @@ func (pp *PluginProcessor) processActivePluginsNew(device *database.Device, acti
 			"refresh_rate": fmt.Sprintf("%d", userPlugin.RefreshInterval),
 		}
 
-		logging.Logf("[PLUGIN] Using pre-rendered content for %s", userPlugin.Plugin.Type)
+		logging.Info("[PLUGIN] Using pre-rendered content", "plugin_type", userPlugin.Plugin.Type)
 	} else {
 		// No pre-rendered content available, fall back to on-demand processing
 		if exists && plugin.RequiresProcessing() {
-			logging.Logf("[PLUGIN] No pre-rendered content for %s, falling back to on-demand", userPlugin.Plugin.Type)
+			logging.Debug("[PLUGIN] No pre-rendered content, falling back to on-demand", "plugin_type", userPlugin.Plugin.Type)
 			// Schedule a render job for next time (only if plugin requires processing)
 			pp.scheduleRenderIfNeeded(userPlugin.ID)
 		}
-		
+
 		if !exists {
 			// Fallback for unknown plugin types
 			response = gin.H{
@@ -200,7 +200,7 @@ func (pp *PluginProcessor) processActivePluginsNew(device *database.Device, acti
 			// Process the plugin
 			response, pluginErr = plugin.Process(ctx)
 			if pluginErr != nil {
-				logging.Logf("[PLUGIN] Plugin %s processing failed: %v", plugin.Type(), pluginErr)
+				logging.Error("[PLUGIN] Plugin processing failed", "plugin_type", plugin.Type(), "error", pluginErr)
 				// Return error response but don't fail the whole request
 				response = gin.H{
 					"image_url": getImageURLForDevice(device),
@@ -213,7 +213,7 @@ func (pp *PluginProcessor) processActivePluginsNew(device *database.Device, acti
 						// Data plugin - needs HTML template rendering
 						response, err = pp.renderDataPlugin(response, device, plugin.Type())
 						if err != nil {
-							logging.Logf("[PLUGIN] Failed to render data plugin %s: %v", plugin.Type(), err)
+							logging.Error("[PLUGIN] Failed to render data plugin", "plugin_type", plugin.Type(), "error", err)
 							// Fallback to default response
 							response = gin.H{
 								"image_url": getImageURLForDevice(device),
@@ -228,7 +228,7 @@ func (pp *PluginProcessor) processActivePluginsNew(device *database.Device, acti
 							filename := fmt.Sprintf("%s_%s_%s.png", plugin.Type(), time.Now().Format("20060102_150405"), randomString)
 							imageURL, err := pp.imageStorage.StoreImage(imageData, device.ID, plugin.Type())
 							if err != nil {
-								logging.Logf("[PLUGIN] Failed to store image data for %s: %v", plugin.Type(), err)
+								logging.Error("[PLUGIN] Failed to store image data", "plugin_type", plugin.Type(), "error", err)
 								response = gin.H{
 									"image_url": getImageURLForDevice(device),
 									"filename":  fmt.Sprintf("store_error_%s", time.Now().Format("20060102150405")),
@@ -240,15 +240,15 @@ func (pp *PluginProcessor) processActivePluginsNew(device *database.Device, acti
 									"filename":     filename,
 									"refresh_rate": response["refresh_rate"],
 								}
-								logging.Logf("[PLUGIN] Stored image data for %s at %s", plugin.Type(), imageURL)
+								logging.Debug("[PLUGIN] Stored image data", "plugin_type", plugin.Type(), "url", imageURL)
 							}
 						} else {
 							// Already has URL, ready to serve
-							logging.Logf("[PLUGIN] Image plugin %s processed successfully", plugin.Type())
+							logging.Debug("[PLUGIN] Image plugin processed successfully", "plugin_type", plugin.Type())
 						}
 					} else {
 						// Unknown plugin response type
-						logging.Logf("[PLUGIN] Unknown plugin response type for %s", plugin.Type())
+						logging.Warn("[PLUGIN] Unknown plugin response type", "plugin_type", plugin.Type())
 						response = gin.H{
 							"image_url": getImageURLForDevice(device),
 							"filename":  fmt.Sprintf("unknown_type_%s", time.Now().Format("20060102150405")),
@@ -263,7 +263,7 @@ func (pp *PluginProcessor) processActivePluginsNew(device *database.Device, acti
 	if pluginErr == nil {
 		deviceService := database.NewDeviceService(db)
 		if err := deviceService.UpdateLastPlaylistIndex(device.ID, nextIndex); err != nil {
-			logging.Logf("[PLAYLIST] Failed to update last playlist index for device %s: %v", device.MacAddress, err)
+			logging.Error("[PLAYLIST] Failed to update last playlist index", "device_mac", device.MacAddress, "error", err)
 		} else {
 			pp.broadcastPlaylistChange(device, nextIndex, item, activeItems)
 		}
@@ -356,7 +356,7 @@ func (pp *PluginProcessor) processCurrentPluginNew(device *database.Device, acti
 		var err error
 		renderedContent, err = pp.getPreRenderedContent(userPlugin.ID, device)
 		if err != nil {
-			logging.Logf("[PLUGIN] Failed to check for pre-rendered content: %v", err)
+			logging.Error("[PLUGIN] Failed to check for pre-rendered content", "error", err)
 		}
 	}
 
@@ -373,7 +373,7 @@ func (pp *PluginProcessor) processCurrentPluginNew(device *database.Device, acti
 			// Local file path - convert to URL
 			relPath, err := filepath.Rel(pp.imageStorage.GetBasePath(), renderedContent.ImagePath)
 			if err != nil {
-				logging.Logf("[PLUGIN] Failed to compute relative path for %s: %v", renderedContent.ImagePath, err)
+				logging.Error("[PLUGIN] Failed to compute relative path", "path", renderedContent.ImagePath, "error", err)
 				imageURL = renderedContent.ImagePath // Fallback to original path
 			} else {
 				imageURL = "/static/rendered/" + relPath
@@ -389,11 +389,11 @@ func (pp *PluginProcessor) processCurrentPluginNew(device *database.Device, acti
 			"refresh_rate": fmt.Sprintf("%d", userPlugin.RefreshInterval),
 		}
 
-		logging.Logf("[PLUGIN] Using pre-rendered content for %s (current)", userPlugin.Plugin.Type)
+		logging.Info("[PLUGIN] Using pre-rendered content (current)", "plugin_type", userPlugin.Plugin.Type)
 	} else {
 		// No pre-rendered content available, fall back to on-demand processing
 		if exists && plugin.RequiresProcessing() {
-			logging.Logf("[PLUGIN] No pre-rendered content for %s, falling back to on-demand (current)", userPlugin.Plugin.Type)
+			logging.Debug("[PLUGIN] No pre-rendered content, falling back to on-demand (current)", "plugin_type", userPlugin.Plugin.Type)
 			// Schedule a render job for next time
 			pp.scheduleRenderIfNeeded(userPlugin.ID)
 		}
@@ -432,7 +432,7 @@ func (pp *PluginProcessor) processCurrentPluginNew(device *database.Device, acti
 					filename := fmt.Sprintf("%s_%s_%s.png", plugin.Type(), time.Now().Format("20060102_150405"), randomString)
 					imageURL, err := pp.imageStorage.StoreImage(imageData, device.ID, plugin.Type())
 					if err != nil {
-						logging.Logf("[PLUGIN] Failed to store image data for %s: %v", plugin.Type(), err)
+						logging.Error("[PLUGIN] Failed to store image data", "plugin_type", plugin.Type(), "error", err)
 						response = gin.H{
 							"image_url": getImageURLForDevice(device),
 							"filename":  fmt.Sprintf("store_error_%s", time.Now().Format("20060102150405")),
@@ -444,11 +444,11 @@ func (pp *PluginProcessor) processCurrentPluginNew(device *database.Device, acti
 							"filename":     filename,
 							"refresh_rate": response["refresh_rate"],
 						}
-						logging.Logf("[PLUGIN] Stored image data for %s at %s (current)", plugin.Type(), imageURL)
+						logging.Debug("[PLUGIN] Stored image data (current)", "plugin_type", plugin.Type(), "url", imageURL)
 					}
 				} else {
 					// Already has URL, ready to serve
-					logging.Logf("[PLUGIN] Image plugin %s processed successfully (current)", plugin.Type())
+					logging.Debug("[PLUGIN] Image plugin processed successfully (current)", "plugin_type", plugin.Type())
 				}
 			}
 		}

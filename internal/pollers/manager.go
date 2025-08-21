@@ -28,7 +28,7 @@ func (m *Manager) Register(poller Poller) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.pollers[poller.Name()] = poller
-	logging.Logf("[POLLER MANAGER] Registered poller: %s", poller.Name())
+	logging.Info("[POLLER MANAGER] Registered poller", "name", poller.Name())
 }
 
 // Unregister removes a poller from the manager
@@ -40,7 +40,7 @@ func (m *Manager) Unregister(name string) {
 			poller.Stop()
 		}
 		delete(m.pollers, name)
-		logging.Logf("[POLLER MANAGER] Unregistered poller: %s", name)
+		logging.Info("[POLLER MANAGER] Unregistered poller", "name", name)
 	}
 }
 
@@ -56,11 +56,11 @@ func (m *Manager) Start(ctx context.Context) error {
 	m.ctx, m.cancel = context.WithCancel(ctx)
 	m.running = true
 
-	logging.Logf("[POLLER MANAGER] Starting %d pollers", len(m.pollers))
+	logging.Info("[POLLER MANAGER] Starting pollers", "count", len(m.pollers))
 
 	for name, poller := range m.pollers {
 		if err := poller.Start(m.ctx); err != nil {
-			logging.Logf("[POLLER MANAGER] Failed to start poller %s: %v", name, err)
+			logging.Error("[POLLER MANAGER] Failed to start poller", "name", name, "error", err)
 			continue
 		}
 	}
@@ -77,7 +77,7 @@ func (m *Manager) Stop() error {
 		return nil // Already stopped
 	}
 
-	logging.Logf("[POLLER MANAGER] Stopping all pollers")
+	logging.Info("[POLLER MANAGER] Stopping all pollers")
 
 	var wg sync.WaitGroup
 	for name, poller := range m.pollers {
@@ -86,7 +86,7 @@ func (m *Manager) Stop() error {
 			go func(name string, p Poller) {
 				defer wg.Done()
 				if err := p.Stop(); err != nil {
-					logging.Logf("[POLLER MANAGER] Error stopping poller %s: %v", name, err)
+					logging.Error("[POLLER MANAGER] Error stopping poller", "name", name, "error", err)
 				}
 			}(name, poller)
 		}
@@ -96,7 +96,7 @@ func (m *Manager) Stop() error {
 	m.cancel()
 	m.running = false
 
-	logging.Logf("[POLLER MANAGER] All pollers stopped")
+	logging.Info("[POLLER MANAGER] All pollers stopped")
 	return nil
 }
 

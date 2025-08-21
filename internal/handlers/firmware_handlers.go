@@ -65,7 +65,7 @@ func DeleteFirmwareVersionHandler(c *gin.Context) {
 	// Delete the firmware file from disk if it exists
 	if firmwareVersion.FilePath != "" {
 		if err := os.Remove(firmwareVersion.FilePath); err != nil && !os.IsNotExist(err) {
-			logging.Logf("[FIRMWARE DELETE] Failed to delete file %s: %v", firmwareVersion.FilePath, err)
+			logging.Error("[FIRMWARE DELETE] Failed to delete file", "path", firmwareVersion.FilePath, "error", err)
 			// Continue with database deletion even if file deletion fails
 		}
 	}
@@ -76,7 +76,7 @@ func DeleteFirmwareVersionHandler(c *gin.Context) {
 		return
 	}
 
-	logging.Logf("[FIRMWARE DELETE] Deleted firmware version %s", firmwareVersion.Version)
+	logging.Info("[FIRMWARE DELETE] Deleted firmware version", "version", firmwareVersion.Version)
 	c.JSON(http.StatusOK, gin.H{"message": "Firmware version deleted successfully"})
 }
 
@@ -166,7 +166,7 @@ func countDownloadedVersions(versions []database.FirmwareVersion) int {
 func TriggerFirmwarePollHandler(c *gin.Context) {
 	db := database.GetDB()
 
-	logging.Logf("[MANUAL FIRMWARE POLL] Starting manual firmware poll")
+	logging.Info("[MANUAL FIRMWARE POLL] Starting manual firmware poll")
 
 	// Create firmware poller for discovery
 	firmwarePoller := pollers.NewFirmwarePoller(db)
@@ -177,7 +177,7 @@ func TriggerFirmwarePollHandler(c *gin.Context) {
 
 	// Do the firmware discovery synchronously to create database entries immediately
 	if err := firmwarePoller.DiscoverFirmware(ctx); err != nil {
-		logging.Logf("[MANUAL FIRMWARE POLL] Discovery failed: %v", err)
+		logging.Error("[MANUAL FIRMWARE POLL] Discovery failed", "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to discover firmware versions"})
 		return
 	}
@@ -188,15 +188,15 @@ func TriggerFirmwarePollHandler(c *gin.Context) {
 		downloadCtx, downloadCancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		defer downloadCancel()
 
-		logging.Logf("[MANUAL FIRMWARE POLL] Starting background downloads")
+		logging.Info("[MANUAL FIRMWARE POLL] Starting background downloads")
 
 		// Start downloads for any pending firmware
 		if err := firmwarePoller.StartPendingDownloads(downloadCtx); err != nil {
-			logging.Logf("[MANUAL FIRMWARE POLL] Download failed: %v", err)
+			logging.Error("[MANUAL FIRMWARE POLL] Download failed", "error", err)
 			return
 		}
 
-		logging.Logf("[MANUAL FIRMWARE POLL] Background downloads completed")
+		logging.Info("[MANUAL FIRMWARE POLL] Background downloads completed")
 	}()
 
 	// Return immediately with firmware entries now available
@@ -264,7 +264,7 @@ func RetryFirmwareDownloadHandler(c *gin.Context) {
 		ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 		defer cancel()
 
-		logging.Logf("[RETRY DOWNLOAD] Starting download for firmware %s", firmwareVersion.Version)
+		logging.Info("[RETRY DOWNLOAD] Starting download for firmware", "version", firmwareVersion.Version)
 
 		// Create a firmware poller to use its download functionality
 		firmwarePoller := pollers.NewFirmwarePoller(db)
@@ -277,9 +277,9 @@ func RetryFirmwareDownloadHandler(c *gin.Context) {
 
 		// Execute the download
 		if err := firmwarePoller.DownloadFirmware(ctx, firmwareVersion); err != nil {
-			logging.Logf("[RETRY DOWNLOAD] Failed to download firmware %s: %v", firmwareVersion.Version, err)
+			logging.Error("[RETRY DOWNLOAD] Failed to download firmware", "version", firmwareVersion.Version, "error", err)
 		} else {
-			logging.Logf("[RETRY DOWNLOAD] Successfully downloaded firmware %s", firmwareVersion.Version)
+			logging.Info("[RETRY DOWNLOAD] Successfully downloaded firmware", "version", firmwareVersion.Version)
 		}
 	}()
 

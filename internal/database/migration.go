@@ -20,7 +20,7 @@ func MigrateToMultiUser() error {
 	}
 
 	if userCount > 0 {
-		logging.Logf("[STARTUP] Users already exist, skipping user creation migration")
+		logging.Info("[STARTUP] Users already exist, skipping user creation migration")
 		// Still run schema migrations even if users exist
 		return RunMigrations("STARTUP")
 	}
@@ -31,7 +31,7 @@ func MigrateToMultiUser() error {
 	email := config.Get("ADMIN_EMAIL", "")
 
 	if username == "" || password == "" {
-		logging.Logf("[STARTUP] No admin user configured - navigate to /register to create the first admin account")
+		logging.Info("[STARTUP] No admin user configured - navigate to /register to create the first admin account")
 		return RunMigrations("STARTUP")
 	}
 
@@ -39,7 +39,7 @@ func MigrateToMultiUser() error {
 		email = username + "@localhost" // Default email if not provided
 	}
 
-	logging.Logf("[STARTUP] Creating initial admin user: %s", username)
+	logging.Info("[STARTUP] Creating initial admin user", "username", username)
 
 	// Create the admin user using the service method (use system timezone for server-created accounts)
 	systemTimezone := "UTC" // Default to UTC for server-created admin users
@@ -50,13 +50,13 @@ func MigrateToMultiUser() error {
 	if err != nil {
 		// Check if user already exists
 		if existingUser, authErr := userService.AuthenticateUser(username, password); authErr == nil && existingUser != nil {
-			logging.Logf("[STARTUP] Admin user already exists")
+			logging.Info("[STARTUP] Admin user already exists")
 			return RunMigrations("STARTUP")
 		}
 		return fmt.Errorf("failed to create admin user: %w", err)
 	}
 
-	logging.Logf("[STARTUP] Successfully created admin user")
+	logging.Info("[STARTUP] Successfully created admin user")
 
 	// Run database migrations
 	return RunMigrations("STARTUP")

@@ -204,86 +204,84 @@ func UpdateDeviceHandler(c *gin.Context) {
 	}
 
 	// Handle sleep mode configuration
-	logging.Logf("[DEVICE UPDATE] Sleep mode request: enabled=%v, start=%s, end=%s, show_screen=%v", 
-		req.SleepEnabled, req.SleepStartTime, req.SleepEndTime, req.SleepShowScreen)
+	logging.Debug("[DEVICE UPDATE] Sleep mode request", "enabled", req.SleepEnabled, "start", req.SleepStartTime, "end", req.SleepEndTime, "show_screen", req.SleepShowScreen)
 	
 	if req.SleepEnabled != nil {
 		device.SleepEnabled = *req.SleepEnabled
-		logging.Logf("[DEVICE UPDATE] Set sleep enabled to: %v", device.SleepEnabled)
+		logging.Debug("[DEVICE UPDATE] Set sleep enabled", "enabled", device.SleepEnabled)
 	}
 	// Always update sleep times if provided (frontend always sends these values)
 	if req.SleepStartTime != "" {
 		// Validate time format (HH:MM)
 		if err := validateTimeFormat(req.SleepStartTime); err != nil {
-			logging.Logf("[DEVICE UPDATE] Invalid sleep start time format: %s, error: %v", req.SleepStartTime, err)
+			logging.Warn("[DEVICE UPDATE] Invalid sleep start time format", "time", req.SleepStartTime, "error", err)
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid sleep start time format. Use HH:MM"})
 			return
 		}
 		device.SleepStartTime = req.SleepStartTime
-		logging.Logf("[DEVICE UPDATE] Set sleep start time to: %s", device.SleepStartTime)
+		logging.Debug("[DEVICE UPDATE] Set sleep start time", "time", device.SleepStartTime)
 	} else {
 		// If empty string is sent, clear the field
 		device.SleepStartTime = ""
-		logging.Logf("[DEVICE UPDATE] Cleared sleep start time")
+		logging.Debug("[DEVICE UPDATE] Cleared sleep start time")
 	}
 	
 	if req.SleepEndTime != "" {
 		// Validate time format (HH:MM)
 		if err := validateTimeFormat(req.SleepEndTime); err != nil {
-			logging.Logf("[DEVICE UPDATE] Invalid sleep end time format: %s, error: %v", req.SleepEndTime, err)
+			logging.Warn("[DEVICE UPDATE] Invalid sleep end time format", "time", req.SleepEndTime, "error", err)
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid sleep end time format. Use HH:MM"})
 			return
 		}
 		device.SleepEndTime = req.SleepEndTime
-		logging.Logf("[DEVICE UPDATE] Set sleep end time to: %s", device.SleepEndTime)
+		logging.Debug("[DEVICE UPDATE] Set sleep end time", "time", device.SleepEndTime)
 	} else {
 		// If empty string is sent, clear the field
 		device.SleepEndTime = ""
-		logging.Logf("[DEVICE UPDATE] Cleared sleep end time")
+		logging.Debug("[DEVICE UPDATE] Cleared sleep end time")
 	}
 	if req.SleepShowScreen != nil {
 		device.SleepShowScreen = *req.SleepShowScreen
-		logging.Logf("[DEVICE UPDATE] Set sleep show screen to: %v", device.SleepShowScreen)
+		logging.Debug("[DEVICE UPDATE] Set sleep show screen", "show_screen", device.SleepShowScreen)
 	}
 
 	// Handle firmware update schedule configuration
-	logging.Logf("[DEVICE UPDATE] Firmware schedule request: start=%s, end=%s", 
-		req.FirmwareUpdateStartTime, req.FirmwareUpdateEndTime)
+	logging.Debug("[DEVICE UPDATE] Firmware schedule request", "start", req.FirmwareUpdateStartTime, "end", req.FirmwareUpdateEndTime)
 	
 	// Always update firmware update times if provided (frontend always sends these values)
 	if req.FirmwareUpdateStartTime != "" {
 		// Validate time format (HH:MM)
 		if err := validateTimeFormat(req.FirmwareUpdateStartTime); err != nil {
-			logging.Logf("[DEVICE UPDATE] Invalid firmware start time format: %s, error: %v", req.FirmwareUpdateStartTime, err)
+			logging.Warn("[DEVICE UPDATE] Invalid firmware start time format", "time", req.FirmwareUpdateStartTime, "error", err)
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid firmware start time format. Use HH:MM"})
 			return
 		}
 		device.FirmwareUpdateStartTime = req.FirmwareUpdateStartTime
-		logging.Logf("[DEVICE UPDATE] Set firmware start time to: %s", device.FirmwareUpdateStartTime)
+		logging.Debug("[DEVICE UPDATE] Set firmware start time", "time", device.FirmwareUpdateStartTime)
 	} else {
 		// If empty string is sent, set to default
 		device.FirmwareUpdateStartTime = "00:00"
-		logging.Logf("[DEVICE UPDATE] Set firmware start time to default: 00:00")
+		logging.Debug("[DEVICE UPDATE] Set firmware start time to default", "time", "00:00")
 	}
 	
 	if req.FirmwareUpdateEndTime != "" {
 		// Validate time format (HH:MM)
 		if err := validateTimeFormat(req.FirmwareUpdateEndTime); err != nil {
-			logging.Logf("[DEVICE UPDATE] Invalid firmware end time format: %s, error: %v", req.FirmwareUpdateEndTime, err)
+			logging.Warn("[DEVICE UPDATE] Invalid firmware end time format", "time", req.FirmwareUpdateEndTime, "error", err)
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid firmware end time format. Use HH:MM"})
 			return
 		}
 		device.FirmwareUpdateEndTime = req.FirmwareUpdateEndTime
-		logging.Logf("[DEVICE UPDATE] Set firmware end time to: %s", device.FirmwareUpdateEndTime)
+		logging.Debug("[DEVICE UPDATE] Set firmware end time", "time", device.FirmwareUpdateEndTime)
 	} else {
 		// If empty string is sent, set to default
 		device.FirmwareUpdateEndTime = "23:59"
-		logging.Logf("[DEVICE UPDATE] Set firmware end time to default: 23:59")
+		logging.Debug("[DEVICE UPDATE] Set firmware end time to default", "time", "23:59")
 	}
 
 	err = deviceService.UpdateDevice(device)
 	if err != nil {
-		logging.Logf("[DEVICE UPDATE] Failed to update device %s: %v", device.ID, err)
+		logging.Error("[DEVICE UPDATE] Failed to update device", "device_id", device.ID, "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update device"})
 		return
 	}

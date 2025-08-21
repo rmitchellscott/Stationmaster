@@ -83,7 +83,7 @@ func Initialize() error {
 		return fmt.Errorf("failed to initialize default plugins: %w", err)
 	}
 
-	logging.Logf("[STARTUP] Database initialized successfully (type: %s)", config.Type)
+	logging.Info("[STARTUP] Database initialized successfully", "type", config.Type)
 	return nil
 }
 
@@ -156,7 +156,7 @@ func initSQLite(config *DatabaseConfig) (*gorm.DB, error) {
 
 // runMigrations runs GORM auto-migration for all models
 func runMigrations(logPrefix string) error {
-	logging.Logf("[%s] Running GORM auto-migrations...", logPrefix)
+	logging.Info("Running GORM auto-migrations", "database", logPrefix)
 
 	models := GetAllModels()
 
@@ -167,7 +167,7 @@ func runMigrations(logPrefix string) error {
 		}
 	}
 
-	logging.Logf("[%s] GORM auto-migration completed successfully", logPrefix)
+	logging.Info("GORM auto-migration completed successfully", "database", logPrefix)
 	return nil
 }
 
@@ -323,7 +323,7 @@ func initializeDefaultPlugins() error {
 			if err := DB.Create(&plugin).Error; err != nil {
 				return fmt.Errorf("failed to create default plugin %s: %w", plugin.Name, err)
 			}
-			logging.Logf("[STARTUP] Created default plugin: %s", plugin.Name)
+			logging.Info("[STARTUP] Created default plugin", "name", plugin.Name)
 		}
 	}
 

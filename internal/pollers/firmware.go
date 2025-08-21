@@ -77,7 +77,7 @@ func (p *FirmwarePoller) ExecutePoll(ctx context.Context) error {
 
 // DiscoverFirmware discovers firmware versions and creates database entries without downloading
 func (p *FirmwarePoller) DiscoverFirmware(ctx context.Context) error {
-	logging.Logf("[FIRMWARE DISCOVERY] Starting firmware discovery")
+	logging.Info("[FIRMWARE DISCOVERY] Starting firmware discovery")
 
 	// Ensure storage directory exists
 	if err := os.MkdirAll(p.storageDir, 0755); err != nil {
@@ -90,24 +90,24 @@ func (p *FirmwarePoller) DiscoverFirmware(ctx context.Context) error {
 		return fmt.Errorf("failed to fetch latest firmware version: %w", err)
 	}
 
-	logging.Logf("[FIRMWARE DISCOVERY] Found firmware version %s", versionInfo.Version)
+	logging.Info("[FIRMWARE DISCOVERY] Found firmware version", "version", versionInfo.Version)
 
 	// Process the version - create database entry but don't download yet
 	if err := p.discoverFirmwareVersion(ctx, *versionInfo); err != nil {
 		return fmt.Errorf("error discovering version %s: %w", versionInfo.Version, err)
 	}
 
-	logging.Logf("[FIRMWARE DISCOVERY] Firmware discovery completed")
+	logging.Info("[FIRMWARE DISCOVERY] Firmware discovery completed")
 	return nil
 }
 
 // StartPendingDownloads starts downloads for firmware versions with pending status
 func (p *FirmwarePoller) StartPendingDownloads(ctx context.Context) error {
-	logging.Logf("[FIRMWARE DOWNLOADS] Starting pending downloads")
+	logging.Info("[FIRMWARE DOWNLOADS] Starting pending downloads")
 	
 	// Skip downloads in proxy mode
 	if p.firmwareMode != "download" {
-		logging.Logf("[FIRMWARE DOWNLOADS] Proxy mode enabled, skipping file downloads")
+		logging.Info("[FIRMWARE DOWNLOADS] Proxy mode enabled, skipping file downloads")
 		return nil
 	}
 
@@ -118,27 +118,27 @@ func (p *FirmwarePoller) StartPendingDownloads(ctx context.Context) error {
 	}
 
 	if len(pendingVersions) == 0 {
-		logging.Logf("[FIRMWARE DOWNLOADS] No pending downloads found")
+		logging.Debug("[FIRMWARE DOWNLOADS] No pending downloads found")
 		return nil
 	}
 
 	// Check if auto-download is enabled
 	autoDownload := config.Get("FIRMWARE_AUTO_DOWNLOAD", "true") == "true"
 	if !autoDownload {
-		logging.Logf("[FIRMWARE DOWNLOADS] Auto-download disabled, skipping downloads")
+		logging.Info("[FIRMWARE DOWNLOADS] Auto-download disabled, skipping downloads")
 		return nil
 	}
 
 	// Download each pending version
 	for _, version := range pendingVersions {
-		logging.Logf("[FIRMWARE DOWNLOADS] Starting download for version %s", version.Version)
+		logging.Info("[FIRMWARE DOWNLOADS] Starting download", "version", version.Version)
 		if err := p.downloadFirmwareFile(ctx, &version); err != nil {
-			logging.Logf("[FIRMWARE DOWNLOADS] Failed to download version %s: %v", version.Version, err)
+			logging.Error("[FIRMWARE DOWNLOADS] Failed to download version", "version", version.Version, "error", err)
 			// Continue with other downloads even if one fails
 		}
 	}
 
-	logging.Logf("[FIRMWARE DOWNLOADS] Completed pending downloads")
+	logging.Info("[FIRMWARE DOWNLOADS] Completed pending downloads")
 	return nil
 }
 
@@ -149,7 +149,7 @@ func (p *FirmwarePoller) DownloadFirmware(ctx context.Context, firmware *databas
 
 // poll performs the firmware polling operation
 func (p *FirmwarePoller) poll(ctx context.Context) error {
-	logging.Logf("[FIRMWARE POLLER] Starting firmware update check")
+	logging.Info("[FIRMWARE POLLER] Starting firmware update check")
 
 	// Ensure storage directory exists
 	if err := os.MkdirAll(p.storageDir, 0755); err != nil {
@@ -162,14 +162,14 @@ func (p *FirmwarePoller) poll(ctx context.Context) error {
 		return fmt.Errorf("failed to fetch latest firmware version: %w", err)
 	}
 
-	logging.Logf("[FIRMWARE POLLER] Found firmware version %s", versionInfo.Version)
+	logging.Info("[FIRMWARE POLLER] Found firmware version", "version", versionInfo.Version)
 
 	// Process the latest version
 	if err := p.processFirmwareVersion(ctx, *versionInfo); err != nil {
 		return fmt.Errorf("error processing version %s: %w", versionInfo.Version, err)
 	}
 
-	logging.Logf("[FIRMWARE POLLER] Firmware update check completed")
+	logging.Info("[FIRMWARE POLLER] Firmware update check completed")
 	return nil
 }
 
@@ -235,11 +235,11 @@ func (p *FirmwarePoller) discoverFirmwareVersion(ctx context.Context, versionInf
 		return fmt.Errorf("failed to create firmware version: %w", err)
 	}
 
-	logging.Logf("[FIRMWARE DISCOVERY] Added new firmware version: %s (status: pending)", versionInfo.Version)
+	logging.Info("[FIRMWARE DISCOVERY] Added new firmware version", "version", versionInfo.Version, "status", "pending")
 
 	// Update latest flags (mark others as not latest)
 	if err := p.updateLatestVersion(versionInfo.Version); err != nil {
-		logging.Logf("[FIRMWARE DISCOVERY] Error updating latest version flag: %v", err)
+		logging.Error("[FIRMWARE DISCOVERY] Error updating latest version flag", "error", err)
 	}
 
 	return nil
@@ -255,11 +255,11 @@ func (p *FirmwarePoller) processFirmwareVersion(ctx context.Context, versionInfo
 		// Version exists - check if it's actually downloaded (only in download mode)
 		if !existingVersion.IsDownloaded && p.firmwareMode == "download" {
 			// Version exists in DB but file not downloaded - download it now
-			logging.Logf("[FIRMWARE POLLER] Version %s exists but not downloaded, downloading now", versionInfo.Version)
+			logging.Info("[FIRMWARE POLLER] Version exists but not downloaded, downloading now", "version", versionInfo.Version)
 			autoDownload := config.Get("FIRMWARE_AUTO_DOWNLOAD", "true") == "true"
 			if autoDownload {
 				if err := p.downloadFirmwareFile(ctx, &existingVersion); err != nil {
-					logging.Logf("[FIRMWARE POLLER] Failed to download existing firmware %s: %v", versionInfo.Version, err)
+					logging.Error("[FIRMWARE POLLER] Failed to download existing firmware", "version", versionInfo.Version, "error", err)
 				}
 			}
 		}
@@ -290,18 +290,18 @@ func (p *FirmwarePoller) processFirmwareVersion(ctx context.Context, versionInfo
 		return fmt.Errorf("failed to create firmware version: %w", err)
 	}
 
-	logging.Logf("[FIRMWARE POLLER] Added new firmware version: %s", versionInfo.Version)
+	logging.Info("[FIRMWARE POLLER] Added new firmware version", "version", versionInfo.Version)
 
 	// Update latest flags (mark others as not latest)
 	if err := p.updateLatestVersion(versionInfo.Version); err != nil {
-		logging.Logf("[FIRMWARE POLLER] Error updating latest version flag: %v", err)
+		logging.Error("[FIRMWARE POLLER] Error updating latest version flag", "error", err)
 	}
 
 	// Optionally download firmware file (only in download mode)
 	autoDownload := config.Get("FIRMWARE_AUTO_DOWNLOAD", "true") == "true"
 	if autoDownload && p.firmwareMode == "download" {
 		if err := p.downloadFirmwareFile(ctx, &firmwareVersion); err != nil {
-			logging.Logf("[FIRMWARE POLLER] Failed to download firmware %s: %v", versionInfo.Version, err)
+			logging.Error("[FIRMWARE POLLER] Failed to download firmware", "version", versionInfo.Version, "error", err)
 		}
 	}
 
@@ -348,10 +348,10 @@ func (p *FirmwarePoller) downloadFirmwareFile(ctx context.Context, firmware *dat
 	firmware.DownloadProgress = 0
 	firmware.DownloadError = ""
 	if err := p.db.Save(firmware).Error; err != nil {
-		logging.Logf("[FIRMWARE POLLER] Failed to update download status: %v", err)
+		logging.Error("[FIRMWARE POLLER] Failed to update download status", "error", err)
 	}
 
-	logging.Logf("[FIRMWARE POLLER] Downloading firmware %s", firmware.Version)
+	logging.Info("[FIRMWARE POLLER] Downloading firmware", "version", firmware.Version)
 
 	// Create HTTP client with context
 	client := &http.Client{
@@ -429,7 +429,7 @@ func (p *FirmwarePoller) downloadFirmwareFile(ctx context.Context, firmware *dat
 		return err
 	}
 
-	logging.Logf("[FIRMWARE POLLER] Successfully downloaded firmware %s to %s", firmware.Version, filePath)
+	logging.Info("[FIRMWARE POLLER] Successfully downloaded firmware", "version", firmware.Version, "path", filePath)
 	return nil
 }
 
@@ -439,7 +439,7 @@ func (p *FirmwarePoller) markDownloadFailed(firmware *database.FirmwareVersion, 
 	firmware.DownloadError = errorMsg
 	firmware.IsDownloaded = false
 	if err := p.db.Save(firmware).Error; err != nil {
-		logging.Logf("[FIRMWARE POLLER] Failed to update failed status: %v", err)
+		logging.Error("[FIRMWARE POLLER] Failed to update failed status", "error", err)
 	}
 }
 
@@ -464,7 +464,7 @@ func (pr *progressReader) Read(p []byte) (int, error) {
 			pr.firmware.DownloadProgress = progress
 			if dbErr := pr.db.Save(pr.firmware).Error; dbErr == nil {
 				pr.lastProgress = progress
-				logging.Logf("[FIRMWARE DOWNLOAD] Progress for %s: %d%%", pr.firmware.Version, progress)
+				logging.Debug("[FIRMWARE DOWNLOAD] Progress", "version", pr.firmware.Version, "progress", progress)
 			}
 		}
 	}

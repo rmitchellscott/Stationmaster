@@ -27,6 +27,7 @@ vendor/
 *.db-shm
 *.db-wal
 data/
+static/
 
 # UI build files
 ui/dist/

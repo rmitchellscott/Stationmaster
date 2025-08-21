@@ -2,6 +2,7 @@ package database
 
 import (
 	"encoding/json"
+	"strings"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -19,17 +20,53 @@ func NewPluginService(db *gorm.DB) *PluginService {
 
 // CreatePlugin creates a new system plugin (admin only)
 func (ps *PluginService) CreatePlugin(name, pluginType, description, configSchema, version, author string) (*Plugin, error) {
+	return ps.CreatePluginWithProcessing(name, pluginType, description, configSchema, version, author, false)
+}
+
+// CreatePluginWithProcessing creates a new system plugin with processing flag
+func (ps *PluginService) CreatePluginWithProcessing(name, pluginType, description, configSchema, version, author string, requiresProcessing bool) (*Plugin, error) {
 	plugin := &Plugin{
-		Name:         name,
-		Type:         pluginType,
-		Description:  description,
-		ConfigSchema: configSchema,
-		Version:      version,
-		Author:       author,
-		IsActive:     true,
+		Name:               name,
+		Type:               pluginType,
+		Description:        description,
+		ConfigSchema:       configSchema,
+		Version:            version,
+		Author:             author,
+		IsActive:           true,
+		RequiresProcessing: requiresProcessing,
 	}
 
-	if err := ps.db.Create(plugin).Error; err != nil {
+	// Try to create the plugin
+	err := ps.db.Create(plugin).Error
+	if err != nil {
+		// If unique constraint failed, try to update existing plugin with same name
+		if err.Error() == "UNIQUE constraint failed: plugins.name" || 
+		   strings.Contains(err.Error(), "UNIQUE constraint failed: plugins.name") ||
+		   strings.Contains(err.Error(), "duplicate key") {
+			
+			// Find existing plugin by name
+			var existingPlugin Plugin
+			findErr := ps.db.Where("name = ?", name).First(&existingPlugin).Error
+			if findErr != nil {
+				return nil, err // Return original error if we can't find the conflicting record
+			}
+			
+			// Update the existing plugin with new information
+			existingPlugin.Type = pluginType
+			existingPlugin.Description = description
+			existingPlugin.ConfigSchema = configSchema
+			existingPlugin.Version = version
+			existingPlugin.Author = author
+			existingPlugin.RequiresProcessing = requiresProcessing
+			existingPlugin.IsActive = true
+			
+			updateErr := ps.db.Save(&existingPlugin).Error
+			if updateErr != nil {
+				return nil, updateErr
+			}
+			
+			return &existingPlugin, nil
+		}
 		return nil, err
 	}
 
@@ -53,6 +90,16 @@ func (ps *PluginService) GetPluginByID(pluginID uuid.UUID) (*Plugin, error) {
 	return &plugin, nil
 }
 
+// GetPluginByType returns a plugin by its type
+func (ps *PluginService) GetPluginByType(pluginType string) (*Plugin, error) {
+	var plugin Plugin
+	err := ps.db.First(&plugin, "type = ? AND is_active = ?", pluginType, true).Error
+	if err != nil {
+		return nil, err
+	}
+	return &plugin, nil
+}
+
 // UpdatePlugin updates a system plugin
 func (ps *PluginService) UpdatePlugin(plugin *Plugin) error {
 	return ps.db.Save(plugin).Error
@@ -64,18 +111,19 @@ func (ps *PluginService) DeletePlugin(pluginID uuid.UUID) error {
 }
 
 // CreateUserPlugin creates a user instance of a plugin
-func (ps *PluginService) CreateUserPlugin(userID, pluginID uuid.UUID, name string, settings map[string]interface{}) (*UserPlugin, error) {
+func (ps *PluginService) CreateUserPlugin(userID, pluginID uuid.UUID, name string, settings map[string]interface{}, refreshInterval int) (*UserPlugin, error) {
 	settingsJSON, err := json.Marshal(settings)
 	if err != nil {
 		return nil, err
 	}
 
 	userPlugin := &UserPlugin{
-		UserID:   userID,
-		PluginID: pluginID,
-		Name:     name,
-		Settings: string(settingsJSON),
-		IsActive: true,
+		UserID:          userID,
+		PluginID:        pluginID,
+		Name:            name,
+		Settings:        string(settingsJSON),
+		RefreshInterval: refreshInterval,
+		IsActive:        true,
 	}
 
 	if err := ps.db.Create(userPlugin).Error; err != nil {
@@ -179,3 +227,9 @@ func (ps *PluginService) GetPluginStats() (map[string]interface{}, error) {
 		"active_user_plugins": activeUserPlugins,
 	}, nil
 }
+
+// ClearRenderedContentForUserPlugin deletes all rendered content for a specific user plugin
+func (ps *PluginService) ClearRenderedContentForUserPlugin(userPluginID uuid.UUID) error {
+	return ps.db.Where("user_plugin_id = ?", userPluginID).Delete(&RenderedContent{}).Error
+}
+

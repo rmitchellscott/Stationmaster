@@ -1100,7 +1100,7 @@ export function AdminPage() {
   }, []);
 
   const createPlugin = async () => {
-    if (!pluginName.trim() || !pluginType.trim()) {
+    if (!pluginName.trim()) {
       setError("Please fill in required fields");
       return;
     }
@@ -2185,9 +2185,6 @@ export function AdminPage() {
                           {plugins.map((plugin) => (
                             <TableRow key={plugin.id}>
                               <TableCell className="font-medium">{plugin.name}</TableCell>
-                              <TableCell>
-                                <Badge variant="outline">{plugin.type}</Badge>
-                              </TableCell>
                               <TableCell className="hidden md:table-cell">
                                 {plugin.version || <span className="text-muted-foreground">N/A</span>}
                               </TableCell>
@@ -2996,9 +2993,6 @@ export function AdminPage() {
                 <strong>Name:</strong> {viewPlugin.name}
               </p>
               <p>
-                <strong>Type:</strong> {viewPlugin.type}
-              </p>
-              <p>
                 <strong>Description:</strong> {viewPlugin.description || "No description"}
               </p>
               <p>
@@ -3053,16 +3047,6 @@ export function AdminPage() {
               />
             </div>
             <div>
-              <Label htmlFor="plugin-type">Type</Label>
-              <Input
-                id="plugin-type"
-                value={pluginType}
-                onChange={(e) => setPluginType(e.target.value)}
-                placeholder="e.g., widget, data-source, utility"
-                className="mt-2"
-              />
-            </div>
-            <div>
               <Label htmlFor="plugin-description">Description</Label>
               <Input
                 id="plugin-description"
@@ -3110,7 +3094,7 @@ export function AdminPage() {
             </Button>
             <Button
               onClick={createPlugin}
-              disabled={creatingPlugin || !pluginName.trim() || !pluginType.trim()}
+              disabled={creatingPlugin || !pluginName.trim()}
             >
               {creatingPlugin ? "Creating..." : "Create Plugin"}
             </Button>
@@ -3135,16 +3119,6 @@ export function AdminPage() {
                 value={pluginName}
                 onChange={(e) => setPluginName(e.target.value)}
                 placeholder="e.g., Weather Display"
-                className="mt-2"
-              />
-            </div>
-            <div>
-              <Label htmlFor="edit-plugin-type">Type</Label>
-              <Input
-                id="edit-plugin-type"
-                value={pluginType}
-                onChange={(e) => setPluginType(e.target.value)}
-                placeholder="e.g., widget, data-source, utility"
                 className="mt-2"
               />
             </div>
@@ -3196,7 +3170,7 @@ export function AdminPage() {
             </Button>
             <Button
               onClick={updatePlugin}
-              disabled={!pluginName.trim() || !pluginType.trim() || !hasPluginChanges()}
+              disabled={!pluginName.trim() || !hasPluginChanges()}
             >
               Update Plugin
             </Button>

@@ -201,14 +201,8 @@ func (p *ScreenshotPlugin) Process(ctx plugins.PluginContext) (plugins.PluginRes
 		ctx.Device.DeviceModel.ScreenWidth,
 		ctx.Device.DeviceModel.ScreenHeight)
 
-	// Set refresh rate - minimum 2 hours for screenshots to avoid excessive API usage
-	refreshRate := ctx.UserPlugin.RefreshInterval
-	if refreshRate < 7200 { // Minimum 2 hours
-		refreshRate = 7200
-	}
-
 	// Return image data response (RenderWorker will handle storage)
-	return plugins.CreateImageDataResponse(pngData, filename, refreshRate), nil
+	return plugins.CreateImageDataResponse(pngData, filename), nil
 }
 
 // Register the plugin when this package is imported

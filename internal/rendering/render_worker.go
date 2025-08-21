@@ -20,7 +20,6 @@ import (
 // RenderWorker handles background rendering of plugin content
 type RenderWorker struct {
 	db          *gorm.DB
-	renderer    *HTMLRenderer
 	staticDir   string
 	renderedDir string
 }
@@ -37,20 +36,6 @@ func generateRandomString(length int) string {
 
 // NewRenderWorker creates a new render worker instance
 func NewRenderWorker(db *gorm.DB, staticDir string) (*RenderWorker, error) {
-	// Create renderer with default options
-	defaultOpts := RenderOptions{
-		Width:   800,
-		Height:  470,
-		Quality: 90,
-		DPI:     125,
-	}
-	renderer, err := NewHTMLRenderer(defaultOpts)
-	if err != nil {
-		logging.Warn("[RENDER_WORKER] Failed to create HTML renderer", "error", err)
-		logging.Info("[RENDER_WORKER] Background HTML rendering disabled - install Chromium to enable pre-rendering")
-		renderer = nil // Continue without renderer
-	}
-
 	renderedDir := filepath.Join(staticDir, "rendered")
 
 	// Ensure rendered directory exists
@@ -60,7 +45,6 @@ func NewRenderWorker(db *gorm.DB, staticDir string) (*RenderWorker, error) {
 
 	return &RenderWorker{
 		db:          db,
-		renderer:    renderer,
 		staticDir:   staticDir,
 		renderedDir: renderedDir,
 	}, nil
@@ -282,58 +266,9 @@ func (w *RenderWorker) renderForDeviceModel(ctx context.Context, userPlugin data
 			fileSize = 0 // URL reference, no local file
 		}
 	} else if plugin.PluginType() == plugins.PluginTypeData {
-		// Check if renderer is available for data plugins
-		if w.renderer == nil {
-			logging.Debug("[RENDER_WORKER] Skipping data plugin rendering - HTML renderer not available", "plugin_type", userPlugin.Plugin.Type)
-			return nil // Skip this render, don't error
-		}
-
-		// For data plugins, render to image
-		dataPlugin, ok := plugin.(plugins.DataPlugin)
-		if !ok {
-			return fmt.Errorf("plugin claims to be data type but doesn't implement DataPlugin interface")
-		}
-
-		// Get template from data plugin
-		template := dataPlugin.RenderTemplate()
-
-		// Get data from response
-		data, ok := plugins.GetData(response)
-		if !ok {
-			return fmt.Errorf("data plugin response missing data")
-		}
-
-		// Set DPI based on bit depth
-		dpi := 200
-		if deviceModel.BitDepth == 1 {
-			dpi = 150 // Lower DPI for 1-bit displays
-		}
-
-		renderOpts := RenderOptions{
-			Width:   deviceModel.ScreenWidth,
-			Height:  deviceModel.ScreenHeight,
-			Quality: 90,
-			DPI:     dpi,
-		}
-
-		imageData, err := w.renderer.RenderTemplateToImage(ctx, template, data, renderOpts)
-		if err != nil {
-			return fmt.Errorf("failed to render image: %w", err)
-		}
-
-		// Save image to disk
-		randomString := generateRandomString(10)
-		filename := fmt.Sprintf("%s_%s_%dx%d_%d_%s.png",
-			userPlugin.ID, userPlugin.Plugin.Type,
-			deviceModel.ScreenWidth, deviceModel.ScreenHeight, deviceModel.BitDepth, randomString)
-		imagePath = filepath.Join(w.renderedDir, filename)
-
-		err = os.WriteFile(imagePath, imageData, 0644)
-		if err != nil {
-			return fmt.Errorf("failed to save rendered image: %w", err)
-		}
-
-		fileSize = int64(len(imageData))
+		// Data plugins are not supported without HTML renderer
+		logging.Debug("[RENDER_WORKER] Skipping data plugin rendering - HTML rendering not available", "plugin_type", userPlugin.Plugin.Type)
+		return nil // Skip this render, don't error
 	}
 
 	// Clean up old rendered content and files for this resolution

@@ -347,17 +347,15 @@ func DisplayHandler(c *gin.Context) {
 		// Ensure required fields are set when plugins succeed
 		response["status"] = status
 
-		// Implement refresh rate priority: plugin > playlist item override > device default
-		if _, exists := response["refresh_rate"]; !exists {
-			// Plugin didn't provide refresh rate, check playlist item override
-			if currentItem != nil && currentItem.DurationOverride != nil {
-				response["refresh_rate"] = fmt.Sprintf("%d", *currentItem.DurationOverride)
-			} else {
-				// Fallback to device's stored refresh rate
-				response["refresh_rate"] = fmt.Sprintf("%d", device.RefreshRate)
-			}
+		// Implement refresh rate priority: playlist item override > plugin > device default
+		if currentItem != nil && currentItem.DurationOverride != nil {
+			// Playlist override takes highest priority
+			response["refresh_rate"] = fmt.Sprintf("%d", *currentItem.DurationOverride)
+		} else if _, exists := response["refresh_rate"]; !exists {
+			// No playlist override and plugin didn't provide refresh rate, use device default
+			response["refresh_rate"] = fmt.Sprintf("%d", device.RefreshRate)
 		}
-		// If plugin provided refresh_rate, we use it as-is (highest priority)
+		// If no playlist override but plugin provided refresh_rate, keep plugin rate
 	}
 
 	// Handle sleep mode - override refresh rate and image if in sleep period
@@ -1258,7 +1256,8 @@ func processCurrentPlugin(device *database.Device, activeItems []database.Playli
 
 	// Apply duration override if no refresh_rate was provided by plugin
 	if pluginErr == nil {
-		if _, exists := response["refresh_rate"]; !exists && item.DurationOverride != nil {
+		// Apply duration override (takes priority over plugin refresh_rate)
+		if item.DurationOverride != nil {
 			response["refresh_rate"] = *item.DurationOverride
 		}
 	}

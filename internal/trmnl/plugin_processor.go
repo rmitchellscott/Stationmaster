@@ -23,7 +23,6 @@ import (
 
 // PluginProcessor handles processing plugins with the new architecture
 type PluginProcessor struct {
-	renderer     rendering.Renderer
 	imageStorage *storage.ImageStorage
 	db           *gorm.DB
 	queueManager *rendering.QueueManager
@@ -41,25 +40,10 @@ func generateRandomString(length int) string {
 
 // NewPluginProcessor creates a new plugin processor
 func NewPluginProcessor(db *gorm.DB) (*PluginProcessor, error) {
-	// Create renderer with default options for TRMNL devices
-	defaultOpts := rendering.RenderOptions{
-		Width:   800,
-		Height:  480,
-		Quality: 90,
-		DPI:     125,
-	}
-	renderer, err := rendering.NewHTMLRenderer(defaultOpts)
-	if err != nil {
-		logging.Warn("[PLUGIN_PROCESSOR] Failed to create HTML renderer", "error", err)
-		logging.Warn("[PLUGIN_PROCESSOR] HTML rendering will be disabled")
-		renderer = nil // Continue without renderer
-	}
-
 	imageStorage := storage.GetDefaultImageStorage()
 	queueManager := rendering.NewQueueManager(db)
 
 	return &PluginProcessor{
-		renderer:     renderer,
 		imageStorage: imageStorage,
 		db:           db,
 		queueManager: queueManager,
@@ -68,9 +52,6 @@ func NewPluginProcessor(db *gorm.DB) (*PluginProcessor, error) {
 
 // Close cleans up resources
 func (pp *PluginProcessor) Close() error {
-	if pp.renderer != nil {
-		return pp.renderer.Close()
-	}
 	return nil
 }
 
@@ -170,9 +151,8 @@ func (pp *PluginProcessor) processActivePlugins(device *database.Device, activeI
 		}
 
 		response = gin.H{
-			"image_url":    imageURL,
-			"filename":     fmt.Sprintf("pre_rendered_%s", time.Now().Format("20060102150405")),
-			"refresh_rate": fmt.Sprintf("%d", userPlugin.RefreshInterval),
+			"image_url": imageURL,
+			"filename":  fmt.Sprintf("pre_rendered_%s", time.Now().Format("20060102150405")),
 		}
 
 		logging.Info("[PLUGIN] Using pre-rendered content", "plugin_type", userPlugin.Plugin.Type)
@@ -235,11 +215,15 @@ func (pp *PluginProcessor) processActivePlugins(device *database.Device, activeI
 								}
 							} else {
 								// Replace image_data with image_url
-								response = gin.H{
-									"image_url":    imageURL,
-									"filename":     filename,
-									"refresh_rate": response["refresh_rate"],
+								newResponse := gin.H{
+									"image_url": imageURL,
+									"filename":  filename,
 								}
+								// Only include refresh_rate if plugin provided one
+								if refreshRate := response["refresh_rate"]; refreshRate != nil {
+									newResponse["refresh_rate"] = refreshRate
+								}
+								response = newResponse
 								logging.Debug("[PLUGIN] Stored image data", "plugin_type", plugin.Type(), "url", imageURL)
 							}
 						} else {
@@ -274,55 +258,7 @@ func (pp *PluginProcessor) processActivePlugins(device *database.Device, activeI
 
 // renderDataPlugin renders a data plugin response to an image
 func (pp *PluginProcessor) renderDataPlugin(response plugins.PluginResponse, device *database.Device, pluginType string) (gin.H, error) {
-	// Extract data and template
-	data, ok := plugins.GetData(response)
-	if !ok {
-		return nil, fmt.Errorf("no data found in plugin response")
-	}
-
-	template, ok := plugins.GetTemplate(response)
-	if !ok {
-		return nil, fmt.Errorf("no template found in plugin response")
-	}
-
-	// Get refresh rate
-	refreshRate, _ := plugins.GetRefreshRate(response)
-
-	// Create rendering context with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	// Determine render options based on device model
-	renderOptions := rendering.DefaultRenderOptions()
-	if device.DeviceModel != nil {
-		renderOptions.Width = device.DeviceModel.ScreenWidth
-		renderOptions.Height = device.DeviceModel.ScreenHeight
-	}
-
-	// Check if renderer is available
-	if pp.renderer == nil {
-		return nil, fmt.Errorf("HTML renderer not available - Chromium not installed")
-	}
-
-	// Render template to image
-	imageData, err := pp.renderer.RenderTemplateToImage(ctx, template, data, renderOptions)
-	if err != nil {
-		return nil, fmt.Errorf("failed to render template: %w", err)
-	}
-
-	// Store the rendered image
-	imageURL, err := pp.imageStorage.StoreImage(imageData, device.ID, pluginType)
-	if err != nil {
-		return nil, fmt.Errorf("failed to store rendered image: %w", err)
-	}
-
-	// Return image response
-	filename := fmt.Sprintf("rendered_%s_%s", pluginType, time.Now().Format("20060102150405"))
-	return gin.H{
-		"image_url":    imageURL,
-		"filename":     filename,
-		"refresh_rate": fmt.Sprintf("%d", refreshRate),
-	}, nil
+	return nil, fmt.Errorf("HTML rendering not available - data plugins are not supported without Chromium")
 }
 
 // processCurrentPlugin processes the current plugin without advancing the index
@@ -384,9 +320,8 @@ func (pp *PluginProcessor) processCurrentPlugin(device *database.Device, activeI
 		}
 
 		response = gin.H{
-			"image_url":    imageURL,
-			"filename":     fmt.Sprintf("pre_rendered_%s", time.Now().Format("20060102150405")),
-			"refresh_rate": fmt.Sprintf("%d", userPlugin.RefreshInterval),
+			"image_url": imageURL,
+			"filename":  fmt.Sprintf("pre_rendered_%s", time.Now().Format("20060102150405")),
 		}
 
 		logging.Info("[PLUGIN] Using pre-rendered content (current)", "plugin_type", userPlugin.Plugin.Type)
@@ -439,11 +374,15 @@ func (pp *PluginProcessor) processCurrentPlugin(device *database.Device, activeI
 						}
 					} else {
 						// Replace image_data with image_url
-						response = gin.H{
-							"image_url":    imageURL,
-							"filename":     filename,
-							"refresh_rate": response["refresh_rate"],
+						newResponse := gin.H{
+							"image_url": imageURL,
+							"filename":  filename,
 						}
+						// Only include refresh_rate if plugin provided one
+						if refreshRate := response["refresh_rate"]; refreshRate != nil {
+							newResponse["refresh_rate"] = refreshRate
+						}
+						response = newResponse
 						logging.Debug("[PLUGIN] Stored image data (current)", "plugin_type", plugin.Type(), "url", imageURL)
 					}
 				} else {
@@ -454,8 +393,8 @@ func (pp *PluginProcessor) processCurrentPlugin(device *database.Device, activeI
 		}
 	}
 
-	// Apply duration override if no refresh_rate was provided by plugin
-	if _, exists := response["refresh_rate"]; !exists && item.DurationOverride != nil {
+	// Apply duration override (takes priority over plugin refresh_rate)
+	if item.DurationOverride != nil {
 		response["refresh_rate"] = fmt.Sprintf("%d", *item.DurationOverride)
 	}
 

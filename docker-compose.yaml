@@ -48,10 +48,7 @@ services:
     restart: unless-stopped
     environment:
       - CONCURRENT=2
-      - KEEP_ALIVE=true
-      - MAX_CONCURRENT_SESSIONS=2
       - MAX_QUEUE_LENGTH=10
-      - PREBOOT_CHROME=true
       - TIMEOUT=30000
       - DEBUG=browserless:*
     ports:

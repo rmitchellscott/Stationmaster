@@ -145,12 +145,7 @@ func (p *ImageDisplayPlugin) Process(ctx plugins.PluginContext) (plugins.PluginR
 		ctx.Device.DeviceModel.ScreenHeight)
 
 	// Return image data response (RenderWorker will handle storage)
-	refreshRate := ctx.UserPlugin.RefreshInterval
-	if refreshRate < 3600 { // Minimum 1 hour for image display to avoid excessive downloads
-		refreshRate = 3600
-	}
-
-	return plugins.CreateImageDataResponse(pngData, filename, refreshRate), nil
+	return plugins.CreateImageDataResponse(pngData, filename), nil
 }
 
 // Register the plugin when this package is imported

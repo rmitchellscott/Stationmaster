@@ -51,12 +51,15 @@ type ScreenshotRequest struct {
 		FullPage       bool   `json:"fullPage"`
 		OmitBackground bool   `json:"omitBackground"`
 	} `json:"options"`
-	// Removed gotoOptions and waitForEvent to test minimal structure
+	GotoOptions struct {
+		WaitUntil string `json:"waitUntil"`
+		Timeout   int    `json:"timeout"`
+	} `json:"gotoOptions"`
 }
 
 // CaptureScreenshot captures a screenshot of the given URL using browserless
 func (r *BrowserlessRenderer) CaptureScreenshot(ctx context.Context, url string, width, height int, fullPage bool, waitTimeSeconds int) ([]byte, error) {
-	// Prepare minimal browserless request to test schema
+	// Prepare browserless request with proper wait time handling
 	req := ScreenshotRequest{
 		URL: url,
 		Viewport: struct {
@@ -72,7 +75,9 @@ func (r *BrowserlessRenderer) CaptureScreenshot(ctx context.Context, url string,
 	req.Options.FullPage = fullPage
 	req.Options.OmitBackground = false
 	
-	// Removed gotoOptions and waitForEvent to isolate schema issue
+	// Set wait options based on provided wait time
+	req.GotoOptions.WaitUntil = "networkidle2"
+	req.GotoOptions.Timeout = (waitTimeSeconds + 30) * 1000 // Convert to milliseconds and add buffer
 	
 	// Marshal request to JSON
 	requestBody, err := json.Marshal(req)

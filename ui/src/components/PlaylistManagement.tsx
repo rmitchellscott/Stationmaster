@@ -807,6 +807,7 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
   // Edit item state (now used in schedule dialog)
   const [editImportance, setEditImportance] = useState<boolean>(false);
   const [editDurationOverride, setEditDurationOverride] = useState<string>("");
+  const [editDurationMode, setEditDurationMode] = useState<'default' | 'custom'>('default');
 
   // Delete confirmation dialog
   const [deleteItemDialog, setDeleteItemDialog] = useState<{
@@ -1130,6 +1131,7 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
     // Also load the edit data for importance and duration
     setEditImportance(item.importance);
     setEditDurationOverride(item.duration_override ? item.duration_override.toString() : "");
+    setEditDurationMode(item.duration_override ? 'custom' : 'default');
     setShowScheduleDialog(true);
   };
 
@@ -1138,7 +1140,19 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
     
     // Check if importance or duration changed
     const importanceChanged = editImportance !== scheduleItem.importance;
-    const durationChanged = editDurationOverride !== (scheduleItem.duration_override ? scheduleItem.duration_override.toString() : "");
+    
+    // Check duration changes by comparing the final values that would be saved
+    const originalDurationValue = scheduleItem.duration_override;
+    let newDurationValue: number | null;
+    
+    if (editDurationMode === 'default') {
+      newDurationValue = null;
+    } else {
+      const duration = parseInt(editDurationOverride);
+      newDurationValue = (!isNaN(duration) && duration > 0) ? duration : null;
+    }
+    
+    const durationChanged = newDurationValue !== originalDurationValue;
     
     // Check if schedules changed
     const schedulesChanged = JSON.stringify(schedules) !== JSON.stringify(originalSchedules);
@@ -1201,20 +1215,36 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
       }
 
       // Update playlist item settings (importance and duration)
-      if (editImportance !== scheduleItem.importance || 
-          editDurationOverride !== (scheduleItem.duration_override ? scheduleItem.duration_override.toString() : "")) {
+      // Check if importance changed or if duration value would change
+      const importanceChanged = editImportance !== scheduleItem.importance;
+      
+      const originalDurationValue = scheduleItem.duration_override;
+      let newDurationValue: number | null;
+      if (editDurationMode === 'default') {
+        newDurationValue = null;
+      } else {
+        const duration = parseInt(editDurationOverride);
+        newDurationValue = (!isNaN(duration) && duration > 0) ? duration : null;
+      }
+      const durationChanged = newDurationValue !== originalDurationValue;
+      
+      if (importanceChanged || durationChanged) {
         
         const updateData: any = {
           importance: editImportance,
         };
 
-        // Only include duration_override if it's a valid number or null
-        if (editDurationOverride.trim() === "") {
+        // Handle duration override based on mode
+        if (editDurationMode === 'default') {
           updateData.duration_override = null;
         } else {
+          // Custom mode - validate the input
           const duration = parseInt(editDurationOverride);
           if (!isNaN(duration) && duration > 0) {
             updateData.duration_override = duration;
+          } else {
+            // Invalid input in custom mode - set to null
+            updateData.duration_override = null;
           }
         }
 
@@ -1529,19 +1559,42 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
                   </div>
 
                   <div>
-                    <Label htmlFor="duration-override">Duration Override (seconds)</Label>
-                    <Input
-                      id="duration-override"
-                      type="number"
-                      min="60"
-                      placeholder="Leave empty for device default"
-                      value={editDurationOverride}
-                      onChange={(e) => setEditDurationOverride(e.target.value)}
-                      className="mt-2"
-                    />
+                    <Label htmlFor="duration-mode">Duration</Label>
+                    <div className="mt-2 grid grid-cols-2 gap-3">
+                      <Select
+                        value={editDurationMode}
+                        onValueChange={(value: 'default' | 'custom') => {
+                          setEditDurationMode(value);
+                          if (value === 'default') {
+                            setEditDurationOverride("");
+                          }
+                        }}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="default">Default</SelectItem>
+                          <SelectItem value="custom">Custom</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      
+                      {editDurationMode === 'custom' && (
+                        <Input
+                          id="duration-override"
+                          type="number"
+                          min="60"
+                          placeholder="Duration in seconds"
+                          value={editDurationOverride}
+                          onChange={(e) => setEditDurationOverride(e.target.value)}
+                        />
+                      )}
+                    </div>
                     <p className="text-xs text-muted-foreground mt-1">
-                      Override the device's default refresh rate for this item only. 
-                      Leave empty to use the device's configured refresh rate.
+                      {editDurationMode === 'default' 
+                        ? "Uses plugin default or device refresh rate."
+                        : "Override the refresh rate for this item. Takes precedence over plugin-suggested rates."
+                      }
                     </p>
                   </div>
                 </div>

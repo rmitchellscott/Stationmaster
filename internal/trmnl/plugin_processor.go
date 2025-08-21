@@ -110,8 +110,8 @@ func (pp *PluginProcessor) scheduleRenderIfNeeded(userPluginID uuid.UUID) {
 	}
 }
 
-// processActivePluginsNew processes plugins using the new plugin architecture
-func (pp *PluginProcessor) processActivePluginsNew(device *database.Device, activeItems []database.PlaylistItem) (gin.H, *database.PlaylistItem, error) {
+// processActivePlugins processes plugins using the new plugin architecture
+func (pp *PluginProcessor) processActivePlugins(device *database.Device, activeItems []database.PlaylistItem) (gin.H, *database.PlaylistItem, error) {
 	if len(activeItems) == 0 {
 		return nil, nil, fmt.Errorf("no active playlist items")
 	}
@@ -325,8 +325,8 @@ func (pp *PluginProcessor) renderDataPlugin(response plugins.PluginResponse, dev
 	}, nil
 }
 
-// processCurrentPluginNew processes the current plugin without advancing the index
-func (pp *PluginProcessor) processCurrentPluginNew(device *database.Device, activeItems []database.PlaylistItem) (gin.H, error) {
+// processCurrentPlugin processes the current plugin without advancing the index
+func (pp *PluginProcessor) processCurrentPlugin(device *database.Device, activeItems []database.PlaylistItem) (gin.H, error) {
 	if len(activeItems) == 0 {
 		return nil, fmt.Errorf("no active playlist items")
 	}

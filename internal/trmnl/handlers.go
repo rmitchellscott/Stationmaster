@@ -287,7 +287,7 @@ func DisplayHandler(c *gin.Context) {
 	var pluginErr error
 	
 	if processor != nil {
-		response, currentItem, pluginErr = processor.processActivePluginsNew(device, activeItems)
+		response, currentItem, pluginErr = processor.processActivePlugins(device, activeItems)
 	} else {
 		// Fallback to old implementation if processor not available
 		response, currentItem, pluginErr = processActivePlugins(device, activeItems)
@@ -1154,7 +1154,7 @@ func CurrentScreenHandler(c *gin.Context) {
 	var pluginErr error
 	
 	if processor != nil {
-		response, pluginErr = processor.processCurrentPluginNew(device, activeItems)
+		response, pluginErr = processor.processCurrentPlugin(device, activeItems)
 	} else {
 		// Fallback to old implementation if processor not available
 		response, pluginErr = processCurrentPlugin(device, activeItems)

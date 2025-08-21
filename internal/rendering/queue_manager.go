@@ -15,12 +15,18 @@ import (
 
 // QueueManager handles scheduling and managing render jobs
 type QueueManager struct {
-	db *gorm.DB
+	db         *gorm.DB
+	workerPool *RenderWorkerPool // Optional: for direct job submission
 }
 
 // NewQueueManager creates a new queue manager
 func NewQueueManager(db *gorm.DB) *QueueManager {
 	return &QueueManager{db: db}
+}
+
+// SetWorkerPool sets the worker pool reference for direct job submission
+func (qm *QueueManager) SetWorkerPool(workerPool *RenderWorkerPool) {
+	qm.workerPool = workerPool
 }
 
 // ScheduleRender schedules a render job for a user plugin
@@ -45,6 +51,47 @@ func (qm *QueueManager) ScheduleRender(ctx context.Context, userPluginID uuid.UU
 
 // ScheduleImmediateRender schedules a high-priority immediate render
 func (qm *QueueManager) ScheduleImmediateRender(ctx context.Context, userPluginID uuid.UUID) error {
+	return qm.ScheduleImmediateRenderWithOptions(ctx, userPluginID, true)
+}
+
+// ScheduleImmediateRenderWithOptions schedules an immediate render with channel bypass option
+func (qm *QueueManager) ScheduleImmediateRenderWithOptions(ctx context.Context, userPluginID uuid.UUID, bypassQueue bool) error {
+	// If worker pool is available and we want to bypass the database queue for speed
+	if bypassQueue && qm.workerPool != nil {
+		job := RenderJob{
+			ID:           uuid.New(),
+			UserPluginID: userPluginID,
+			Priority:     100,
+			ScheduledFor: time.Now(),
+			Attempts:     0,
+			Context:      ctx,
+		}
+		
+		// First save to database for tracking
+		dbJob := database.RenderQueue{
+			ID:           job.ID,
+			UserPluginID: userPluginID,
+			Priority:     100,
+			ScheduledFor: time.Now(),
+			Status:       "pending",
+		}
+		
+		if err := qm.db.WithContext(ctx).Create(&dbJob).Error; err != nil {
+			return fmt.Errorf("failed to create render job: %w", err)
+		}
+		
+		// Then submit directly to worker pool
+		if qm.workerPool.SubmitJob(job) {
+			logging.Info("[QUEUE_MANAGER] Submitted immediate render job directly to worker pool", 
+				"plugin_id", userPluginID, "job_id", job.ID)
+			return nil
+		} else {
+			logging.Warn("[QUEUE_MANAGER] Worker pool channel full, falling back to database queue", 
+				"plugin_id", userPluginID)
+		}
+	}
+	
+	// Fallback to regular database scheduling
 	return qm.ScheduleRender(ctx, userPluginID, 100, time.Now())
 }
 

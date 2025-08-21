@@ -201,7 +201,8 @@ type Device struct {
 	MacAddress              string     `gorm:"size:255;not null;uniqueIndex" json:"mac_address"` // Original MAC address from device
 	FriendlyID              string     `gorm:"size:10;not null;uniqueIndex" json:"friendly_id"`  // Generated short ID like "917F0B"
 	Name                    string     `gorm:"size:255" json:"name,omitempty"`                   // User-defined name, empty until claimed
-	ModelName               *string    `gorm:"size:100;index" json:"model_name,omitempty"`       // Device model identifier
+	DeviceModelID           *uint      `gorm:"index" json:"device_model_id,omitempty"`           // Foreign key to DeviceModel.ID
+	ModelName               *string    `gorm:"size:100;index" json:"model_name,omitempty"`       // Deprecated - kept for migration
 	ManualModelOverride     bool       `gorm:"default:false" json:"manual_model_override"`       // True if model was manually set by user
 	ReportedModelName       *string    `gorm:"size:100" json:"reported_model_name,omitempty"`    // Last model reported by device
 	APIKey                  string     `gorm:"size:255;not null;index" json:"api_key"`
@@ -228,7 +229,7 @@ type Device struct {
 
 	// Associations
 	User *User `gorm:"foreignKey:UserID;constraint:OnDelete:SET NULL" json:"-"`
-	DeviceModel *DeviceModel `gorm:"-:migration;foreignKey:ModelName;references:ModelName" json:"device_model,omitempty"`
+	DeviceModel *DeviceModel `gorm:"foreignKey:DeviceModelID;constraint:OnDelete:SET NULL" json:"device_model,omitempty"`
 	// MirrorSource association removed to avoid circular foreign key constraints during migration
 	// Use MirrorSourceID field and fetch the source device manually when needed
 	// Playlists relationship defined in Playlist model to avoid circular constraints
@@ -415,30 +416,28 @@ func (f *FirmwareVersion) BeforeCreate(tx *gorm.DB) error {
 
 // DeviceModel represents a device model with its capabilities
 type DeviceModel struct {
-	ID           uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
-	ModelName    string    `gorm:"size:100;not null;uniqueIndex" json:"model_name"`
-	DisplayName  string    `gorm:"size:200;not null" json:"display_name"`
-	Description  string    `gorm:"type:text" json:"description,omitempty"`
-	ScreenWidth  int       `gorm:"not null" json:"screen_width"`
-	ScreenHeight int       `gorm:"not null" json:"screen_height"`
-	ColorDepth   int       `gorm:"default:1" json:"color_depth"` // 1=monochrome, 8=grayscale, 24=color
-	BitDepth     int       `gorm:"default:1" json:"bit_depth"`   // Actual bit depth of the display
-	HasWiFi      bool      `gorm:"default:true" json:"has_wifi"`
-	HasBattery   bool      `gorm:"default:true" json:"has_battery"`
-	HasButtons   int       `gorm:"default:0" json:"has_buttons"`            // Number of buttons
-	Capabilities string    `gorm:"type:text" json:"capabilities,omitempty"` // JSON array of capabilities
-	MinFirmware  string    `gorm:"size:50" json:"min_firmware,omitempty"`
-	IsActive     bool      `gorm:"default:true" json:"is_active"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID             uint       `gorm:"primaryKey;autoIncrement" json:"id"`
+	ModelName      string     `gorm:"size:100;not null;index" json:"model_name"` // Not unique - multiple versions allowed
+	DisplayName    string     `gorm:"size:200;not null" json:"display_name"`
+	Description    string     `gorm:"type:text" json:"description,omitempty"`
+	ScreenWidth    int        `gorm:"not null" json:"screen_width"`
+	ScreenHeight   int        `gorm:"not null" json:"screen_height"`
+	ColorDepth     int        `gorm:"default:1" json:"color_depth"` // 1=monochrome, 8=grayscale, 24=color
+	BitDepth       int        `gorm:"default:1" json:"bit_depth"`   // Actual bit depth of the display
+	HasWiFi        bool       `gorm:"default:true" json:"has_wifi"`
+	HasBattery     bool       `gorm:"default:true" json:"has_battery"`
+	HasButtons     int        `gorm:"default:0" json:"has_buttons"`            // Number of buttons
+	Capabilities   string     `gorm:"type:text" json:"capabilities,omitempty"` // JSON array of capabilities
+	MinFirmware    string     `gorm:"size:50" json:"min_firmware,omitempty"`
+	IsActive       bool       `gorm:"default:true" json:"is_active"`
+	ApiLastSeenAt  *time.Time `json:"api_last_seen_at,omitempty"` // Track when last seen in API
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+	DeletedAt      *time.Time `gorm:"index" json:"deleted_at,omitempty"` // Soft delete
 }
 
-func (d *DeviceModel) BeforeCreate(tx *gorm.DB) error {
-	if d.ID == uuid.Nil {
-		d.ID = uuid.New()
-	}
-	return nil
-}
+// Note: No BeforeCreate needed for auto-increment ID
+
 
 // FirmwareUpdateJob - REMOVED: Using automatic updates now instead of job-based system
 
@@ -500,6 +499,7 @@ func GetAllModels() []interface{} {
 		&BackupJob{},
 		&RestoreUpload{},
 		&RestoreExtractionJob{},
+		&DeviceModel{}, // Must come before Device due to foreign key reference
 		&Device{},
 		&Plugin{},
 		&UserPlugin{},
@@ -508,7 +508,6 @@ func GetAllModels() []interface{} {
 		&Schedule{},
 		&DeviceLog{},
 		&FirmwareVersion{},
-		&DeviceModel{},
 		&RenderedContent{},
 		&RenderQueue{},
 		// &FirmwareUpdateJob{}, // Removed - using automatic updates

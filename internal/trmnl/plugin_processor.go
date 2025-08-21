@@ -50,7 +50,9 @@ func NewPluginProcessor(db *gorm.DB) (*PluginProcessor, error) {
 	}
 	renderer, err := rendering.NewHTMLRenderer(defaultOpts)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create renderer: %w", err)
+		logging.Logf("[PLUGIN_PROCESSOR] Warning: Failed to create HTML renderer: %v", err)
+		logging.Logf("[PLUGIN_PROCESSOR] HTML rendering will be disabled. Install Chromium to enable HTML-based plugins.")
+		renderer = nil // Continue without renderer
 	}
 
 	imageStorage := storage.GetDefaultImageStorage()
@@ -295,6 +297,11 @@ func (pp *PluginProcessor) renderDataPlugin(response plugins.PluginResponse, dev
 	if device.DeviceModel != nil {
 		renderOptions.Width = device.DeviceModel.ScreenWidth
 		renderOptions.Height = device.DeviceModel.ScreenHeight
+	}
+
+	// Check if renderer is available
+	if pp.renderer == nil {
+		return nil, fmt.Errorf("HTML renderer not available - Chromium not installed")
 	}
 
 	// Render template to image

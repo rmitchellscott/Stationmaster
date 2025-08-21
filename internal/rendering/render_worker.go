@@ -46,7 +46,9 @@ func NewRenderWorker(db *gorm.DB, staticDir string) (*RenderWorker, error) {
 	}
 	renderer, err := NewHTMLRenderer(defaultOpts)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create renderer: %w", err)
+		logging.Logf("[RENDER_WORKER] Warning: Failed to create HTML renderer: %v", err)
+		logging.Logf("[RENDER_WORKER] Background HTML rendering will be disabled. Install Chromium to enable pre-rendering.")
+		renderer = nil // Continue without renderer
 	}
 
 	renderedDir := filepath.Join(staticDir, "rendered")
@@ -270,6 +272,12 @@ func (w *RenderWorker) renderForDeviceModel(ctx context.Context, userPlugin data
 			fileSize = 0 // URL reference, no local file
 		}
 	} else if plugin.PluginType() == plugins.PluginTypeData {
+		// Check if renderer is available for data plugins
+		if w.renderer == nil {
+			logging.Logf("[RENDER_WORKER] Skipping data plugin %s rendering - HTML renderer not available", userPlugin.Plugin.Type)
+			return nil // Skip this render, don't error
+		}
+
 		// For data plugins, render to image
 		dataPlugin, ok := plugin.(plugins.DataPlugin)
 		if !ok {

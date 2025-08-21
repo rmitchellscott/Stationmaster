@@ -211,7 +211,7 @@ func (ds *DeviceService) UpdateDevice(device *Device) error {
 		"refresh_rate":              device.RefreshRate,
 		"is_active":                 device.IsActive,
 		"allow_firmware_updates":    device.AllowFirmwareUpdates,
-		"model_name":                device.ModelName,
+		"device_model_id":           device.DeviceModelID,
 		"manual_model_override":     device.ManualModelOverride,
 		"is_shareable":              device.IsShareable,
 		"mirror_source_id":          device.MirrorSourceID,
@@ -227,7 +227,15 @@ func (ds *DeviceService) UpdateDevice(device *Device) error {
 	logging.Logf("[DEVICE UPDATE] Updating device %s with sleep settings: enabled=%v, start=%s, end=%s, show_screen=%v", 
 		device.ID, device.SleepEnabled, device.SleepStartTime, device.SleepEndTime, device.SleepShowScreen)
 	
-	err := ds.db.Model(device).Updates(updates).Error
+	// Use Select to only update specified fields, preventing GORM from trying to save associations
+	err := ds.db.Model(device).Select(
+		"name", "refresh_rate", "is_active", "allow_firmware_updates", 
+		"device_model_id", "manual_model_override", "is_shareable",
+		"mirror_source_id", "mirror_synced_at", "sleep_enabled",
+		"sleep_start_time", "sleep_end_time", "sleep_show_screen",
+		"firmware_update_start_time", "firmware_update_end_time",
+	).Updates(updates).Error
+	
 	if err != nil {
 		logging.Logf("[DEVICE UPDATE] Database update failed: %v", err)
 	} else {
@@ -241,16 +249,32 @@ func (ds *DeviceService) UpdateRefreshRate(deviceID uuid.UUID, refreshRate int) 
 	return ds.db.Model(&Device{}).Where("id = ?", deviceID).Update("refresh_rate", refreshRate).Error
 }
 
-// ValidateDeviceModel checks if a device model exists in the database
+// ValidateDeviceModel checks if a device model exists in the database by ID
+func (ds *DeviceService) ValidateDeviceModelByID(modelID uint) (*DeviceModel, error) {
+	var deviceModel DeviceModel
+	err := ds.db.Where("id = ? AND deleted_at IS NULL", modelID).First(&deviceModel).Error
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, fmt.Errorf("device model with ID %d not found", modelID)
+		}
+		return nil, err
+	}
+	return &deviceModel, nil
+}
+
+// ValidateDeviceModel checks if a device model exists in the database by name (for backward compatibility)
 func (ds *DeviceService) ValidateDeviceModel(modelName string) error {
 	if modelName == "" {
 		return nil // Empty model name is valid (clears the model)
 	}
 	
 	var deviceModel DeviceModel
-	err := ds.db.Where("model_name = ? AND is_active = ?", modelName, true).First(&deviceModel).Error
+	// Get the latest version of this model name
+	err := ds.db.Where("model_name = ? AND is_active = ? AND deleted_at IS NULL", modelName, true).
+		Order("created_at DESC").
+		First(&deviceModel).Error
 	if err != nil {
-		if err.Error() == "record not found" {
+		if err == gorm.ErrRecordNotFound {
 			return fmt.Errorf("device model '%s' not found", modelName)
 		}
 		return err
@@ -258,10 +282,21 @@ func (ds *DeviceService) ValidateDeviceModel(modelName string) error {
 	return nil
 }
 
-// GetAllDeviceModels returns all active device models
+// GetAllDeviceModels returns the latest version of each active device model
 func (ds *DeviceService) GetAllDeviceModels() ([]DeviceModel, error) {
 	var models []DeviceModel
-	err := ds.db.Where("is_active = ?", true).Order("display_name ASC").Find(&models).Error
+	
+	// Subquery to get the max ID for each model_name (latest version)
+	subQuery := ds.db.Table("device_models").
+		Select("MAX(id) as id").
+		Where("is_active = ? AND deleted_at IS NULL", true).
+		Group("model_name")
+	
+	// Get the full records for those IDs
+	err := ds.db.Where("id IN (?)", subQuery).
+		Order("display_name ASC").
+		Find(&models).Error
+	
 	return models, err
 }
 

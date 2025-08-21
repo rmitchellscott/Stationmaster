@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "@/components/AuthProvider";
 import { useConfig } from "@/components/ConfigProvider";
@@ -272,11 +273,8 @@ function compareSemver(v1: string | null | undefined, v2: string | null | undefi
   return 0;
 }
 
-interface AdminPageProps {
-  onNavigateBack?: () => void;
-}
-
-export function AdminPage({ onNavigateBack }: AdminPageProps) {
+export function AdminPage() {
+  const navigate = useNavigate();
   const { t } = useTranslation();
   const { user } = useAuth();
   const { config } = useConfig();
@@ -1525,7 +1523,7 @@ export function AdminPage({ onNavigateBack }: AdminPageProps) {
           <CardHeader>
             <div>
               <button 
-                onClick={() => onNavigateBack?.()} 
+                onClick={() => navigate(-1)} 
                 className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1 mb-1"
               >
                 <ArrowLeft className="h-3 w-3" />

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "@/components/AuthProvider";
 import { useConfig } from "@/components/ConfigProvider";
@@ -86,6 +87,7 @@ interface UserSettingsProps {
 }
 
 export function UserSettings({ isOpen, onClose }: UserSettingsProps) {
+  const navigate = useNavigate();
   const { t } = useTranslation();
   const { user, isLoading: userDataLoading, refetchAuth: refetch } = useAuth();
   const { config } = useConfig();
@@ -506,7 +508,7 @@ export function UserSettings({ isOpen, onClose }: UserSettingsProps) {
 
       if (response.ok) {
         // Account deleted successfully, redirect to login
-        window.location.href = "/login";
+        navigate("/");
       } else {
         const errorData = await response.json();
         setError(errorData.error || "Failed to delete account");

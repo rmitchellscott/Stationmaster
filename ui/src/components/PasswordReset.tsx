@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -6,12 +7,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Mail, Lock, CheckCircle, XCircle } from 'lucide-react';
+import { Logo } from '@/components/Logo';
+import ThemeSwitcher from '@/components/ThemeSwitcher';
+import LanguageSwitcher from '@/components/LanguageSwitcher';
 
-interface PasswordResetProps {
-  onBack: () => void;
-}
-
-export function PasswordReset({ onBack }: PasswordResetProps) {
+export function PasswordReset() {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { t } = useTranslation();
   const [step, setStep] = useState<'request' | 'confirm'>('request');
   const [email, setEmail] = useState('');
@@ -21,14 +23,23 @@ export function PasswordReset({ onBack }: PasswordResetProps) {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  const handleBackToLogin = () => {
+    // Clear any stale auth state before navigating back to login
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('authExpiry', '0');
+      localStorage.setItem('lastAuthCheck', '0');
+      localStorage.removeItem('authConfigured');
+    }
+    navigate('/');
+  };
+
   React.useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const tokenParam = urlParams.get('token');
+    const tokenParam = searchParams.get('token');
     if (tokenParam) {
       setToken(tokenParam);
       setStep('confirm');
     }
-  }, []);
+  }, [searchParams]);
 
   const requestReset = async (e?: React.FormEvent) => {
     if (e) {
@@ -118,7 +129,7 @@ export function PasswordReset({ onBack }: PasswordResetProps) {
         
         // Redirect to login after a delay
         setTimeout(() => {
-          window.location.href = '/';
+          navigate('/');
         }, 2000);
       } else {
         setMessage({ type: 'error', text: data.error || t('password_reset.reset_error') });
@@ -131,7 +142,17 @@ export function PasswordReset({ onBack }: PasswordResetProps) {
   };
 
   return (
-    <div className="bg-background pt-0 pb-8 px-8">
+    <>
+      <header className="flex items-center justify-between px-8 py-2 bg-background">
+        <button onClick={handleBackToLogin} className="cursor-pointer">
+          <Logo className="h-16 w-32 text-foreground dark:text-foreground-dark" />
+        </button>
+        <div className="flex items-center gap-4">
+          <LanguageSwitcher />
+          <ThemeSwitcher size={24} />
+        </div>
+      </header>
+      <main className="bg-background pt-0 pb-8 px-8">
       <Card className="max-w-md mx-auto bg-card">
         <CardHeader>
           <CardTitle className="text-xl flex items-center gap-2">
@@ -181,7 +202,7 @@ export function PasswordReset({ onBack }: PasswordResetProps) {
                 <Button 
                   type="button"
                   variant="outline" 
-                  onClick={onBack}
+                  onClick={handleBackToLogin}
                   className="w-full"
                   disabled={loading}
                 >
@@ -237,7 +258,7 @@ export function PasswordReset({ onBack }: PasswordResetProps) {
                 <Button 
                   type="button"
                   variant="outline" 
-                  onClick={onBack}
+                  onClick={handleBackToLogin}
                   className="w-full"
                   disabled={loading}
                 >
@@ -254,6 +275,7 @@ export function PasswordReset({ onBack }: PasswordResetProps) {
           )}
         </CardContent>
       </Card>
-    </div>
+      </main>
+    </>
   );
 }

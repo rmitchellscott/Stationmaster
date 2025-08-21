@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "@/components/AuthProvider";
 import { useConfig } from "@/components/ConfigProvider";
@@ -41,11 +42,8 @@ import {
 } from "lucide-react";
 
 
-interface UserSettingsPageProps {
-  onNavigateBack?: () => void;
-}
-
-export function UserSettingsPage({ onNavigateBack }: UserSettingsPageProps) {
+export function UserSettingsPage() {
+  const navigate = useNavigate();
   const { t } = useTranslation();
   const { user, isLoading: userDataLoading, refetchAuth: refetch } = useAuth();
   const { config } = useConfig();
@@ -292,7 +290,7 @@ export function UserSettingsPage({ onNavigateBack }: UserSettingsPageProps) {
       });
 
       if (response.ok) {
-        window.location.href = "/login";
+        navigate("/");
       } else {
         const errorData = await response.json();
         setError(errorData.error || "Failed to delete account");
@@ -331,7 +329,7 @@ export function UserSettingsPage({ onNavigateBack }: UserSettingsPageProps) {
           <CardHeader>
             <div>
               <button 
-                onClick={() => onNavigateBack?.()} 
+                onClick={() => navigate(-1)} 
                 className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1 mb-1"
               >
                 <ArrowLeft className="h-3 w-3" />

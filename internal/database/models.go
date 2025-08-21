@@ -196,39 +196,39 @@ func (r *RestoreExtractionJob) BeforeCreate(tx *gorm.DB) error {
 
 // Device represents a TRMNL device that can be claimed by users
 type Device struct {
-	ID                   uuid.UUID  `gorm:"type:uuid;primaryKey" json:"id"`
-	UserID               *uuid.UUID `gorm:"type:uuid;index" json:"user_id,omitempty"`         // Nullable for unclaimed devices
-	MacAddress           string     `gorm:"size:255;not null;uniqueIndex" json:"mac_address"` // Original MAC address from device
-	FriendlyID           string     `gorm:"size:10;not null;uniqueIndex" json:"friendly_id"`  // Generated short ID like "917F0B"
-	Name                 string     `gorm:"size:255" json:"name,omitempty"`                   // User-defined name, empty until claimed
-	ModelName            *string    `gorm:"size:100;index" json:"model_name,omitempty"`       // Device model identifier
-	ManualModelOverride  bool       `gorm:"default:false" json:"manual_model_override"`       // True if model was manually set by user
-	ReportedModelName    *string    `gorm:"size:100" json:"reported_model_name,omitempty"`    // Last model reported by device
-	APIKey               string     `gorm:"size:255;not null;index" json:"api_key"`
-	IsClaimed            bool       `gorm:"default:false" json:"is_claimed"`
-	FirmwareVersion      string     `gorm:"size:50" json:"firmware_version,omitempty"`
-	BatteryVoltage       float64    `json:"battery_voltage,omitempty"`
-	RSSI                 int        `json:"rssi,omitempty"`
-	RefreshRate          int        `gorm:"default:1800" json:"refresh_rate"` // seconds
-	AllowFirmwareUpdates bool       `gorm:"default:true" json:"allow_firmware_updates"`
-	LastSeen             *time.Time `json:"last_seen,omitempty"`
-	LastPlaylistIndex    int        `gorm:"default:0" json:"last_playlist_index"` // Track last shown playlist item
-	IsActive             bool       `gorm:"default:true" json:"is_active"`
-	IsShareable          bool       `gorm:"default:false" json:"is_shareable"`             // Whether this device can be mirrored by others
-	MirrorSourceID       *uuid.UUID `gorm:"type:uuid;index" json:"mirror_source_id,omitempty"` // ID of device being mirrored (nullable)
-	MirrorSyncedAt       *time.Time `json:"mirror_synced_at,omitempty"`                   // Last time content was synced from source
-	SleepEnabled         bool       `gorm:"default:false" json:"sleep_enabled"`               // Whether sleep mode is active
-	SleepStartTime       string     `gorm:"size:5" json:"sleep_start_time,omitempty"`          // Start time in HH:MM format
-	SleepEndTime         string     `gorm:"size:5" json:"sleep_end_time,omitempty"`            // End time in HH:MM format
-	SleepShowScreen      bool       `gorm:"default:true" json:"sleep_show_screen"`             // Whether to show sleep image or last content
-	FirmwareUpdateStartTime string  `gorm:"size:5;default:'00:00'" json:"firmware_update_start_time"` // Start time for firmware updates in HH:MM format
-	FirmwareUpdateEndTime   string  `gorm:"size:5;default:'23:59'" json:"firmware_update_end_time"`   // End time for firmware updates in HH:MM format
-	CreatedAt            time.Time  `json:"created_at"`
-	UpdatedAt            time.Time  `json:"updated_at"`
+	ID                      uuid.UUID  `gorm:"type:uuid;primaryKey" json:"id"`
+	UserID                  *uuid.UUID `gorm:"type:uuid;index" json:"user_id,omitempty"`         // Nullable for unclaimed devices
+	MacAddress              string     `gorm:"size:255;not null;uniqueIndex" json:"mac_address"` // Original MAC address from device
+	FriendlyID              string     `gorm:"size:10;not null;uniqueIndex" json:"friendly_id"`  // Generated short ID like "917F0B"
+	Name                    string     `gorm:"size:255" json:"name,omitempty"`                   // User-defined name, empty until claimed
+	ModelName               *string    `gorm:"size:100;index" json:"model_name,omitempty"`       // Device model identifier
+	ManualModelOverride     bool       `gorm:"default:false" json:"manual_model_override"`       // True if model was manually set by user
+	ReportedModelName       *string    `gorm:"size:100" json:"reported_model_name,omitempty"`    // Last model reported by device
+	APIKey                  string     `gorm:"size:255;not null;index" json:"api_key"`
+	IsClaimed               bool       `gorm:"default:false" json:"is_claimed"`
+	FirmwareVersion         string     `gorm:"size:50" json:"firmware_version,omitempty"`
+	BatteryVoltage          float64    `json:"battery_voltage,omitempty"`
+	RSSI                    int        `json:"rssi,omitempty"`
+	RefreshRate             int        `gorm:"default:1800" json:"refresh_rate"` // seconds
+	AllowFirmwareUpdates    bool       `gorm:"default:true" json:"allow_firmware_updates"`
+	LastSeen                *time.Time `json:"last_seen,omitempty"`
+	LastPlaylistIndex       int        `gorm:"default:0" json:"last_playlist_index"` // Track last shown playlist item
+	IsActive                bool       `gorm:"default:true" json:"is_active"`
+	IsShareable             bool       `gorm:"default:false" json:"is_shareable"`                        // Whether this device can be mirrored by others
+	MirrorSourceID          *uuid.UUID `gorm:"type:uuid;index" json:"mirror_source_id,omitempty"`        // ID of device being mirrored (nullable)
+	MirrorSyncedAt          *time.Time `json:"mirror_synced_at,omitempty"`                               // Last time content was synced from source
+	SleepEnabled            bool       `gorm:"default:false" json:"sleep_enabled"`                       // Whether sleep mode is active
+	SleepStartTime          string     `gorm:"size:5" json:"sleep_start_time,omitempty"`                 // Start time in HH:MM format
+	SleepEndTime            string     `gorm:"size:5" json:"sleep_end_time,omitempty"`                   // End time in HH:MM format
+	SleepShowScreen         bool       `gorm:"default:true" json:"sleep_show_screen"`                    // Whether to show sleep image or last content
+	FirmwareUpdateStartTime string     `gorm:"size:5;default:'00:00'" json:"firmware_update_start_time"` // Start time for firmware updates in HH:MM format
+	FirmwareUpdateEndTime   string     `gorm:"size:5;default:'23:59'" json:"firmware_update_end_time"`   // End time for firmware updates in HH:MM format
+	CreatedAt               time.Time  `json:"created_at"`
+	UpdatedAt               time.Time  `json:"updated_at"`
 
 	// Associations
-	User        *User        `gorm:"foreignKey:UserID;constraint:OnDelete:SET NULL" json:"-"`
-	DeviceModel *DeviceModel `gorm:"references:ModelName;foreignKey:ModelName" json:"device_model,omitempty"`
+	User *User `gorm:"foreignKey:UserID;constraint:OnDelete:SET NULL" json:"-"`
+	DeviceModel *DeviceModel `gorm:"-:migration;foreignKey:ModelName;references:ModelName" json:"device_model,omitempty"`
 	// MirrorSource association removed to avoid circular foreign key constraints during migration
 	// Use MirrorSourceID field and fetch the source device manually when needed
 	// Playlists relationship defined in Playlist model to avoid circular constraints
@@ -243,17 +243,17 @@ func (d *Device) BeforeCreate(tx *gorm.DB) error {
 
 // Plugin represents a system-wide plugin type (managed by admins)
 type Plugin struct {
-	ID                uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
-	Name              string    `gorm:"size:255;not null;uniqueIndex" json:"name"`
-	Type              string    `gorm:"size:100;not null" json:"type"`
-	Description       string    `gorm:"type:text" json:"description"`
-	ConfigSchema      string    `gorm:"type:text" json:"config_schema"` // JSON schema for plugin settings
-	Version           string    `gorm:"size:50" json:"version"`
-	Author            string    `gorm:"size:255" json:"author,omitempty"`
-	IsActive          bool      `gorm:"default:true" json:"is_active"`
+	ID                 uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
+	Name               string    `gorm:"size:255;not null;uniqueIndex" json:"name"`
+	Type               string    `gorm:"size:100;not null" json:"type"`
+	Description        string    `gorm:"type:text" json:"description"`
+	ConfigSchema       string    `gorm:"type:text" json:"config_schema"` // JSON schema for plugin settings
+	Version            string    `gorm:"size:50" json:"version"`
+	Author             string    `gorm:"size:255" json:"author,omitempty"`
+	IsActive           bool      `gorm:"default:true" json:"is_active"`
 	RequiresProcessing bool      `gorm:"default:false" json:"requires_processing"`
-	CreatedAt         time.Time `gorm:"autoCreateTime" json:"created_at"`
-	UpdatedAt         time.Time `gorm:"autoUpdateTime" json:"updated_at"`
+	CreatedAt          time.Time `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt          time.Time `gorm:"autoUpdateTime" json:"updated_at"`
 
 	// Associations
 	UserPlugins []UserPlugin `gorm:"foreignKey:PluginID;constraint:OnDelete:CASCADE" json:"-"`
@@ -271,17 +271,17 @@ type UserPlugin struct {
 	ID              uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
 	UserID          uuid.UUID `gorm:"type:uuid;not null;index" json:"user_id"`
 	PluginID        uuid.UUID `gorm:"type:uuid;not null;index" json:"plugin_id"`
-	Name            string    `gorm:"size:255;not null" json:"name"` // User-defined name for this instance
-	Settings        string    `gorm:"type:text" json:"settings"`     // JSON settings specific to this instance
+	Name            string    `gorm:"size:255;not null" json:"name"`        // User-defined name for this instance
+	Settings        string    `gorm:"type:text" json:"settings"`            // JSON settings specific to this instance
 	RefreshInterval int       `gorm:"default:3600" json:"refresh_interval"` // Refresh interval in seconds
 	IsActive        bool      `gorm:"default:true" json:"is_active"`
 	CreatedAt       time.Time `gorm:"autoCreateTime" json:"created_at"`
 	UpdatedAt       time.Time `gorm:"autoUpdateTime" json:"updated_at"`
 
 	// Associations
-	User            User             `gorm:"foreignKey:UserID" json:"-"`
-	Plugin          Plugin           `gorm:"foreignKey:PluginID" json:"plugin"`
-	PlaylistItems   []PlaylistItem   `gorm:"foreignKey:UserPluginID;constraint:OnDelete:CASCADE" json:"-"`
+	User            User              `gorm:"foreignKey:UserID" json:"-"`
+	Plugin          Plugin            `gorm:"foreignKey:PluginID" json:"plugin"`
+	PlaylistItems   []PlaylistItem    `gorm:"foreignKey:UserPluginID;constraint:OnDelete:CASCADE" json:"-"`
 	RenderedContent []RenderedContent `gorm:"foreignKey:UserPluginID;constraint:OnDelete:CASCADE" json:"-"`
 }
 
@@ -508,9 +508,9 @@ func GetAllModels() []interface{} {
 		&Schedule{},
 		&DeviceLog{},
 		&FirmwareVersion{},
+		&DeviceModel{},
 		&RenderedContent{},
 		&RenderQueue{},
-		// &DeviceModel{}, // Managed manually in migrations to avoid foreign key constraint issues
 		// &FirmwareUpdateJob{}, // Removed - using automatic updates
 	}
 }

@@ -174,7 +174,12 @@ func (ps *PluginService) DeleteUserPlugin(userPluginID uuid.UUID) error {
 		}
 
 		// Then delete any playlist items that reference this user plugin
-		return tx.Where("user_plugin_id = ?", userPluginID).Delete(&PlaylistItem{}).Error
+		if err := tx.Where("user_plugin_id = ?", userPluginID).Delete(&PlaylistItem{}).Error; err != nil {
+			return err
+		}
+
+		// Clean up render queue entries for this user plugin
+		return tx.Where("user_plugin_id = ?", userPluginID).Delete(&RenderQueue{}).Error
 	})
 }
 

@@ -109,6 +109,9 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
   const [instanceSettings, setInstanceSettings] = useState<Record<string, any>>({});
   const [instanceRefreshRate, setInstanceRefreshRate] = useState<number>(86400); // Default to daily
   const [createLoading, setCreateLoading] = useState(false);
+  
+  // Add dialog specific alerts
+  const [createDialogError, setCreateDialogError] = useState<string | null>(null);
 
   // Edit plugin dialog
   const [showEditDialog, setShowEditDialog] = useState(false);
@@ -176,15 +179,22 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
     }
   };
 
+  const makeFriendlyError = (errorMessage: string) => {
+    return errorMessage
+      .replace(/image_url/g, 'Image URL')
+      .replace(/endpoint_url/g, 'Endpoint URL')
+      .replace(/validation failed: /, '');
+  };
+
   const createUserPlugin = async () => {
     if (!selectedPlugin || !instanceName.trim()) {
-      setError("Please provide a name for the plugin instance");
+      setCreateDialogError("Please provide a name for the plugin instance");
       return;
     }
 
     try {
       setCreateLoading(true);
-      setError(null);
+      setCreateDialogError(null);
 
       const requestBody: any = {
         plugin_type: selectedPlugin.type,
@@ -213,14 +223,16 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
         setInstanceName("");
         setInstanceSettings({});
         setInstanceRefreshRate(86400);
+        setCreateDialogError(null);
         await fetchUserPlugins();
         onUpdate?.();
       } else {
         const errorData = await response.json();
-        setError(errorData.error || "Failed to create plugin instance");
+        const friendlyError = makeFriendlyError(errorData.details || errorData.error || "Failed to create plugin instance");
+        setCreateDialogError(friendlyError);
       }
     } catch (error) {
-      setError("Network error occurred");
+      setCreateDialogError("Network error occurred");
     } finally {
       setCreateLoading(false);
     }
@@ -283,10 +295,11 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
         onUpdate?.();
       } else {
         const errorData = await response.json();
-        setError(errorData.error || "Failed to update plugin instance");
+        const friendlyError = makeFriendlyError(errorData.details || errorData.error || "Failed to update plugin instance");
+        setEditDialogError(friendlyError);
       }
     } catch (error) {
-      setError("Network error occurred");
+      setEditDialogError("Network error occurred");
     } finally {
       setUpdateLoading(false);
     }
@@ -335,7 +348,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
         onUpdate?.();
       } else {
         const errorData = await response.json();
-        setError(errorData.error || "Failed to delete plugin instance");
+        setError(errorData.details || errorData.error || "Failed to delete plugin instance");
       }
     } catch (error) {
       setError("Network error occurred");
@@ -568,7 +581,12 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
       )}
 
       {/* Add Plugin Dialog */}
-      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+      <Dialog open={showAddDialog} onOpenChange={(open) => {
+        setShowAddDialog(open);
+        if (!open) {
+          setCreateDialogError(null);
+        }
+      }}>
         <DialogContent 
           className="sm:max-w-5xl max-h-[70vh] overflow-hidden flex flex-col mobile-dialog-content !top-[0vh] !translate-y-0 sm:!top-[6vh]"
           onOpenAutoFocus={(e) => e.preventDefault()}
@@ -582,6 +600,13 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
 
           <div className="flex-1 overflow-y-auto">
             <div className="space-y-4">
+              {createDialogError && (
+                <Alert variant="destructive">
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertDescription>{createDialogError}</AlertDescription>
+                </Alert>
+              )}
+              
               {!selectedPlugin ? (
                 <div>
                   <div className="mb-3">
@@ -623,6 +648,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                               onClick={() => {
                                 setSelectedPlugin(plugin);
                                 setInstanceName(`My ${plugin.name}`);
+                                setCreateDialogError(null);
                                 
                                 try {
                                   if (plugin.config_schema) {
@@ -668,6 +694,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                         setInstanceName("");
                         setInstanceSettings({});
                         setInstanceRefreshRate(86400);
+                        setCreateDialogError(null);
                       }}
                       className="mb-2"
                     >
@@ -737,6 +764,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                 setInstanceName("");
                 setInstanceSettings({});
                 setInstanceRefreshRate(86400);
+                setCreateDialogError(null);
               }}
             >
               Cancel

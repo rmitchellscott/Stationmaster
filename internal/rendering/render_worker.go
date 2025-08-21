@@ -151,8 +151,19 @@ func (w *RenderWorker) processRenderJob(ctx context.Context, job database.Render
 		Preload("Plugin").
 		First(&userPlugin, job.UserPluginID).Error
 	if err != nil {
-		w.markJobFailed(ctx, job, fmt.Sprintf("failed to load user plugin: %v", err))
+		if err == gorm.ErrRecordNotFound {
+			// Plugin instance was deleted, cancel the job instead of marking as failed
+			w.markJobCancelled(ctx, job, "user plugin instance no longer exists")
+		} else {
+			w.markJobFailed(ctx, job, fmt.Sprintf("failed to load user plugin: %v", err))
+		}
 		return err
+	}
+
+	// Check if user plugin is still active
+	if !userPlugin.IsActive {
+		w.markJobCancelled(ctx, job, "user plugin instance is inactive")
+		return nil
 	}
 
 	// Get all device models for this user's devices
@@ -432,6 +443,19 @@ func (w *RenderWorker) markJobFailed(ctx context.Context, job database.RenderQue
 	}).Error
 	if err != nil {
 		logging.Info("[RENDER_WORKER] Failed to mark job as failed: %v", err)
+	}
+}
+
+// markJobCancelled marks a render job as cancelled with a reason message
+func (w *RenderWorker) markJobCancelled(ctx context.Context, job database.RenderQueue, reason string) {
+	err := w.db.WithContext(ctx).Model(&job).Updates(database.RenderQueue{
+		Status:       "cancelled",
+		ErrorMessage: reason,
+	}).Error
+	if err != nil {
+		logging.Error("[RENDER_WORKER] Failed to mark job as cancelled", "error", err)
+	} else {
+		logging.Info("[RENDER_WORKER] Cancelled job", "job_id", job.ID, "reason", reason)
 	}
 }
 

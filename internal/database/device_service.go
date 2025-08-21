@@ -44,9 +44,25 @@ func (ds *DeviceService) CreateUnclaimedDevice(macAddress string, modelName stri
 		IsClaimed:   false,
 	}
 
-	// Only set ModelName if it's not empty to avoid foreign key constraint issues
+	// If model name is provided, look up the device model and set the ID
 	if modelName != "" {
-		device.ModelName = &modelName
+		// Map the model name if needed
+		mappedModelName := mapDeviceModelName(modelName)
+		
+		// Store the reported model name
+		device.ReportedModelName = &mappedModelName
+		
+		// Look up the device model by name
+		var deviceModel DeviceModel
+		// Get the latest active version of this model
+		if err := ds.db.Where("model_name = ? AND is_active = ? AND deleted_at IS NULL", mappedModelName, true).
+			Order("created_at DESC").
+			First(&deviceModel).Error; err == nil {
+			// Model exists, set the device_model_id
+			device.DeviceModelID = &deviceModel.ID
+		} else {
+			logging.Logf("[CREATE DEVICE] Model %s not found in device_models table", mappedModelName)
+		}
 	}
 
 	if err := ds.db.Create(device).Error; err != nil {
@@ -262,24 +278,24 @@ func (ds *DeviceService) ValidateDeviceModelByID(modelID uint) (*DeviceModel, er
 	return &deviceModel, nil
 }
 
-// ValidateDeviceModel checks if a device model exists in the database by name (for backward compatibility)
-func (ds *DeviceService) ValidateDeviceModel(modelName string) error {
+// GetDeviceModelByName finds a device model by name and returns it
+func (ds *DeviceService) GetDeviceModelByName(modelName string) (*DeviceModel, error) {
 	if modelName == "" {
-		return nil // Empty model name is valid (clears the model)
+		return nil, fmt.Errorf("model name cannot be empty")
 	}
 	
 	var deviceModel DeviceModel
-	// Get the latest version of this model name
+	// Get the latest active version of this model name
 	err := ds.db.Where("model_name = ? AND is_active = ? AND deleted_at IS NULL", modelName, true).
 		Order("created_at DESC").
 		First(&deviceModel).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return fmt.Errorf("device model '%s' not found", modelName)
+			return nil, fmt.Errorf("device model '%s' not found", modelName)
 		}
-		return err
+		return nil, err
 	}
-	return nil
+	return &deviceModel, nil
 }
 
 // GetAllDeviceModels returns the latest version of each active device model
@@ -336,7 +352,7 @@ func (ds *DeviceService) UpdateDeviceStatus(macAddress string, firmwareVersion s
 		}
 		selectFields := []string{"firmware_version", "battery_voltage", "rssi", "last_seen"}
 
-		// Handle model_name separately to avoid foreign key issues
+		// Handle device model separately
 		if modelName != "" {
 			// Map device model name to database model name
 			mappedModelName := mapDeviceModelName(modelName)
@@ -347,22 +363,24 @@ func (ds *DeviceService) UpdateDeviceStatus(macAddress string, firmwareVersion s
 
 			// Check if device currently has manual model override
 			var device Device
-			if err := tx.Select("model_name", "manual_model_override").Where("mac_address = ?", macAddress).First(&device).Error; err == nil {
+			if err := tx.Select("device_model_id", "manual_model_override").Where("mac_address = ?", macAddress).First(&device).Error; err == nil {
 				if !device.ManualModelOverride {
-					// Only update model_name if it's not manually overridden
-					if device.ModelName == nil || *device.ModelName == "" {
-						// Check if the mapped model exists in device_models table
-						var deviceModel DeviceModel
-						if err := tx.Where("model_name = ?", mappedModelName).First(&deviceModel).Error; err == nil {
-							// Model exists, safe to update
-							updateFields["model_name"] = mappedModelName
-							selectFields = append(selectFields, "model_name")
-						} else {
-							}
+					// Only update device_model_id if it's not manually overridden
+					// Look up the device model by name to get its ID
+					var deviceModel DeviceModel
+					// Get the latest active version of this model
+					if err := tx.Where("model_name = ? AND is_active = ? AND deleted_at IS NULL", mappedModelName, true).
+						Order("created_at DESC").
+						First(&deviceModel).Error; err == nil {
+						// Model exists, update the device_model_id
+						updateFields["device_model_id"] = deviceModel.ID
+						selectFields = append(selectFields, "device_model_id")
 					} else {
-						}
-				} else {
+						logging.Logf("[DEVICE UPDATE] Model %s not found in device_models table", mappedModelName)
 					}
+				} else {
+					logging.Logf("[DEVICE UPDATE] Device has manual model override, not updating model")
+				}
 			}
 		}
 

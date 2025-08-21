@@ -171,7 +171,6 @@ interface Device {
   mac_address: string;
   friendly_id: string;
   name?: string;
-  model_name?: string;
   api_key: string;
   is_claimed: boolean;
   firmware_version?: string;
@@ -2033,7 +2032,7 @@ export function AdminPage() {
                                 )}
                               </TableCell>
                               <TableCell className="hidden lg:table-cell">
-                                {device.device_model?.display_name || device.model_name || (
+                                {device.device_model?.display_name || (
                                   <span className="text-muted-foreground">Unknown</span>
                                 )}
                               </TableCell>
@@ -2852,7 +2851,7 @@ export function AdminPage() {
                 <strong>MAC Address:</strong> <code>{viewDevice.mac_address}</code>
               </p>
               <p>
-                <strong>Model:</strong> {viewDevice.device_model?.display_name || viewDevice.model_name || "Unknown"}
+                <strong>Model:</strong> {viewDevice.device_model?.display_name || "Unknown"}
               </p>
               <p>
                 <strong>Owner:</strong>{" "}

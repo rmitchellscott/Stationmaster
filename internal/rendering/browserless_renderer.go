@@ -55,10 +55,11 @@ type ScreenshotRequest struct {
 		WaitUntil string `json:"waitUntil"`
 		Timeout   int    `json:"timeout"`
 	} `json:"gotoOptions"`
+	Headers map[string]string `json:"headers,omitempty"`
 }
 
 // CaptureScreenshot captures a screenshot of the given URL using browserless
-func (r *BrowserlessRenderer) CaptureScreenshot(ctx context.Context, url string, width, height int, fullPage bool, waitTimeSeconds int) ([]byte, error) {
+func (r *BrowserlessRenderer) CaptureScreenshot(ctx context.Context, url string, width, height int, waitTimeSeconds int, headers map[string]string) ([]byte, error) {
 	// Prepare browserless request with proper wait time handling
 	req := ScreenshotRequest{
 		URL: url,
@@ -72,12 +73,17 @@ func (r *BrowserlessRenderer) CaptureScreenshot(ctx context.Context, url string,
 	}
 	
 	req.Options.Type = "png"
-	req.Options.FullPage = fullPage
+	req.Options.FullPage = false
 	req.Options.OmitBackground = false
 	
 	// Set wait options based on provided wait time
 	req.GotoOptions.WaitUntil = "networkidle2"
 	req.GotoOptions.Timeout = (waitTimeSeconds + 30) * 1000 // Convert to milliseconds and add buffer
+	
+	// Set custom headers if provided
+	if headers != nil && len(headers) > 0 {
+		req.Headers = headers
+	}
 	
 	// Marshal request to JSON
 	requestBody, err := json.Marshal(req)

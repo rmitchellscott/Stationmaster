@@ -332,7 +332,11 @@ func mapDeviceModelName(deviceModel string) string {
 
 // UpdateLastPlaylistIndex updates the last shown playlist item index for rotation
 func (ds *DeviceService) UpdateLastPlaylistIndex(deviceID uuid.UUID, index int) error {
-	return ds.db.Model(&Device{}).Where("id = ?", deviceID).Update("last_playlist_index", index).Error
+	result := ds.db.Model(&Device{}).Where("id = ?", deviceID).Update("last_playlist_index", index)
+	if result.Error != nil {
+		return result.Error
+	}
+	return nil
 }
 
 // UpdateDeviceStatus updates device status information from TRMNL requests

@@ -268,7 +268,7 @@ func (p *RenderWorkerPool) loadPendingJobs(ctx context.Context) error {
 			ORDER BY priority DESC, scheduled_for ASC
 			LIMIT 1
 		)
-		GROUP BY user_plugin_id
+		GROUP BY user_plugin_id, id
 		LIMIT 20
 	`, "pending", time.Now(), "pending", time.Now()).Scan(&jobIDs).Error
 

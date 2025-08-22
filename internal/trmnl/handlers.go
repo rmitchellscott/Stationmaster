@@ -97,8 +97,66 @@ func DisplayHandler(c *gin.Context) {
 
 	logging.DebugWithComponent(logging.ComponentAPIDisplay, "Request received", "client_ip", c.ClientIP(), "method", c.Request.Method, "path", c.Request.URL.Path)
 	
-	// Timing checkpoint 1: Request start
-	logging.Debug("[TIMING] Request start", "elapsed_ms", 0)
+	// Variables to capture for background operations (must be declared early for defer)
+	var backgroundData struct {
+		deviceID         uuid.UUID
+		accessToken      string
+		statusValues     interface{}
+		nextPlaylistIndex int
+		shouldUpdatePlaylist bool
+	}
+	
+	// Defer background operations to ensure they run even if API fails
+	defer func() {
+		if backgroundData.accessToken != "" {
+			go func() {
+				// Update device status in database
+				deviceService := database.NewDeviceService(database.GetDB())
+				if statusValues, ok := backgroundData.statusValues.(struct {
+					macAddress       string
+					firmwareVersion  string
+					batteryVoltage   float64
+					rssi             int
+					modelHeader      string
+					deviceID         uuid.UUID
+				}); ok {
+					err := deviceService.UpdateDeviceStatus(statusValues.macAddress, statusValues.firmwareVersion, statusValues.batteryVoltage, statusValues.rssi, statusValues.modelHeader)
+					if err != nil {
+						logging.Error("[BACKGROUND] Failed to update device status", "mac_address", statusValues.macAddress, "error", err)
+					}
+				}
+				
+				// Update playlist index if needed
+				if backgroundData.shouldUpdatePlaylist {
+					if err := deviceService.UpdateLastPlaylistIndex(backgroundData.deviceID, backgroundData.nextPlaylistIndex); err != nil {
+						logging.Error("[BACKGROUND] Failed to update last playlist index", "device_id", backgroundData.deviceID, "error", err)
+					}
+				}
+				
+				// Refresh device data for SSE broadcast
+				refreshedDevice, err := deviceService.GetDeviceByAPIKey(backgroundData.accessToken)
+				if err != nil {
+					logging.Error("[BACKGROUND] Failed to refresh device data", "device_id", backgroundData.deviceID, "error", err)
+				} else {
+					// Broadcast device status update to connected SSE clients
+					sseService := sse.GetSSEService()
+					sseService.BroadcastToDevice(backgroundData.deviceID, sse.Event{
+						Type: "device_status_updated",
+						Data: map[string]interface{}{
+							"device_id":        refreshedDevice.ID.String(),
+							"battery_voltage":  refreshedDevice.BatteryVoltage,
+							"rssi":             refreshedDevice.RSSI,
+							"firmware_version": refreshedDevice.FirmwareVersion,
+							"last_seen":        refreshedDevice.LastSeen,
+							"is_active":        refreshedDevice.IsActive,
+							"timestamp":        time.Now().UTC(),
+						},
+					})
+				}
+			}()
+		}
+	}()
+	
 
 	// Extract headers
 	deviceID := c.GetHeader("ID")
@@ -138,14 +196,10 @@ func DisplayHandler(c *gin.Context) {
 		return
 	}
 
-	// Timing checkpoint 2: Start authentication
-	logging.Debug("[TIMING] Starting authentication", "elapsed_ms", time.Since(startTime).Milliseconds())
-	
 	db := database.GetDB()
 	deviceService := database.NewDeviceService(db)
 
 	// Get device by API key
-	authStart := time.Now()
 	device, err := deviceService.GetDeviceByAPIKey(accessToken)
 	if err != nil {
 		logging.Debug("[/api/display] Authentication failed: Invalid access token", "access_token", accessToken, "device_id", deviceID, "error", err)
@@ -161,10 +215,8 @@ func DisplayHandler(c *gin.Context) {
 	}
 
 	logging.Debug("[/api/display] Authentication successful", "mac_address", device.MacAddress, "friendly_id", device.FriendlyID)
-	logging.Debug("[TIMING] Authentication complete", "elapsed_ms", time.Since(startTime).Milliseconds(), "auth_ms", time.Since(authStart).Milliseconds())
 
 	// Get user timezone for sleep mode calculations
-	timezoneStart := time.Now()
 	userTimezone := "UTC" // Default fallback
 	if device.UserID != nil {
 		userService := database.NewUserService(db)
@@ -173,7 +225,6 @@ func DisplayHandler(c *gin.Context) {
 			userTimezone = user.Timezone
 		}
 	}
-	logging.Debug("[TIMING] User timezone lookup complete", "elapsed_ms", time.Since(startTime).Milliseconds(), "timezone_ms", time.Since(timezoneStart).Milliseconds())
 
 	// Parse and update device status
 	var batteryVoltage float64
@@ -210,7 +261,12 @@ func DisplayHandler(c *gin.Context) {
 		modelHeader:     modelHeader,
 		deviceID:        device.ID,
 	}
-	logging.Debug("[TIMING] Device status values captured for background update", "elapsed_ms", time.Since(startTime).Milliseconds())
+	
+	// Capture data for background operations
+	backgroundData.deviceID = device.ID
+	backgroundData.accessToken = accessToken
+	backgroundData.statusValues = statusValues
+	
 
 	// Get current playlist items for this device
 	playlistService := database.NewPlaylistService(db)
@@ -220,7 +276,6 @@ func DisplayHandler(c *gin.Context) {
 		"user_id", func() string { if device.UserID != nil { return device.UserID.String() } else { return "nil" } }(), 
 		"claimed", device.IsClaimed)
 	
-	playlistStart := time.Now()
 	activeItems, err := playlistService.GetActivePlaylistItemsForTime(device.ID, time.Now())
 	if err != nil {
 		logging.Debug("[/api/display] No playlist items found for device (this is normal for unclaimed devices)", "mac_address", device.MacAddress, "error", err)
@@ -229,7 +284,6 @@ func DisplayHandler(c *gin.Context) {
 	} else {
 		logging.Info("[/api/display] Successfully retrieved active items", "count", len(activeItems), "mac_address", device.MacAddress)
 	}
-	logging.Debug("[TIMING] Playlist query complete", "elapsed_ms", time.Since(startTime).Milliseconds(), "playlist_ms", time.Since(playlistStart).Milliseconds())
 
 	// Note: We no longer update the device's refresh rate in the database
 	// based on headers from the device. The refresh rate determination is now:
@@ -281,24 +335,27 @@ func DisplayHandler(c *gin.Context) {
 	}
 
 	// Check for firmware update AFTER device status is updated
-	firmwareCheckStart := time.Now()
 	firmwareUpdate := checkFirmwareUpdate(c, device, userTimezone)
-	logging.Debug("[TIMING] Firmware check complete", "elapsed_ms", time.Since(startTime).Milliseconds(), "firmware_check_ms", time.Since(firmwareCheckStart).Milliseconds())
 
 	// Process active plugins and generate response
-	pluginStart := time.Now()
 	processor := GetPluginProcessor()
 	var response gin.H
 	var currentItem *database.PlaylistItem
+	var nextPlaylistIndex int
 	var pluginErr error
 	
 	if processor != nil {
-		response, currentItem, pluginErr = processor.processActivePlugins(device, activeItems)
+		response, currentItem, nextPlaylistIndex, pluginErr = processor.processActivePlugins(device, activeItems)
 	} else {
 		// Fallback to old implementation if processor not available
-		response, currentItem, pluginErr = processActivePlugins(device, activeItems)
+		response, currentItem, nextPlaylistIndex, pluginErr = processActivePlugins(device, activeItems)
 	}
-	logging.Debug("[TIMING] Plugin processing complete", "elapsed_ms", time.Since(startTime).Milliseconds(), "plugin_ms", time.Since(pluginStart).Milliseconds())
+	
+	// Set background data for playlist update if plugin processing was successful
+	if pluginErr == nil && len(activeItems) > 0 {
+		backgroundData.shouldUpdatePlaylist = true
+		backgroundData.nextPlaylistIndex = nextPlaylistIndex
+	}
 	
 	// Convert relative image URLs to absolute URLs
 	if response != nil {
@@ -366,7 +423,6 @@ func DisplayHandler(c *gin.Context) {
 	}
 
 	// Handle sleep mode - override refresh rate and image if in sleep period
-	sleepStart := time.Now()
 	inSleepPeriod := isInSleepPeriod(device, userTimezone)
 	
 	if inSleepPeriod {
@@ -380,7 +436,6 @@ func DisplayHandler(c *gin.Context) {
 		}
 		
 	}
-	logging.Debug("[TIMING] Sleep mode processing complete", "elapsed_ms", time.Since(startTime).Milliseconds(), "sleep_ms", time.Since(sleepStart).Milliseconds())
 
 	// Always add firmware update info to response
 	response["update_firmware"] = firmwareUpdate.UpdateFirmware
@@ -392,53 +447,9 @@ func DisplayHandler(c *gin.Context) {
 		logging.Debug("[/api/display] Response to device", "device_id", deviceID, "response", string(responseBytes))
 	}
 	logging.Debug("[/api/display] Request processing time", "duration", time.Since(startTime))
-	logging.Debug("[TIMING] Final response ready", "elapsed_ms", time.Since(startTime).Milliseconds())
 
 	c.JSON(http.StatusOK, response)
-	responseTime := time.Since(startTime)
-	logging.Info("[OPTIMIZATION] Device response sent", "response_time_ms", responseTime.Milliseconds(), "device_mac", device.MacAddress)
 	
-	// Background operations after response is sent (non-blocking for device)
-	go func() {
-		backgroundStart := time.Now()
-		
-		// Update device status in database
-		statusUpdateStart := time.Now()
-		deviceService := database.NewDeviceService(database.GetDB())
-		err := deviceService.UpdateDeviceStatus(statusValues.macAddress, statusValues.firmwareVersion, statusValues.batteryVoltage, statusValues.rssi, statusValues.modelHeader)
-		if err != nil {
-			logging.Error("[BACKGROUND] Failed to update device status", "mac_address", statusValues.macAddress, "error", err)
-		}
-		logging.Debug("[BACKGROUND TIMING] Device status update complete", "status_update_ms", time.Since(statusUpdateStart).Milliseconds())
-		
-		// Refresh device data for SSE broadcast
-		refreshStart := time.Now()
-		refreshedDevice, err := deviceService.GetDeviceByAPIKey(accessToken)
-		if err != nil {
-			logging.Error("[BACKGROUND] Failed to refresh device data", "mac_address", statusValues.macAddress, "error", err)
-		} else {
-			logging.Debug("[BACKGROUND TIMING] Device refresh complete", "refresh_ms", time.Since(refreshStart).Milliseconds())
-			
-			// Broadcast device status update to connected SSE clients
-			sseStart := time.Now()
-			sseService := sse.GetSSEService()
-			sseService.BroadcastToDevice(statusValues.deviceID, sse.Event{
-				Type: "device_status_updated",
-				Data: map[string]interface{}{
-					"device_id":        refreshedDevice.ID.String(),
-					"battery_voltage":  refreshedDevice.BatteryVoltage,
-					"rssi":             refreshedDevice.RSSI,
-					"firmware_version": refreshedDevice.FirmwareVersion,
-					"last_seen":        refreshedDevice.LastSeen,
-					"is_active":        refreshedDevice.IsActive,
-					"timestamp":        time.Now().UTC(),
-				},
-			})
-			logging.Debug("[BACKGROUND TIMING] SSE broadcast complete", "sse_ms", time.Since(sseStart).Milliseconds())
-		}
-		
-		logging.Debug("[BACKGROUND TIMING] All background operations complete", "total_background_ms", time.Since(backgroundStart).Milliseconds())
-	}()
 }
 
 // LogsHandler handles log submissions from TRMNL devices
@@ -586,9 +597,9 @@ func DeviceImageHandler(c *gin.Context) {
 }
 
 // processActivePlugins processes the active playlist items and generates appropriate response
-func processActivePlugins(device *database.Device, activeItems []database.PlaylistItem) (gin.H, *database.PlaylistItem, error) {
+func processActivePlugins(device *database.Device, activeItems []database.PlaylistItem) (gin.H, *database.PlaylistItem, int, error) {
 	if len(activeItems) == 0 {
-		return nil, nil, fmt.Errorf("no active playlist items")
+		return nil, nil, 0, fmt.Errorf("no active playlist items")
 	}
 
 	// Calculate next item index for rotation
@@ -607,7 +618,7 @@ func processActivePlugins(device *database.Device, activeItems []database.Playli
 
 	userPlugin, err := pluginService.GetUserPluginByID(item.UserPluginID)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get user plugin: %w", err)
+		return nil, nil, 0, fmt.Errorf("failed to get user plugin: %w", err)
 	}
 
 	var response gin.H
@@ -629,73 +640,29 @@ func processActivePlugins(device *database.Device, activeItems []database.Playli
 		}
 	}
 
-	// Only update the playlist index if plugin processing was successful
+	// Return the nextIndex for background processing
 	if pluginErr == nil {
-		deviceService := database.NewDeviceService(db)
-		if err := deviceService.UpdateLastPlaylistIndex(device.ID, nextIndex); err != nil {
-			// Log error but don't fail the request
-			// The rotation will still work, just might repeat an item next time
-			logging.Error("[PLAYLIST] Failed to update last playlist index", "mac_address", device.MacAddress, "error", err)
-		} else {
-			// Get user timezone for sleep calculations
-			userTimezone := "UTC" // Default fallback
-			if device.UserID != nil {
-				userService := database.NewUserService(db)
-				user, err := userService.GetUserByID(*device.UserID)
-				if err == nil && user.Timezone != "" {
-					userTimezone = user.Timezone
-				}
-			}
-			
-			// Check if device is currently in sleep period for SSE event
-			currentlySleeping := isInSleepPeriod(device, userTimezone)
-			
-			// Broadcast playlist index change to connected SSE clients
-			sseService := sse.GetSSEService()
-			sseService.BroadcastToDevice(device.ID, sse.Event{
-				Type: "playlist_index_changed",
-				Data: map[string]interface{}{
-					"device_id":     device.ID.String(),
-					"current_index": nextIndex,
-					"current_item":  item,
-					"active_items":  activeItems,
-					"timestamp":     time.Now().UTC(),
-					"sleep_config": map[string]interface{}{
-						"enabled":            device.SleepEnabled,
-						"start_time":         device.SleepStartTime,
-						"end_time":           device.SleepEndTime,
-						"show_screen":        device.SleepShowScreen,
-						"currently_sleeping": currentlySleeping,
-					},
-				},
-			})
-		}
+		return response, &item, nextIndex, pluginErr
+	} else {
+		return response, &item, 0, pluginErr  // Don't advance index on error
 	}
-
-	return response, &item, pluginErr
 }
 
 // processRedirectPlugin handles redirect plugin type by fetching JSON from external endpoint
 func processRedirectPlugin(userPlugin *database.UserPlugin) (gin.H, error) {
-	pluginStart := time.Now()
-	logging.Debug("[PLUGIN TIMING] Redirect plugin started")
-	
 	// Parse plugin settings
-	settingsStart := time.Now()
 	var settings map[string]interface{}
 	if userPlugin.Settings != "" {
 		if err := json.Unmarshal([]byte(userPlugin.Settings), &settings); err != nil {
 			return nil, fmt.Errorf("failed to parse plugin settings: %w", err)
 		}
 	}
-	logging.Debug("[PLUGIN TIMING] Settings parsed", "settings_ms", time.Since(settingsStart).Milliseconds())
 
 	// Get endpoint URL from settings
 	endpointURL, ok := settings["endpoint_url"].(string)
 	if !ok || endpointURL == "" {
 		return nil, fmt.Errorf("endpoint_url not configured in plugin settings")
 	}
-	logging.Debug("[PLUGIN TIMING] Endpoint URL extracted", "url", endpointURL)
 
 	// Get timeout (default to 2 seconds)
 	timeoutSeconds := 2
@@ -707,22 +674,16 @@ func processRedirectPlugin(userPlugin *database.UserPlugin) (gin.H, error) {
 	}
 
 	// Create HTTP client with timeout
-	clientStart := time.Now()
 	client := &http.Client{
 		Timeout: time.Duration(timeoutSeconds) * time.Second,
 	}
-	logging.Debug("[PLUGIN TIMING] HTTP client created", "client_ms", time.Since(clientStart).Milliseconds(), "timeout_seconds", timeoutSeconds)
 
 	// Fetch JSON from endpoint
-	httpStart := time.Now()
-	logging.Debug("[PLUGIN TIMING] Starting HTTP request", "url", endpointURL)
 	resp, err := client.Get(endpointURL)
 	if err != nil {
-		logging.Debug("[PLUGIN TIMING] HTTP request failed", "http_ms", time.Since(httpStart).Milliseconds(), "error", err)
 		return nil, fmt.Errorf("failed to fetch from endpoint: %w", err)
 	}
 	defer resp.Body.Close()
-	logging.Debug("[PLUGIN TIMING] HTTP request complete", "http_ms", time.Since(httpStart).Milliseconds(), "status_code", resp.StatusCode)
 
 	// Check response status
 	if resp.StatusCode != http.StatusOK {
@@ -730,16 +691,12 @@ func processRedirectPlugin(userPlugin *database.UserPlugin) (gin.H, error) {
 	}
 
 	// Parse JSON response
-	jsonStart := time.Now()
 	var pluginResponse map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&pluginResponse); err != nil {
-		logging.Debug("[PLUGIN TIMING] JSON parsing failed", "json_ms", time.Since(jsonStart).Milliseconds(), "error", err)
 		return nil, fmt.Errorf("failed to parse JSON response: %w", err)
 	}
-	logging.Debug("[PLUGIN TIMING] JSON parsed", "json_ms", time.Since(jsonStart).Milliseconds())
 
 	// Extract required fields and build response
-	responseStart := time.Now()
 	response := gin.H{}
 
 	// Copy filename if provided
@@ -760,9 +717,6 @@ func processRedirectPlugin(userPlugin *database.UserPlugin) (gin.H, error) {
 	if refreshRate, ok := pluginResponse["refresh_rate"]; ok {
 		response["refresh_rate"] = fmt.Sprintf("%v", refreshRate)
 	}
-
-	logging.Debug("[PLUGIN TIMING] Response built", "response_ms", time.Since(responseStart).Milliseconds())
-	logging.Debug("[PLUGIN TIMING] Redirect plugin complete", "total_plugin_ms", time.Since(pluginStart).Milliseconds())
 
 	return response, nil
 }
@@ -929,12 +883,10 @@ func checkFirmwareUpdate(c *gin.Context, device *database.Device, userTimezone s
 	firmwareService := database.NewFirmwareService(db)
 
 	// 3. Get latest firmware version
-	firmwareQueryStart := time.Now()
 	latestFirmware, err := firmwareService.GetLatestFirmwareVersion()
 	if err != nil {
 		return defaultResponse
 	}
-	logging.Debug("[TIMING] Firmware version query", "firmware_query_ms", time.Since(firmwareQueryStart).Milliseconds())
 
 	// 4. Compare with device's current version
 	if device.FirmwareVersion != "" && device.FirmwareVersion >= latestFirmware.Version {

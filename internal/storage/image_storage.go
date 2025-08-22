@@ -30,7 +30,7 @@ func (s *ImageStorage) StoreImage(imageData []byte, deviceID uuid.UUID, pluginTy
 	if err := os.MkdirAll(s.basePath, 0755); err != nil {
 		return "", fmt.Errorf("failed to create image directory: %w", err)
 	}
-
+	
 	// Generate filename based on content hash and timestamp
 	hash := sha256.Sum256(imageData)
 	timestamp := time.Now().Format("20060102_150405")
@@ -46,6 +46,7 @@ func (s *ImageStorage) StoreImage(imageData []byte, deviceID uuid.UUID, pluginTy
 	
 	// Return URL
 	imageURL := fmt.Sprintf("%s/%s", s.baseURL, filename)
+	
 	return imageURL, nil
 }
 

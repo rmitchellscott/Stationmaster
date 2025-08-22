@@ -92,12 +92,9 @@ func (pp *PluginProcessor) scheduleRenderIfNeeded(userPluginID uuid.UUID) {
 }
 
 // processActivePlugins processes plugins using the new plugin architecture
-func (pp *PluginProcessor) processActivePlugins(device *database.Device, activeItems []database.PlaylistItem) (gin.H, *database.PlaylistItem, error) {
-	processorStart := time.Now()
-	logging.Debug("[PLUGIN_PROCESSOR TIMING] Starting plugin processing")
-	
+func (pp *PluginProcessor) processActivePlugins(device *database.Device, activeItems []database.PlaylistItem) (gin.H, *database.PlaylistItem, int, error) {
 	if len(activeItems) == 0 {
-		return nil, nil, fmt.Errorf("no active playlist items")
+		return nil, nil, 0, fmt.Errorf("no active playlist items")
 	}
 
 	// Calculate next item index for rotation
@@ -110,18 +107,15 @@ func (pp *PluginProcessor) processActivePlugins(device *database.Device, activeI
 	item := activeItems[nextIndex]
 
 	// Get the user plugin details
-	pluginLookupStart := time.Now()
 	db := database.GetDB()
 	pluginService := database.NewPluginService(db)
 
 	userPlugin, err := pluginService.GetUserPluginByID(item.UserPluginID)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get user plugin: %w", err)
+		return nil, nil, 0, fmt.Errorf("failed to get user plugin: %w", err)
 	}
-	logging.Debug("[PLUGIN_PROCESSOR TIMING] Plugin lookup complete", "lookup_ms", time.Since(pluginLookupStart).Milliseconds(), "plugin_type", userPlugin.Plugin.Type)
 
 	// Check if plugin requires processing before looking for pre-rendered content
-	preRenderStart := time.Now()
 	var renderedContent *database.RenderedContent
 	plugin, exists := plugins.Get(userPlugin.Plugin.Type)
 	if exists && plugin.RequiresProcessing() {
@@ -132,7 +126,6 @@ func (pp *PluginProcessor) processActivePlugins(device *database.Device, activeI
 			logging.Error("[PLUGIN] Failed to check for pre-rendered content", "error", err)
 		}
 	}
-	logging.Debug("[PLUGIN_PROCESSOR TIMING] Pre-render check complete", "prerender_ms", time.Since(preRenderStart).Milliseconds(), "has_content", renderedContent != nil)
 
 	var response gin.H
 	var pluginErr error
@@ -179,18 +172,13 @@ func (pp *PluginProcessor) processActivePlugins(device *database.Device, activeI
 			}
 		} else {
 			// Create plugin context
-			contextStart := time.Now()
 			ctx, err := plugins.NewPluginContext(device, userPlugin)
 			if err != nil {
-				return nil, nil, fmt.Errorf("failed to create plugin context: %w", err)
+				return nil, nil, 0, fmt.Errorf("failed to create plugin context: %w", err)
 			}
-			logging.Debug("[PLUGIN_PROCESSOR TIMING] Context created", "context_ms", time.Since(contextStart).Milliseconds())
 
 			// Process the plugin
-			pluginProcessStart := time.Now()
-			logging.Debug("[PLUGIN_PROCESSOR TIMING] Starting plugin.Process", "plugin_type", plugin.Type())
 			response, pluginErr = plugin.Process(ctx)
-			logging.Debug("[PLUGIN_PROCESSOR TIMING] Plugin.Process complete", "process_ms", time.Since(pluginProcessStart).Milliseconds(), "plugin_type", plugin.Type(), "error", pluginErr != nil)
 			if pluginErr != nil {
 				logging.Error("[PLUGIN] Plugin processing failed", "plugin_type", plugin.Type(), "error", pluginErr)
 				// Return error response but don't fail the whole request
@@ -200,13 +188,10 @@ func (pp *PluginProcessor) processActivePlugins(device *database.Device, activeI
 				}
 			} else {
 				// Handle plugins that require processing
-				postProcessStart := time.Now()
 				if plugin.RequiresProcessing() {
 					if plugins.IsDataResponse(response) {
 						// Data plugin - needs HTML template rendering
-						renderStart := time.Now()
 						response, err = pp.renderDataPlugin(response, device, plugin.Type())
-						logging.Debug("[PLUGIN_PROCESSOR TIMING] Data plugin render", "render_ms", time.Since(renderStart).Milliseconds())
 						if err != nil {
 							logging.Error("[PLUGIN] Failed to render data plugin", "plugin_type", plugin.Type(), "error", err)
 							// Fallback to default response
@@ -219,11 +204,10 @@ func (pp *PluginProcessor) processActivePlugins(device *database.Device, activeI
 						// Image plugin - check if it has image data that needs to be stored
 						if imageData, ok := plugins.GetImageData(response); ok {
 							// Store the image data and replace with URL
-							storeStart := time.Now()
 							randomString := generateRandomString(10)
 							filename := fmt.Sprintf("%s_%s_%s.png", plugin.Type(), time.Now().Format("20060102_150405"), randomString)
+							
 							imageURL, err := pp.imageStorage.StoreImage(imageData, device.ID, plugin.Type())
-							logging.Debug("[PLUGIN_PROCESSOR TIMING] Image storage", "store_ms", time.Since(storeStart).Milliseconds())
 							if err != nil {
 								logging.Error("[PLUGIN] Failed to store image data", "plugin_type", plugin.Type(), "error", err)
 								response = gin.H{
@@ -256,23 +240,16 @@ func (pp *PluginProcessor) processActivePlugins(device *database.Device, activeI
 						}
 					}
 				}
-				logging.Debug("[PLUGIN_PROCESSOR TIMING] Post-processing complete", "postprocess_ms", time.Since(postProcessStart).Milliseconds())
 			}
 		}
 	}
-
-	// Only update the playlist index if plugin processing was successful
+	
+	// Return the nextIndex for background processing
 	if pluginErr == nil {
-		deviceService := database.NewDeviceService(db)
-		if err := deviceService.UpdateLastPlaylistIndex(device.ID, nextIndex); err != nil {
-			logging.Error("[PLAYLIST] Failed to update last playlist index", "device_mac", device.MacAddress, "error", err)
-		} else {
-			pp.broadcastPlaylistChange(device, nextIndex, item, activeItems)
-		}
+		return response, &item, nextIndex, pluginErr
+	} else {
+		return response, &item, 0, pluginErr  // Don't advance index on error
 	}
-
-	logging.Debug("[PLUGIN_PROCESSOR TIMING] Plugin processing complete", "total_processor_ms", time.Since(processorStart).Milliseconds())
-	return response, &item, pluginErr
 }
 
 // renderDataPlugin renders a data plugin response to an image

@@ -24,7 +24,7 @@ func (p *CoreProxyPlugin) PluginType() plugins.PluginType {
 
 // Name returns the human-readable name
 func (p *CoreProxyPlugin) Name() string {
-	return "TRMNL Core Proxy"
+	return "Core Proxy"
 }
 
 // Description returns the plugin description

@@ -78,10 +78,6 @@ func Initialize() error {
 		return fmt.Errorf("failed to initialize system settings: %w", err)
 	}
 
-	// Initialize default plugins
-	if err := initializeDefaultPlugins(); err != nil {
-		return fmt.Errorf("failed to initialize default plugins: %w", err)
-	}
 
 	logging.Info("[STARTUP] Database initialized successfully", "type", config.Type)
 	return nil
@@ -243,92 +239,6 @@ func initializeSystemSettings() error {
 	return nil
 }
 
-// initializeDefaultPlugins creates default system plugins if they don't exist
-func initializeDefaultPlugins() error {
-	// Only keep functional plugins that have actual implementations
-	defaultPlugins := []Plugin{
-		{
-			Name:        "Redirect",
-			Type:        "redirect",
-			Description: "Proxy JSON response from external endpoint (TRMNL BYOS Redirect plugin)",
-			ConfigSchema: `{
-				"type": "object",
-				"properties": {
-					"endpoint_url": {
-						"type": "string",
-						"title": "JSON Endpoint URL",
-						"description": "URL to fetch JSON response from (must return filename, url, refresh_rate fields)",
-						"placeholder": "https://your-server.com/api/plugin-endpoint"
-					},
-					"timeout_seconds": {
-						"type": "integer",
-						"title": "Request Timeout",
-						"description": "Timeout for HTTP requests in seconds (max 10)",
-						"minimum": 1,
-						"maximum": 10,
-						"default": 2
-					}
-				},
-				"required": ["endpoint_url"]
-			}`,
-			Version:  "1.0.0",
-			Author:   "Stationmaster",
-			IsActive: true,
-		},
-		{
-			Name:        "Alias",
-			Type:        "alias",
-			Description: "Pass a custom image URL directly to your device",
-			ConfigSchema: `{
-				"type": "object",
-				"properties": {
-					"image_url": {
-						"type": "string",
-						"title": "Image URL",
-						"description": "Direct URL to the image (must be 800x480 1-bit BMP or up to 2-bit PNG)",
-						"placeholder": "https://your-server.com/image.bmp"
-					}
-				},
-				"required": ["image_url"]
-			}`,
-			Version:  "1.0.0",
-			Author:   "Stationmaster",
-			IsActive: true,
-		},
-		{
-			Name:        "Core Proxy",
-			Type:        "core_proxy",
-			Description: "Proxy to TRMNL core API endpoints for plugins",
-			ConfigSchema: `{
-				"type": "object",
-				"properties": {
-					"plugin_uuid": {
-						"type": "string",
-						"title": "Plugin UUID",
-						"description": "TRMNL plugin UUID to proxy",
-						"placeholder": "12345678-1234-5678-9012-123456789abc"
-					}
-				},
-				"required": ["plugin_uuid"]
-			}`,
-			Version:  "1.0.0",
-			Author:   "Stationmaster",
-			IsActive: true,
-		},
-	}
-
-	for _, plugin := range defaultPlugins {
-		var existing Plugin
-		if err := DB.First(&existing, "name = ?", plugin.Name).Error; err == gorm.ErrRecordNotFound {
-			if err := DB.Create(&plugin).Error; err != nil {
-				return fmt.Errorf("failed to create default plugin %s: %w", plugin.Name, err)
-			}
-			logging.Info("[STARTUP] Created default plugin", "name", plugin.Name)
-		}
-	}
-
-	return nil
-}
 
 // getGormLogger returns appropriate GORM logger based on environment
 func getGormLogger() logger.Interface {

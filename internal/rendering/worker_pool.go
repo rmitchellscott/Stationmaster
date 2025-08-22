@@ -449,6 +449,11 @@ func (p *RenderWorkerPool) cleanupRoutine(ctx context.Context) {
 			if err := p.renderWorker.CleanupOldContentSmart(ctx); err != nil {
 				logging.Error("[WORKER_POOL] Failed to cleanup old content", "error", err)
 			}
+			
+			// Clean up orphaned files
+			if err := p.renderWorker.CleanupOrphanedFiles(ctx); err != nil {
+				logging.Error("[WORKER_POOL] Failed to cleanup orphaned files", "error", err)
+			}
 		}
 	}
 }

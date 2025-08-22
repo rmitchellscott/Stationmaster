@@ -282,11 +282,19 @@ func (w *RenderWorker) renderForDeviceModel(ctx context.Context, userPlugin data
 	} else {
 		// Delete old image files
 		for _, content := range oldContent {
-			if filepath.IsAbs(content.ImagePath) && filepath.HasPrefix(content.ImagePath, w.renderedDir) {
-				if err := os.Remove(content.ImagePath); err != nil && !os.IsNotExist(err) {
-					logging.Error("[RENDER_WORKER] Failed to delete old image", "path", content.ImagePath, "error", err)
+			var fullPath string
+			if filepath.IsAbs(content.ImagePath) {
+				fullPath = content.ImagePath
+			} else {
+				// Convert relative path to absolute
+				fullPath = filepath.Join(w.staticDir, content.ImagePath)
+			}
+			
+			if filepath.HasPrefix(fullPath, w.renderedDir) {
+				if err := os.Remove(fullPath); err != nil && !os.IsNotExist(err) {
+					logging.Error("[RENDER_WORKER] Failed to delete old image", "path", fullPath, "error", err)
 				} else if err == nil {
-					logging.Debug("[RENDER_WORKER] Deleted old image", "path", content.ImagePath)
+					logging.Debug("[RENDER_WORKER] Deleted old image", "path", fullPath)
 				}
 			}
 		}
@@ -487,9 +495,17 @@ func (w *RenderWorker) CleanupOldContentSmart(ctx context.Context) error {
 		// Delete files for this plugin
 		filesDeleted := 0
 		for _, content := range oldContent {
-			if filepath.IsAbs(content.ImagePath) && filepath.HasPrefix(content.ImagePath, w.renderedDir) {
-				if err := os.Remove(content.ImagePath); err != nil && !os.IsNotExist(err) {
-					logging.Error("[RENDER_WORKER] Failed to delete old image", "path", content.ImagePath, "error", err)
+			var fullPath string
+			if filepath.IsAbs(content.ImagePath) {
+				fullPath = content.ImagePath
+			} else {
+				// Convert relative path to absolute
+				fullPath = filepath.Join(w.staticDir, content.ImagePath)
+			}
+			
+			if filepath.HasPrefix(fullPath, w.renderedDir) {
+				if err := os.Remove(fullPath); err != nil && !os.IsNotExist(err) {
+					logging.Error("[RENDER_WORKER] Failed to delete old image", "path", fullPath, "error", err)
 				} else if err == nil {
 					filesDeleted++
 				}
@@ -514,6 +530,60 @@ func (w *RenderWorker) CleanupOldContentSmart(ctx context.Context) error {
 
 	if totalCleaned > 0 {
 		logging.Info("[RENDER_WORKER] Smart cleanup completed: %d total items removed", totalCleaned)
+	}
+
+	return nil
+}
+
+// CleanupOrphanedFiles removes image files that exist but have no corresponding database records
+func (w *RenderWorker) CleanupOrphanedFiles(ctx context.Context) error {
+	// Get all files in the rendered directory
+	files, err := filepath.Glob(filepath.Join(w.renderedDir, "*.png"))
+	if err != nil {
+		return fmt.Errorf("failed to list rendered files: %w", err)
+	}
+
+	if len(files) == 0 {
+		return nil
+	}
+
+	// Get all image paths from database
+	var dbPaths []string
+	err = w.db.WithContext(ctx).Model(&database.RenderedContent{}).
+		Pluck("image_path", &dbPaths).Error
+	if err != nil {
+		return fmt.Errorf("failed to get database image paths: %w", err)
+	}
+
+	// Convert database paths to absolute paths for comparison
+	dbAbsPaths := make(map[string]bool)
+	for _, dbPath := range dbPaths {
+		var fullPath string
+		if filepath.IsAbs(dbPath) {
+			fullPath = dbPath
+		} else {
+			// Database paths already include the static directory (e.g., "static/rendered/file.png")
+			// so we don't need to add w.staticDir prefix
+			fullPath = dbPath
+		}
+		dbAbsPaths[fullPath] = true
+	}
+
+	// Find orphaned files and delete them
+	orphanedCount := 0
+	for _, file := range files {
+		if !dbAbsPaths[file] {
+			if err := os.Remove(file); err != nil && !os.IsNotExist(err) {
+				logging.Error("[RENDER_WORKER] Failed to delete orphaned file", "path", file, "error", err)
+			} else if err == nil {
+				orphanedCount++
+				logging.Debug("[RENDER_WORKER] Deleted orphaned file", "path", file)
+			}
+		}
+	}
+
+	if orphanedCount > 0 {
+		logging.Info("[RENDER_WORKER] Cleaned up orphaned files", "count", orphanedCount)
 	}
 
 	return nil

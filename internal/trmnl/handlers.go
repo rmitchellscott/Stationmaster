@@ -1,6 +1,7 @@
 package trmnl
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -337,22 +338,75 @@ func DisplayHandler(c *gin.Context) {
 	// Check for firmware update AFTER device status is updated
 	firmwareUpdate := checkFirmwareUpdate(c, device, userTimezone)
 
-	// Process active plugins and generate response
+	// Process active plugins and generate response with 2-second timeout
 	processor := GetPluginProcessor()
 	var response gin.H
 	var currentItem *database.PlaylistItem
 	var nextPlaylistIndex int
 	var pluginErr error
+	var timedOut bool
 	
-	if processor != nil {
-		response, currentItem, nextPlaylistIndex, pluginErr = processor.processActivePlugins(device, activeItems)
-	} else {
-		// Fallback to old implementation if processor not available
-		response, currentItem, nextPlaylistIndex, pluginErr = processActivePlugins(device, activeItems)
+	// Create timeout context for plugin processing
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	
+	// Channel to receive plugin processing results
+	type pluginResult struct {
+		response          gin.H
+		currentItem       *database.PlaylistItem
+		nextPlaylistIndex int
+		pluginErr         error
+	}
+	resultChan := make(chan pluginResult, 1)
+	
+	// Run plugin processing in goroutine
+	go func() {
+		var res pluginResult
+		if processor != nil {
+			res.response, res.currentItem, res.nextPlaylistIndex, res.pluginErr = processor.processActivePlugins(device, activeItems)
+		} else {
+			// Fallback to old implementation if processor not available
+			res.response, res.currentItem, res.nextPlaylistIndex, res.pluginErr = processActivePlugins(device, activeItems)
+		}
+		resultChan <- res
+	}()
+	
+	// Wait for either plugin processing to complete or timeout
+	select {
+	case result := <-resultChan:
+		response = result.response
+		currentItem = result.currentItem
+		nextPlaylistIndex = result.nextPlaylistIndex
+		pluginErr = result.pluginErr
+	case <-ctx.Done():
+		// Timeout occurred
+		timedOut = true
+		logging.Warn("[/api/display] Plugin processing timed out after 2 seconds", "mac_address", device.MacAddress)
+		
+		// Create timeout error response with smart refresh rate
+		timeoutRefreshRate := device.RefreshRate
+		
+		// Try to get current item for duration override if we have active items
+		if len(activeItems) > 0 {
+			currentIndex := device.LastPlaylistIndex
+			if currentIndex < 0 || currentIndex >= len(activeItems) {
+				currentIndex = 0
+			}
+			if activeItems[currentIndex].DurationOverride != nil {
+				timeoutRefreshRate = *activeItems[currentIndex].DurationOverride
+			}
+		}
+		
+		response = gin.H{
+			"image_url":  "/images/timeout_error.png",
+			"filename":   "timeout_error",
+			"refresh_rate": fmt.Sprintf("%d", timeoutRefreshRate),
+		}
+		pluginErr = fmt.Errorf("plugin processing timeout")
 	}
 	
-	// Set background data for playlist update if plugin processing was successful
-	if pluginErr == nil && len(activeItems) > 0 {
+	// Set background data for playlist update if plugin processing was successful and not timed out
+	if pluginErr == nil && !timedOut && len(activeItems) > 0 {
 		backgroundData.shouldUpdatePlaylist = true
 		backgroundData.nextPlaylistIndex = nextPlaylistIndex
 	}
@@ -372,40 +426,25 @@ func DisplayHandler(c *gin.Context) {
 			}
 		}
 	}
-	if pluginErr != nil {
-		// Fall back to default response if plugin processing fails
-		logging.Debug("[/api/display] No active plugins, using default response", "mac_address", device.MacAddress, "status", status)
-
-		// For unclaimed devices (status 202), provide setup image
-		imageURL := getImageURLForDevice(device)
-		filename := time.Now().Format("2006-01-02T15:04:05")
-
-		if status == 202 {
-			imageURL = "https://usetrmnl.com/images/setup/setup-logo.bmp"
-			filename = "empty_state"
-		}
-
-		refreshRate := device.RefreshRate
+	if pluginErr != nil && !timedOut {
+		// Plugin error (not timeout) - use generic error response with smart refresh rate
+		logging.Debug("[/api/display] Plugin processing failed, using error response", "mac_address", device.MacAddress, "error", pluginErr)
 		
-		// Handle sleep mode for fallback response
-		inSleepPeriod := isInSleepPeriod(device, userTimezone)
-		
-		if inSleepPeriod {
-			refreshRate = calculateSecondsUntilSleepEnd(device, userTimezone)
-			
-			// If sleep screen is enabled, override the image URL
-			if device.SleepShowScreen {
-				imageURL = "/images/sleep.png"
-				filename = "sleep"
+		errorRefreshRate := device.RefreshRate
+		if len(activeItems) > 0 {
+			currentIndex := device.LastPlaylistIndex
+			if currentIndex < 0 || currentIndex >= len(activeItems) {
+				currentIndex = 0
 			}
-			
+			if activeItems[currentIndex].DurationOverride != nil {
+				errorRefreshRate = *activeItems[currentIndex].DurationOverride
+			}
 		}
-
+		
 		response = gin.H{
-			"status":       status,
-			"image_url":    imageURL,
-			"filename":     filename,
-			"refresh_rate": fmt.Sprintf("%d", refreshRate),
+			"image_url": "/images/generic_error.png",
+			"filename": "generic_error",
+			"refresh_rate": fmt.Sprintf("%d", errorRefreshRate),
 		}
 	} else {
 		// Ensure required fields are set when plugins succeed

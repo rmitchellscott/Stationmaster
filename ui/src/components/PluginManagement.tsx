@@ -347,7 +347,6 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
       });
 
       if (response.ok) {
-        setSuccessMessage("Plugin instance deleted successfully!");
         await fetchUserPlugins();
         onUpdate?.();
       } else {

@@ -71,7 +71,7 @@ func (w *RenderWorker) ProcessRenderQueue(ctx context.Context) error {
 			ORDER BY priority DESC, scheduled_for ASC
 			LIMIT 1
 		)
-		GROUP BY user_plugin_id
+		GROUP BY user_plugin_id, id
 		LIMIT 10
 	`, "pending", time.Now(), "pending", time.Now()).Scan(&jobIDs).Error
 

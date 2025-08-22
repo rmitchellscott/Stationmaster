@@ -56,6 +56,9 @@ import {
   AlertTriangle,
   CheckCircle,
   RefreshCw,
+  ChevronUp,
+  ChevronDown,
+  ChevronsUpDown,
 } from "lucide-react";
 
 interface Plugin {
@@ -97,6 +100,14 @@ interface PluginManagementProps {
   onUpdate?: () => void;
 }
 
+type SortColumn = 'name' | 'plugin' | 'status' | 'created';
+type SortOrder = 'asc' | 'desc';
+
+interface SortState {
+  column: SortColumn;
+  order: SortOrder;
+}
+
 export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagementProps) {
   const { t } = useTranslation();
   const [userPlugins, setUserPlugins] = useState<UserPlugin[]>([]);
@@ -105,6 +116,24 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  // Sorting state with localStorage persistence
+  const [sortState, setSortState] = useState<SortState>(() => {
+    try {
+      const saved = localStorage.getItem('pluginInstanceTableSort');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        // Validate the parsed data
+        if (parsed.column && ['name', 'plugin', 'status', 'created'].includes(parsed.column) &&
+            parsed.order && ['asc', 'desc'].includes(parsed.order)) {
+          return parsed;
+        }
+      }
+    } catch (e) {
+      // Invalid localStorage data, fall back to default
+    }
+    return { column: 'name', order: 'asc' };
+  });
 
   // Add plugin dialog
   const [showAddDialog, setShowAddDialog] = useState(false);
@@ -384,6 +413,62 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
       return () => clearTimeout(timer);
     }
   }, [editDialogSuccess]);
+
+  // Save sort state to localStorage whenever it changes
+  useEffect(() => {
+    try {
+      localStorage.setItem('pluginInstanceTableSort', JSON.stringify(sortState));
+    } catch (e) {
+      // Ignore localStorage errors
+    }
+  }, [sortState]);
+
+  // Sort function
+  const handleSort = (column: SortColumn) => {
+    setSortState(prevState => ({
+      column,
+      order: prevState.column === column && prevState.order === 'asc' ? 'desc' : 'asc'
+    }));
+  };
+
+  // Sort the userPlugins array based on current sort state
+  const sortedUserPlugins = React.useMemo(() => {
+    const sorted = [...userPlugins].sort((a, b) => {
+      let aValue: any;
+      let bValue: any;
+
+      switch (sortState.column) {
+        case 'name':
+          aValue = a.name?.toLowerCase() || '';
+          bValue = b.name?.toLowerCase() || '';
+          break;
+        case 'plugin':
+          aValue = a.plugin?.name?.toLowerCase() || '';
+          bValue = b.plugin?.name?.toLowerCase() || '';
+          break;
+        case 'status':
+          aValue = a.is_used_in_playlists ? 1 : 0; // Active first
+          bValue = b.is_used_in_playlists ? 1 : 0;
+          break;
+        case 'created':
+          aValue = new Date(a.created_at).getTime();
+          bValue = new Date(b.created_at).getTime();
+          break;
+        default:
+          return 0;
+      }
+
+      if (aValue < bValue) {
+        return sortState.order === 'asc' ? -1 : 1;
+      }
+      if (aValue > bValue) {
+        return sortState.order === 'asc' ? 1 : -1;
+      }
+      return 0;
+    });
+
+    return sorted;
+  }, [userPlugins, sortState]);
 
   const renderSettingsForm = (plugin: Plugin, settings: Record<string, any>, onChange: (key: string, value: any) => void) => {
     let schema;
@@ -689,15 +774,79 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
             <Table className="w-full table-fixed lg:table-auto">
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead className="hidden lg:table-cell">Plugin</TableHead>
-                  <TableHead className="hidden md:table-cell">Status</TableHead>
-                  <TableHead className="hidden lg:table-cell">Created</TableHead>
+                  <TableHead 
+                    className="cursor-pointer hover:bg-muted/50 select-none"
+                    onClick={() => handleSort('name')}
+                  >
+                    <div className="flex items-center gap-1">
+                      Name
+                      {sortState.column === 'name' ? (
+                        sortState.order === 'asc' ? (
+                          <ChevronUp className="h-4 w-4" />
+                        ) : (
+                          <ChevronDown className="h-4 w-4" />
+                        )
+                      ) : (
+                        <ChevronsUpDown className="h-4 w-4 opacity-50" />
+                      )}
+                    </div>
+                  </TableHead>
+                  <TableHead 
+                    className="hidden lg:table-cell cursor-pointer hover:bg-muted/50 select-none"
+                    onClick={() => handleSort('plugin')}
+                  >
+                    <div className="flex items-center gap-1">
+                      Plugin
+                      {sortState.column === 'plugin' ? (
+                        sortState.order === 'asc' ? (
+                          <ChevronUp className="h-4 w-4" />
+                        ) : (
+                          <ChevronDown className="h-4 w-4" />
+                        )
+                      ) : (
+                        <ChevronsUpDown className="h-4 w-4 opacity-50" />
+                      )}
+                    </div>
+                  </TableHead>
+                  <TableHead 
+                    className="hidden md:table-cell cursor-pointer hover:bg-muted/50 select-none"
+                    onClick={() => handleSort('status')}
+                  >
+                    <div className="flex items-center gap-1">
+                      Status
+                      {sortState.column === 'status' ? (
+                        sortState.order === 'asc' ? (
+                          <ChevronUp className="h-4 w-4" />
+                        ) : (
+                          <ChevronDown className="h-4 w-4" />
+                        )
+                      ) : (
+                        <ChevronsUpDown className="h-4 w-4 opacity-50" />
+                      )}
+                    </div>
+                  </TableHead>
+                  <TableHead 
+                    className="hidden lg:table-cell cursor-pointer hover:bg-muted/50 select-none"
+                    onClick={() => handleSort('created')}
+                  >
+                    <div className="flex items-center gap-1">
+                      Created
+                      {sortState.column === 'created' ? (
+                        sortState.order === 'asc' ? (
+                          <ChevronUp className="h-4 w-4" />
+                        ) : (
+                          <ChevronDown className="h-4 w-4" />
+                        )
+                      ) : (
+                        <ChevronsUpDown className="h-4 w-4 opacity-50" />
+                      )}
+                    </div>
+                  </TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {userPlugins.map((userPlugin) => (
+                {sortedUserPlugins.map((userPlugin) => (
                   <TableRow key={userPlugin.id}>
                     <TableCell className="font-medium">
                       <div>

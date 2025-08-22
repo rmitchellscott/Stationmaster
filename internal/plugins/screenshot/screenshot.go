@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"image"
 	"image/png"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/rmitchellscott/stationmaster/internal/imageprocessing"
@@ -72,17 +74,54 @@ func (p *ScreenshotPlugin) ConfigSchema() string {
 				"maximum": 30,
 				"default": 3
 			},
-			"capture_full_page": {
-				"type": "boolean",
-				"title": "Capture Full Page",
-				"description": "Whether to capture the entire page or just the visible viewport",
-				"default": false
+			"headers": {
+				"type": "string",
+				"title": "HTTP Headers",
+				"description": "Custom HTTP headers in format: key1=value1&key2=value2 (use %3D for = in values)",
+				"examples": ["authorization=bearer token123", "authorization=bearer%20jwt%3D%3D&content-type=application/json"]
 			}
 		},
 		"required": ["url"]
 	}`
 }
 
+// parseHeaders parses header string in format "key1=value1&key2=value2" into map
+func parseHeaders(headerStr string) (map[string]string, error) {
+	if headerStr == "" {
+		return nil, nil
+	}
+	
+	headers := make(map[string]string)
+	pairs := strings.Split(headerStr, "&")
+	
+	for _, pair := range pairs {
+		if pair == "" {
+			continue
+		}
+		
+		parts := strings.SplitN(pair, "=", 2)
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("invalid header format: %s (expected key=value)", pair)
+		}
+		
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+		
+		// URL decode the value to handle %3D encoding
+		decodedValue, err := url.QueryUnescape(value)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode header value %s: %w", value, err)
+		}
+		
+		if key == "" {
+			return nil, fmt.Errorf("header key cannot be empty")
+		}
+		
+		headers[key] = decodedValue
+	}
+	
+	return headers, nil
+}
 
 // Validate validates the plugin settings
 func (p *ScreenshotPlugin) Validate(settings map[string]interface{}) error {
@@ -111,6 +150,18 @@ func (p *ScreenshotPlugin) Validate(settings map[string]interface{}) error {
 		}
 	}
 
+	// Validate headers if provided
+	if headerStr, exists := settings["headers"]; exists {
+		if headerStrValue, ok := headerStr.(string); ok {
+			_, err := parseHeaders(headerStrValue)
+			if err != nil {
+				return fmt.Errorf("invalid headers format: %w", err)
+			}
+		} else if headerStr != "" {
+			return fmt.Errorf("headers must be a string")
+		}
+	}
+
 	return nil
 }
 
@@ -125,7 +176,14 @@ func (p *ScreenshotPlugin) Process(ctx plugins.PluginContext) (plugins.PluginRes
 
 	// Get optional settings
 	waitTimeSeconds := ctx.GetIntSetting("wait_time", 3)
-	captureFullPage := ctx.GetBoolSetting("capture_full_page", false)
+	headerStr := ctx.GetStringSetting("headers", "")
+	
+	// Parse headers if provided
+	headers, err := parseHeaders(headerStr)
+	if err != nil {
+		return plugins.CreateErrorResponse(fmt.Sprintf("Invalid headers: %v", err)),
+			fmt.Errorf("failed to parse headers: %w", err)
+	}
 
 	// Validate that we have device model information for proper sizing
 	if ctx.Device == nil || ctx.Device.DeviceModel == nil {
@@ -150,8 +208,8 @@ func (p *ScreenshotPlugin) Process(ctx plugins.PluginContext) (plugins.PluginRes
 		url, 
 		ctx.Device.DeviceModel.ScreenWidth, 
 		ctx.Device.DeviceModel.ScreenHeight, 
-		captureFullPage, 
 		waitTimeSeconds,
+		headers,
 	)
 	if err != nil {
 		return plugins.CreateErrorResponse(fmt.Sprintf("Failed to capture screenshot: %v", err)),

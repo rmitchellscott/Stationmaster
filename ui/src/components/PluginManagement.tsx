@@ -48,6 +48,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Separator } from "@/components/ui/separator";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Puzzle,
   Edit,
@@ -60,6 +61,11 @@ import {
   ChevronDown,
   ChevronsUpDown,
 } from "lucide-react";
+import { PrivatePluginList } from "./PrivatePluginList";
+import { PrivatePluginCreator } from "./PrivatePluginCreator";
+import { PluginPreview } from "./PluginPreview";
+import { LiquidEditor } from "./LiquidEditor";
+import { PrivatePluginHelp } from "./PrivatePluginHelp";
 
 interface Plugin {
   id: string;
@@ -164,6 +170,12 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
     isOpen: boolean;
     plugin: UserPlugin | null;
   }>({ isOpen: false, plugin: null });
+
+  // Private plugin management state
+  const [activeTab, setActiveTab] = useState<'instances' | 'private'>('instances');
+  const [showPrivatePluginCreator, setShowPrivatePluginCreator] = useState(false);
+  const [editingPrivatePlugin, setEditingPrivatePlugin] = useState<any | null>(null);
+  const [previewingPrivatePlugin, setPreviewingPrivatePlugin] = useState<any | null>(null);
 
   const fetchUserPlugins = async () => {
     try {
@@ -470,6 +482,57 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
     return sorted;
   }, [userPlugins, sortState]);
 
+  // Private plugin handlers
+  const handleCreatePrivatePlugin = () => {
+    setEditingPrivatePlugin(null);
+    setShowPrivatePluginCreator(true);
+  };
+
+  const handleEditPrivatePlugin = (plugin: any) => {
+    setEditingPrivatePlugin(plugin);
+    setShowPrivatePluginCreator(true);
+  };
+
+  const handlePreviewPrivatePlugin = (plugin: any) => {
+    setPreviewingPrivatePlugin(plugin);
+  };
+
+  const handleSavePrivatePlugin = async (plugin: any) => {
+    try {
+      const url = editingPrivatePlugin ? `/api/private-plugins/${editingPrivatePlugin.id}` : '/api/private-plugins';
+      const method = editingPrivatePlugin ? 'PUT' : 'POST';
+
+      const response = await fetch(url, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify(plugin),
+      });
+
+      if (response.ok) {
+        setSuccessMessage(`Private plugin ${editingPrivatePlugin ? 'updated' : 'created'} successfully!`);
+        setShowPrivatePluginCreator(false);
+        setEditingPrivatePlugin(null);
+        // Refresh the private plugin list if we're on that tab
+        if (activeTab === 'private') {
+          // The PrivatePluginList component will handle its own refresh
+        }
+      } else {
+        const errorData = await response.json();
+        setError(errorData.error || `Failed to ${editingPrivatePlugin ? 'update' : 'create'} private plugin`);
+      }
+    } catch (error) {
+      setError('Network error occurred');
+    }
+  };
+
+  const handleCancelPrivatePlugin = () => {
+    setShowPrivatePluginCreator(false);
+    setEditingPrivatePlugin(null);
+  };
+
   const renderSettingsForm = (plugin: Plugin, settings: Record<string, any>, onChange: (key: string, value: any) => void) => {
     let schema;
     try {
@@ -741,21 +804,37 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
 
       <div className="flex justify-between items-center">
         <div>
-          <h3 className="text-lg font-semibold">Plugin Instances</h3>
+          <h3 className="text-lg font-semibold">Plugin Management</h3>
           <p className="text-muted-foreground">
-            Manage your plugin instances for the selected device
+            Manage plugin instances and create private plugins
           </p>
         </div>
-        <Button onClick={() => setShowAddDialog(true)}>
-          Add Plugin
-        </Button>
       </div>
 
-      {loading ? (
-        <div className="flex items-center justify-center py-8">
-          <div className="text-muted-foreground">Loading plugins...</div>
-        </div>
-      ) : userPlugins.length === 0 ? (
+      <Tabs value={activeTab} onValueChange={(tab) => setActiveTab(tab as any)}>
+        <TabsList>
+          <TabsTrigger value="instances">Plugin Instances</TabsTrigger>
+          <TabsTrigger value="private">Private Plugins</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="instances" className="space-y-4">
+          <div className="flex justify-between items-center">
+            <div>
+              <h4 className="font-semibold">Plugin Instances</h4>
+              <p className="text-sm text-muted-foreground">
+                Manage your plugin instances for the selected device
+              </p>
+            </div>
+            <Button onClick={() => setShowAddDialog(true)}>
+              Add Plugin Instance
+            </Button>
+          </div>
+
+          {loading ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="text-muted-foreground">Loading plugins...</div>
+            </div>
+          ) : userPlugins.length === 0 ? (
         <Card>
           <CardContent className="text-center py-8">
             <Puzzle className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
@@ -1293,6 +1372,34 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+        </TabsContent>
+
+        <TabsContent value="private" className="space-y-4">
+          <PrivatePluginList
+            onCreatePlugin={handleCreatePrivatePlugin}
+            onEditPlugin={handleEditPrivatePlugin}
+            onPreviewPlugin={handlePreviewPrivatePlugin}
+          />
+        </TabsContent>
+      </Tabs>
+
+      {/* Private Plugin Creator Dialog */}
+      <PrivatePluginCreator
+        plugin={editingPrivatePlugin}
+        isOpen={showPrivatePluginCreator}
+        onClose={() => setShowPrivatePluginCreator(false)}
+        onSave={handleSavePrivatePlugin}
+        onCancel={handleCancelPrivatePlugin}
+      />
+
+      {/* Private Plugin Preview Dialog */}
+      {/* {previewingPrivatePlugin && (
+        <PluginPreview
+          plugin={previewingPrivatePlugin}
+          isOpen={Boolean(previewingPrivatePlugin)}
+          onClose={() => setPreviewingPrivatePlugin(null)}
+        />
+      )} */}
     </div>
   );
 }

@@ -125,6 +125,82 @@ func (r *BrowserlessRenderer) Close() error {
 	return nil
 }
 
+// HTMLScreenshotRequest represents the request payload for browserless HTML screenshot API
+type HTMLScreenshotRequest struct {
+	HTML     string `json:"html"`
+	Viewport struct {
+		Width  int `json:"width"`
+		Height int `json:"height"`
+	} `json:"viewport"`
+	Options struct {
+		Type           string `json:"type"`
+		Quality        *int   `json:"quality,omitempty"`
+		FullPage       bool   `json:"fullPage"`
+		OmitBackground bool   `json:"omitBackground"`
+	} `json:"options"`
+	GotoOptions struct {
+		WaitUntil string `json:"waitUntil"`
+		Timeout   int    `json:"timeout"`
+	} `json:"gotoOptions"`
+}
+
+// RenderHTML renders HTML content to an image using browserless
+func (r *BrowserlessRenderer) RenderHTML(ctx context.Context, html string, width, height int) ([]byte, error) {
+	// Prepare browserless request for HTML content
+	req := HTMLScreenshotRequest{
+		HTML: html,
+		Viewport: struct {
+			Width  int `json:"width"`
+			Height int `json:"height"`
+		}{
+			Width:  width,
+			Height: height,
+		},
+	}
+	
+	req.Options.Type = "png"
+	req.Options.FullPage = false
+	req.Options.OmitBackground = false
+	
+	// Set reasonable wait options for HTML content
+	req.GotoOptions.WaitUntil = "networkidle0" // Wait for all network requests to finish
+	req.GotoOptions.Timeout = 30000 // 30 seconds timeout
+	
+	// Marshal request to JSON
+	requestBody, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal HTML screenshot request: %w", err)
+	}
+	
+	// Make request to browserless screenshot endpoint
+	screenshotURL := fmt.Sprintf("%s/screenshot", r.baseURL)
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", screenshotURL, bytes.NewBuffer(requestBody))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
+	}
+	
+	httpReq.Header.Set("Content-Type", "application/json")
+	
+	resp, err := r.client.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to make request to browserless: %w", err)
+	}
+	defer resp.Body.Close()
+	
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("browserless HTML screenshot request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+	
+	// Read response body (image data)
+	imageData, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read browserless response: %w", err)
+	}
+	
+	return imageData, nil
+}
+
 // DefaultBrowserlessRenderer creates a renderer with default options
 func DefaultBrowserlessRenderer() (*BrowserlessRenderer, error) {
 	return NewBrowserlessRenderer()

@@ -211,6 +211,8 @@ func main() {
 	router.GET("/api/trmnl/firmware/:version/download", trmnl.FirmwareDownloadHandler)
 	router.POST("/api/trmnl/firmware/update-complete", trmnl.FirmwareUpdateCompleteHandler)
 
+	// Private plugin webhook endpoints (public - token-based authentication)
+	router.POST("/api/webhooks/plugin/:token", handlers.WebhookHandler)
 
 	// Public firmware downloads (no authentication required)
 	// Custom handler to serve firmware files - supports both proxy and download modes
@@ -387,6 +389,7 @@ func main() {
 		admin.PUT("/plugins/:id", handlers.UpdatePluginHandler)     // PUT /api/admin/plugins/:id - update system plugin
 		admin.DELETE("/plugins/:id", handlers.DeletePluginHandler)  // DELETE /api/admin/plugins/:id - delete system plugin
 		admin.GET("/plugins/stats", handlers.GetPluginStatsHandler) // GET /api/admin/plugins/stats - get plugin statistics
+		admin.GET("/private-plugins/stats", handlers.GetPrivatePluginStatsHandler) // GET /api/admin/private-plugins/stats - get private plugin statistics
 
 		// Firmware management endpoints
 		admin.GET("/firmware/versions", handlers.GetFirmwareVersionsHandler)              // GET /api/admin/firmware/versions - list firmware versions
@@ -432,6 +435,19 @@ func main() {
 		plugins.POST("/validate", handlers.ValidatePluginSettingsHandler) // POST /api/plugins/validate - validate plugin settings
 		plugins.GET("/refresh-rate-options", handlers.GetRefreshRateOptionsHandler) // GET /api/plugins/refresh-rate-options - get refresh rate options
 		plugins.GET("/registry/stats", handlers.GetPluginRegistryStatsHandler) // GET /api/plugins/registry/stats - registry statistics
+	}
+
+	// Private plugin management endpoints
+	privatePlugins := protected.Group("/private-plugins")
+	{
+		privatePlugins.GET("", handlers.GetPrivatePluginsHandler)                           // GET /api/private-plugins - list user's private plugins
+		privatePlugins.POST("", handlers.CreatePrivatePluginHandler)                       // POST /api/private-plugins - create private plugin
+		privatePlugins.GET("/:id", handlers.GetPrivatePluginHandler)                       // GET /api/private-plugins/:id - get private plugin
+		privatePlugins.PUT("/:id", handlers.UpdatePrivatePluginHandler)                    // PUT /api/private-plugins/:id - update private plugin
+		privatePlugins.DELETE("/:id", handlers.DeletePrivatePluginHandler)                 // DELETE /api/private-plugins/:id - delete private plugin
+		privatePlugins.POST("/:id/regenerate-token", handlers.RegenerateWebhookTokenHandler) // POST /api/private-plugins/:id/regenerate-token - regenerate webhook token
+		privatePlugins.POST("/test", handlers.TestPrivatePluginHandler)                    // POST /api/private-plugins/test - test plugin with sample data
+		privatePlugins.POST("/validate", handlers.ValidatePrivatePluginHandler)            // POST /api/private-plugins/validate - validate plugin templates
 	}
 
 	// User plugin management endpoints

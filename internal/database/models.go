@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
 
@@ -266,6 +267,45 @@ func (p *Plugin) BeforeCreate(tx *gorm.DB) error {
 	return nil
 }
 
+// PrivatePlugin represents a user-created plugin with layout support
+type PrivatePlugin struct {
+	ID              uuid.UUID      `gorm:"type:uuid;primaryKey" json:"id"`
+	UserID          uuid.UUID      `gorm:"type:uuid;not null;index" json:"user_id"`
+	Name            string         `gorm:"size:255;not null" json:"name"`
+	Description     string         `gorm:"type:text" json:"description"`
+	
+	// Layout-specific templates
+	MarkupFull      string         `gorm:"type:text" json:"markup_full"`       // Full screen liquid template
+	MarkupHalfVert  string         `gorm:"type:text" json:"markup_half_vert"`  // Half vertical liquid template
+	MarkupHalfHoriz string         `gorm:"type:text" json:"markup_half_horiz"` // Half horizontal liquid template
+	MarkupQuadrant  string         `gorm:"type:text" json:"markup_quadrant"`   // Quadrant liquid template
+	SharedMarkup    string         `gorm:"type:text" json:"shared_markup"`     // Shared markup prepended to all layouts
+	
+	// Data configuration
+	DataStrategy    string         `gorm:"size:50;not null;default:'webhook'" json:"data_strategy"` // webhook, merge, polling
+	WebhookToken    string         `gorm:"size:255;uniqueIndex" json:"webhook_token"`              // Unique token for webhook URL
+	PollingConfig   datatypes.JSON `json:"polling_config"`                                         // URLs, headers, intervals for polling strategy
+	FormFields      datatypes.JSON `json:"form_fields"`                                            // Custom form field definitions
+	
+	// Publishing
+	IsPublished     bool           `gorm:"default:false" json:"is_published"` // Available as recipe
+	Version         string         `gorm:"size:20;default:'1.0.0'" json:"version"`
+	
+	// Timestamps
+	CreatedAt       time.Time      `json:"created_at"`
+	UpdatedAt       time.Time      `json:"updated_at"`
+	
+	// Associations
+	User            User           `gorm:"foreignKey:UserID" json:"-"`
+}
+
+func (pp *PrivatePlugin) BeforeCreate(tx *gorm.DB) error {
+	if pp.ID == uuid.Nil {
+		pp.ID = uuid.New()
+	}
+	return nil
+}
+
 // UserPlugin represents a user's instance of a plugin with specific settings
 type UserPlugin struct {
 	ID              uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
@@ -501,6 +541,7 @@ func GetAllModels() []interface{} {
 		&DeviceModel{}, // Must come before Device due to foreign key reference
 		&Device{},
 		&Plugin{},
+		&PrivatePlugin{}, // Must come after User due to foreign key reference
 		&UserPlugin{},
 		&Playlist{},
 		&PlaylistItem{},

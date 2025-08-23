@@ -98,6 +98,24 @@ func RunMigrations(logPrefix string) error {
 				return nil
 			},
 		},
+		{
+			ID: "20250822_create_private_plugins",
+			Migrate: func(tx *gorm.DB) error {
+				logging.Info("[MIGRATION] Creating private_plugins table")
+
+				// Create the PrivatePlugin table
+				if err := tx.AutoMigrate(&PrivatePlugin{}); err != nil {
+					return fmt.Errorf("failed to create private_plugins table: %w", err)
+				}
+
+				logging.Info("[MIGRATION] private_plugins table created successfully")
+				return nil
+			},
+			Rollback: func(tx *gorm.DB) error {
+				logging.Info("[MIGRATION] Dropping private_plugins table")
+				return tx.Migrator().DropTable(&PrivatePlugin{})
+			},
+		},
 	}
 
 	// Create migrator with our migrations

@@ -105,6 +105,9 @@ func DisplayHandler(c *gin.Context) {
 		statusValues     interface{}
 		nextPlaylistIndex int
 		shouldUpdatePlaylist bool
+		currentItem      *database.PlaylistItem
+		activeItems      []database.PlaylistItem
+		device           *database.Device
 	}
 	
 	// Defer background operations to ensure they run even if API fails
@@ -131,6 +134,12 @@ func DisplayHandler(c *gin.Context) {
 				if backgroundData.shouldUpdatePlaylist {
 					if err := deviceService.UpdateLastPlaylistIndex(backgroundData.deviceID, backgroundData.nextPlaylistIndex); err != nil {
 						logging.Error("[BACKGROUND] Failed to update last playlist index", "device_id", backgroundData.deviceID, "error", err)
+					} else {
+						// Broadcast playlist index change via SSE
+						processor := GetPluginProcessor()
+						if processor != nil && backgroundData.currentItem != nil {
+							processor.broadcastPlaylistChange(backgroundData.device, backgroundData.nextPlaylistIndex, *backgroundData.currentItem, backgroundData.activeItems)
+						}
 					}
 				}
 				
@@ -409,6 +418,9 @@ func DisplayHandler(c *gin.Context) {
 	if pluginErr == nil && !timedOut && len(activeItems) > 0 {
 		backgroundData.shouldUpdatePlaylist = true
 		backgroundData.nextPlaylistIndex = nextPlaylistIndex
+		backgroundData.currentItem = currentItem
+		backgroundData.activeItems = activeItems
+		backgroundData.device = device
 	}
 	if pluginErr != nil && !timedOut {
 		// Plugin error (not timeout) - use generic error response with smart refresh rate

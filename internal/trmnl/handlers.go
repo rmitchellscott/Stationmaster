@@ -365,8 +365,8 @@ func DisplayHandler(c *gin.Context) {
 		if processor != nil {
 			res.response, res.currentItem, res.nextPlaylistIndex, res.pluginErr = processor.processActivePlugins(device, activeItems)
 		} else {
-			// Fallback to old implementation if processor not available
-			res.response, res.currentItem, res.nextPlaylistIndex, res.pluginErr = processActivePlugins(device, activeItems)
+			// No processor available - return error
+			res.pluginErr = fmt.Errorf("unified plugin processor not available")
 		}
 		resultChan <- res
 	}()
@@ -409,22 +409,6 @@ func DisplayHandler(c *gin.Context) {
 	if pluginErr == nil && !timedOut && len(activeItems) > 0 {
 		backgroundData.shouldUpdatePlaylist = true
 		backgroundData.nextPlaylistIndex = nextPlaylistIndex
-	}
-	
-	// Convert relative image URLs to absolute URLs
-	if response != nil {
-		if imageURL, exists := response["image_url"]; exists {
-			if imageURLStr, ok := imageURL.(string); ok {
-				// Handle both "/static/rendered/" and "static/rendered/" cases
-				if strings.HasPrefix(imageURLStr, "/static/rendered/") {
-					response["image_url"] = baseURL + imageURLStr
-				} else if strings.HasPrefix(imageURLStr, "static/rendered/") {
-					response["image_url"] = baseURL + "/" + imageURLStr
-				} else if strings.HasPrefix(imageURLStr, "/images/") {
-					response["image_url"] = baseURL + imageURLStr
-				}
-			}
-		}
 	}
 	if pluginErr != nil && !timedOut {
 		// Plugin error (not timeout) - use generic error response with smart refresh rate
@@ -480,6 +464,27 @@ func DisplayHandler(c *gin.Context) {
 	response["update_firmware"] = firmwareUpdate.UpdateFirmware
 	response["firmware_url"] = firmwareUpdate.FirmwareURL
 	response["reset_firmware"] = firmwareUpdate.ResetFirmware
+
+	// Convert relative image URLs to absolute URLs (final step before response)
+	if response != nil {
+		if imageURL, exists := response["image_url"]; exists {
+			if imageURLStr, ok := imageURL.(string); ok {
+				// Handle various relative URL patterns
+				if strings.HasPrefix(imageURLStr, "/static/rendered/") {
+					response["image_url"] = baseURL + imageURLStr
+				} else if strings.HasPrefix(imageURLStr, "static/rendered/") {
+					response["image_url"] = baseURL + "/" + imageURLStr
+				} else if strings.HasPrefix(imageURLStr, "/images/") {
+					response["image_url"] = baseURL + imageURLStr
+				} else if strings.HasPrefix(imageURLStr, "/api/trmnl/devices/") {
+					response["image_url"] = baseURL + imageURLStr
+				} else if strings.HasPrefix(imageURLStr, "/") && !strings.HasPrefix(imageURLStr, "http://") && !strings.HasPrefix(imageURLStr, "https://") {
+					// Any other relative URL starting with /
+					response["image_url"] = baseURL + imageURLStr
+				}
+			}
+		}
+	}
 
 	if logging.IsDebugEnabled() {
 		responseBytes, _ := json.Marshal(response)
@@ -635,259 +640,16 @@ func DeviceImageHandler(c *gin.Context) {
 	c.Data(http.StatusOK, "image/png", placeholder)
 }
 
-// processActivePlugins processes the active playlist items and generates appropriate response
-func processActivePlugins(device *database.Device, activeItems []database.PlaylistItem) (gin.H, *database.PlaylistItem, int, error) {
-	if len(activeItems) == 0 {
-		return nil, nil, 0, fmt.Errorf("no active playlist items")
-	}
 
-	// Calculate next item index for rotation
-	nextIndex := 0
-	if len(activeItems) > 1 {
-		// Use modulo to wrap around when reaching the end
-		nextIndex = (device.LastPlaylistIndex + 1) % len(activeItems)
-	}
-
-	// Get the next item in rotation
-	item := activeItems[nextIndex]
-
-	// Get the user plugin details
-	db := database.GetDB()
-	pluginService := database.NewPluginService(db)
-
-	userPlugin, err := pluginService.GetUserPluginByID(item.UserPluginID)
-	if err != nil {
-		return nil, nil, 0, fmt.Errorf("failed to get user plugin: %w", err)
-	}
-
-	var response gin.H
-	var pluginErr error
-
-	// Handle different plugin types
-	switch userPlugin.Plugin.Type {
-	case "redirect":
-		response, pluginErr = processRedirectPlugin(userPlugin)
-	case "alias":
-		response, pluginErr = processAliasPlugin(userPlugin)
-	case "core_proxy":
-		response, pluginErr = processCoreProxyPlugin(device, userPlugin)
-	default:
-		// For other plugin types, return default response
-		response = gin.H{
-			"image_url": getImageURLForDevice(device),
-			"filename":  "display.png",
-		}
-	}
-
-	// Return the nextIndex for background processing
-	if pluginErr == nil {
-		return response, &item, nextIndex, pluginErr
-	} else {
-		return response, &item, 0, pluginErr  // Don't advance index on error
-	}
-}
-
-// processRedirectPlugin handles redirect plugin type by fetching JSON from external endpoint
-func processRedirectPlugin(userPlugin *database.UserPlugin) (gin.H, error) {
-	// Parse plugin settings
+// parsePluginSettings parses plugin settings from JSON string
+func parsePluginSettings(settingsJSON string) (map[string]interface{}, error) {
 	var settings map[string]interface{}
-	if userPlugin.Settings != "" {
-		if err := json.Unmarshal([]byte(userPlugin.Settings), &settings); err != nil {
+	if settingsJSON != "" {
+		if err := json.Unmarshal([]byte(settingsJSON), &settings); err != nil {
 			return nil, fmt.Errorf("failed to parse plugin settings: %w", err)
 		}
 	}
-
-	// Get endpoint URL from settings
-	endpointURL, ok := settings["endpoint_url"].(string)
-	if !ok || endpointURL == "" {
-		return nil, fmt.Errorf("endpoint_url not configured in plugin settings")
-	}
-
-	// Get timeout (default to 2 seconds)
-	timeoutSeconds := 2
-	if timeout, ok := settings["timeout_seconds"].(float64); ok && timeout > 0 {
-		timeoutSeconds = int(timeout)
-		if timeoutSeconds > 10 {
-			timeoutSeconds = 10 // Cap at 10 seconds
-		}
-	}
-
-	// Create HTTP client with timeout
-	client := &http.Client{
-		Timeout: time.Duration(timeoutSeconds) * time.Second,
-	}
-
-	// Fetch JSON from endpoint
-	resp, err := client.Get(endpointURL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch from endpoint: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// Check response status
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("endpoint returned status %d", resp.StatusCode)
-	}
-
-	// Parse JSON response
-	var pluginResponse map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&pluginResponse); err != nil {
-		return nil, fmt.Errorf("failed to parse JSON response: %w", err)
-	}
-
-	// Extract required fields and build response
-	response := gin.H{}
-
-	// Copy filename if provided
-	if filename, ok := pluginResponse["filename"]; ok {
-		response["filename"] = filename
-	} else {
-		response["filename"] = "display.png" // Default filename
-	}
-
-	// Copy url as image_url if provided
-	if url, ok := pluginResponse["url"]; ok {
-		response["image_url"] = url
-	} else if imageURL, ok := pluginResponse["image_url"]; ok {
-		response["image_url"] = imageURL
-	}
-
-	// Copy refresh_rate if provided
-	if refreshRate, ok := pluginResponse["refresh_rate"]; ok {
-		response["refresh_rate"] = fmt.Sprintf("%v", refreshRate)
-	}
-
-	return response, nil
-}
-
-// processAliasPlugin handles alias plugin type by returning the configured image URL directly
-func processAliasPlugin(userPlugin *database.UserPlugin) (gin.H, error) {
-	// Parse plugin settings
-	var settings map[string]interface{}
-	if userPlugin.Settings != "" {
-		if err := json.Unmarshal([]byte(userPlugin.Settings), &settings); err != nil {
-			return nil, fmt.Errorf("failed to parse plugin settings: %w", err)
-		}
-	}
-
-	// Get image URL from settings
-	imageURL, ok := settings["image_url"].(string)
-	if !ok || imageURL == "" {
-		return nil, fmt.Errorf("image_url not configured in plugin settings")
-	}
-
-	// Return response with the image URL
-	response := gin.H{
-		"image_url": imageURL,
-		"filename":  time.Now().Format("2006-01-02T15:04:05"),
-	}
-
-	return response, nil
-}
-
-// processCoreProxyPlugin handles core_proxy plugin type by forwarding requests to TRMNL's official server
-func processCoreProxyPlugin(device *database.Device, userPlugin *database.UserPlugin) (gin.H, error) {
-	// Parse plugin settings
-	var settings map[string]interface{}
-	if userPlugin.Settings != "" {
-		if err := json.Unmarshal([]byte(userPlugin.Settings), &settings); err != nil {
-			return nil, fmt.Errorf("failed to parse plugin settings: %w", err)
-		}
-	}
-
-	// Get TRMNL device MAC and access token from settings
-	deviceMac, ok := settings["device_mac"].(string)
-	if !ok || deviceMac == "" {
-		return nil, fmt.Errorf("device_mac not configured in plugin settings")
-	}
-
-	accessToken, ok := settings["access_token"].(string)
-	if !ok || accessToken == "" {
-		return nil, fmt.Errorf("access_token not configured in plugin settings")
-	}
-
-	// Get timeout (default to 5 seconds)
-	timeoutSeconds := 5
-	if timeout, ok := settings["timeout_seconds"].(float64); ok && timeout > 0 {
-		timeoutSeconds = int(timeout)
-		if timeoutSeconds > 15 {
-			timeoutSeconds = 15 // Cap at 15 seconds
-		}
-	}
-
-	// Create HTTP client with timeout
-	client := &http.Client{
-		Timeout: time.Duration(timeoutSeconds) * time.Second,
-	}
-
-	// Create request to TRMNL's API
-	req, err := http.NewRequest("GET", "https://usetrmnl.com/api/display", nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	// Set headers that TRMNL expects
-	req.Header.Set("ID", deviceMac)
-	req.Header.Set("Access-Token", accessToken)
-
-	// Forward device status headers if available from our local device
-	if device.FirmwareVersion != "" {
-		req.Header.Set("Fw-Version", device.FirmwareVersion)
-	}
-	if device.BatteryVoltage > 0 {
-		req.Header.Set("Battery-Voltage", fmt.Sprintf("%.2f", device.BatteryVoltage))
-	}
-	if device.RSSI != 0 {
-		req.Header.Set("Rssi", fmt.Sprintf("%d", device.RSSI))
-	}
-	if device.RefreshRate > 0 {
-		req.Header.Set("Refresh-Rate", fmt.Sprintf("%d", device.RefreshRate))
-	}
-
-	// Make request to TRMNL
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch from TRMNL API: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// Check response status
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("TRMNL API returned status %d", resp.StatusCode)
-	}
-
-	// Parse JSON response from TRMNL
-	var trmnlResponse map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&trmnlResponse); err != nil {
-		return nil, fmt.Errorf("failed to parse TRMNL response: %w", err)
-	}
-
-	// Build response compatible with our API
-	response := gin.H{}
-
-	// Copy filename if provided
-	if filename, ok := trmnlResponse["filename"]; ok {
-		response["filename"] = filename
-	} else {
-		response["filename"] = time.Now().Format("2006-01-02T15:04:05")
-	}
-
-	// Copy image_url if provided
-	if imageURL, ok := trmnlResponse["image_url"]; ok {
-		response["image_url"] = imageURL
-	}
-
-	// Copy refresh_rate if provided
-	if refreshRate, ok := trmnlResponse["refresh_rate"]; ok {
-		response["refresh_rate"] = fmt.Sprintf("%v", refreshRate)
-	}
-
-	// Copy any other fields that might be useful
-	if url, ok := trmnlResponse["url"]; ok {
-		response["image_url"] = url
-	}
-
-	return response, nil
+	return settings, nil
 }
 
 // FirmwareUpdateResponse represents firmware update information for a device
@@ -1211,20 +973,25 @@ func CurrentScreenHandler(c *gin.Context) {
 	if processor != nil {
 		response, pluginErr = processor.processCurrentPlugin(device, activeItems)
 	} else {
-		// Fallback to old implementation if processor not available
-		response, pluginErr = processCurrentPlugin(device, activeItems)
+		// No processor available - return error
+		pluginErr = fmt.Errorf("unified plugin processor not available")
 	}
 	
 	// Convert relative image URLs to absolute URLs
 	if response != nil {
 		if imageURL, exists := response["image_url"]; exists {
 			if imageURLStr, ok := imageURL.(string); ok {
-				// Handle both "/static/rendered/" and "static/rendered/" cases
+				// Handle various relative URL patterns
 				if strings.HasPrefix(imageURLStr, "/static/rendered/") {
 					response["image_url"] = baseURL + imageURLStr
 				} else if strings.HasPrefix(imageURLStr, "static/rendered/") {
 					response["image_url"] = baseURL + "/" + imageURLStr
 				} else if strings.HasPrefix(imageURLStr, "/images/") {
+					response["image_url"] = baseURL + imageURLStr
+				} else if strings.HasPrefix(imageURLStr, "/api/trmnl/devices/") {
+					response["image_url"] = baseURL + imageURLStr
+				} else if strings.HasPrefix(imageURLStr, "/") && !strings.HasPrefix(imageURLStr, "http://") && !strings.HasPrefix(imageURLStr, "https://") {
+					// Any other relative URL starting with /
 					response["image_url"] = baseURL + imageURLStr
 				}
 			}
@@ -1268,58 +1035,6 @@ func CurrentScreenHandler(c *gin.Context) {
 	logging.Debug("[/api/current_screen] Request processing time", "duration", time.Since(startTime))
 
 	c.JSON(http.StatusOK, response)
-}
-
-// processCurrentPlugin processes the current playlist item without advancing the index
-func processCurrentPlugin(device *database.Device, activeItems []database.PlaylistItem) (gin.H, error) {
-	if len(activeItems) == 0 {
-		return nil, fmt.Errorf("no active playlist items")
-	}
-
-	// Get the current item based on existing LastPlaylistIndex (don't advance)
-	currentIndex := device.LastPlaylistIndex
-	if currentIndex < 0 || currentIndex >= len(activeItems) {
-		currentIndex = 0 // Default to first item if index is invalid
-	}
-
-	item := activeItems[currentIndex]
-
-	// Get the user plugin details
-	db := database.GetDB()
-	pluginService := database.NewPluginService(db)
-
-	userPlugin, err := pluginService.GetUserPluginByID(item.UserPluginID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user plugin: %w", err)
-	}
-
-	var response gin.H
-	var pluginErr error
-
-	// Handle different plugin types (same logic as processActivePlugins but without index update)
-	switch userPlugin.Plugin.Type {
-	case "redirect":
-		response, pluginErr = processRedirectPlugin(userPlugin)
-	case "alias":
-		response, pluginErr = processAliasPlugin(userPlugin)
-	case "core_proxy":
-		response, pluginErr = processCoreProxyPlugin(device, userPlugin)
-	default:
-		response = gin.H{
-			"image_url": getImageURLForDevice(device),
-			"filename":  "display.png",
-		}
-	}
-
-	// Apply duration override if no refresh_rate was provided by plugin
-	if pluginErr == nil {
-		// Apply duration override (takes priority over plugin refresh_rate)
-		if item.DurationOverride != nil {
-			response["refresh_rate"] = *item.DurationOverride
-		}
-	}
-
-	return response, pluginErr
 }
 
 // isInSleepPeriod checks if the current time falls within the device's sleep schedule

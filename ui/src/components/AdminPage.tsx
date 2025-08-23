@@ -235,8 +235,8 @@ interface Plugin {
 interface PluginStats {
   total_plugins: number;
   active_plugins: number;
-  total_user_plugins: number;
-  active_user_plugins: number;
+  total_plugin_instances: number;
+  active_plugin_instances: number;
 }
 
 interface FirmwareVersion {
@@ -1333,7 +1333,7 @@ export function AdminPage() {
   // Plugin management functions
   const fetchPlugins = useCallback(async () => {
     try {
-      const response = await fetch("/api/plugins", {
+      const response = await fetch("/api/plugin-definitions", {
         credentials: "include",
       });
       if (response.ok) {
@@ -2579,10 +2579,10 @@ export function AdminPage() {
                       </CardHeader>
                       <CardContent>
                         <div className="text-2xl font-bold">
-                          {pluginStats?.total_user_plugins || 0}
+                          {pluginStats?.total_plugin_instances || 0}
                         </div>
                         <p className="text-xs text-muted-foreground">
-                          {pluginStats?.active_user_plugins || 0} active
+                          {pluginStats?.active_plugin_instances || 0} active
                         </p>
                       </CardContent>
                     </Card>
@@ -2592,7 +2592,7 @@ export function AdminPage() {
                       </CardHeader>
                       <CardContent>
                         <div className="text-2xl font-bold">
-                          {systemStatus ? Math.round((pluginStats?.total_user_plugins || 0) / Math.max(systemStatus.database.total_users, 1) * 10) / 10 : 0}
+                          {systemStatus ? Math.round((pluginStats?.total_plugin_instances || 0) / Math.max(systemStatus.database.total_users, 1) * 10) / 10 : 0}
                         </div>
                       </CardContent>
                     </Card>

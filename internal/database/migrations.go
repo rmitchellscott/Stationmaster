@@ -2,7 +2,6 @@ package database
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/go-gormigrate/gormigrate/v2"
 	"github.com/rmitchellscott/stationmaster/internal/logging"
@@ -31,7 +30,7 @@ func RunMigrations(logPrefix string) error {
 				return tx.Migrator().AddColumn(&Device{}, "model_name")
 			},
 		},
-		{
+		/*{
 			ID: "20250822_cleanup_legacy_plugins",
 			Migrate: func(tx *gorm.DB) error {
 				logging.Info("[MIGRATION] Cleaning up legacy plugin entries from old migration system")
@@ -97,7 +96,7 @@ func RunMigrations(logPrefix string) error {
 				logging.Warn("[MIGRATION] Cannot rollback legacy plugin cleanup - plugins were permanently deleted")
 				return nil
 			},
-		},
+		},*/
 		{
 			ID: "20250822_create_private_plugins",
 			Migrate: func(tx *gorm.DB) error {

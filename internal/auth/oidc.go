@@ -88,7 +88,7 @@ func InitOIDC() error {
 			break
 		}
 
-		logging.Info("[STARTUP] OIDC provider not ready, retrying in %v (attempt %d/%d)...", retryDelay, i+1, maxRetries)
+		logging.Info("[STARTUP] OIDC provider not ready, retrying", "retry_delay", retryDelay, "attempt", i+1, "max_retries", maxRetries)
 
 		time.Sleep(retryDelay)
 	}

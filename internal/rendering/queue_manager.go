@@ -10,7 +10,6 @@ import (
 
 	"github.com/rmitchellscott/stationmaster/internal/database"
 	"github.com/rmitchellscott/stationmaster/internal/logging"
-	"github.com/rmitchellscott/stationmaster/internal/plugins"
 )
 
 // QueueManager handles scheduling and managing render jobs
@@ -29,14 +28,14 @@ func (qm *QueueManager) SetWorkerPool(workerPool *RenderWorkerPool) {
 	qm.workerPool = workerPool
 }
 
-// ScheduleRender schedules a render job for a user plugin
-func (qm *QueueManager) ScheduleRender(ctx context.Context, userPluginID uuid.UUID, priority int, scheduledFor time.Time) error {
+// ScheduleRender schedules a render job for a plugin instance
+func (qm *QueueManager) ScheduleRender(ctx context.Context, pluginInstanceID uuid.UUID, priority int, scheduledFor time.Time) error {
 	renderJob := database.RenderQueue{
-		ID:           uuid.New(),
-		UserPluginID: userPluginID,
-		Priority:     priority,
-		ScheduledFor: scheduledFor,
-		Status:       "pending",
+		ID:               uuid.New(),
+		PluginInstanceID: pluginInstanceID,
+		Priority:         priority,
+		ScheduledFor:     scheduledFor,
+		Status:           "pending",
 	}
 
 	err := qm.db.WithContext(ctx).Create(&renderJob).Error
@@ -44,36 +43,36 @@ func (qm *QueueManager) ScheduleRender(ctx context.Context, userPluginID uuid.UU
 		return fmt.Errorf("failed to create render job: %w", err)
 	}
 
-	logging.Info("[QUEUE_MANAGER] Scheduled render job", "plugin_id", userPluginID, "scheduled_for", scheduledFor.Format(time.RFC3339))
+	logging.Info("[QUEUE_MANAGER] Scheduled render job", "plugin_id", pluginInstanceID, "scheduled_for", scheduledFor.Format(time.RFC3339))
 
 	return nil
 }
 
 // ScheduleImmediateRender schedules a high-priority immediate render
-func (qm *QueueManager) ScheduleImmediateRender(ctx context.Context, userPluginID uuid.UUID) error {
-	return qm.ScheduleImmediateRenderWithOptions(ctx, userPluginID, true)
+func (qm *QueueManager) ScheduleImmediateRender(ctx context.Context, pluginInstanceID uuid.UUID) error {
+	return qm.ScheduleImmediateRenderWithOptions(ctx, pluginInstanceID, true)
 }
 
 // ScheduleImmediateRenderWithOptions schedules an immediate render with channel bypass option
-func (qm *QueueManager) ScheduleImmediateRenderWithOptions(ctx context.Context, userPluginID uuid.UUID, bypassQueue bool) error {
+func (qm *QueueManager) ScheduleImmediateRenderWithOptions(ctx context.Context, pluginInstanceID uuid.UUID, bypassQueue bool) error {
 	// If worker pool is available and we want to bypass the database queue for speed
 	if bypassQueue && qm.workerPool != nil {
 		job := RenderJob{
-			ID:           uuid.New(),
-			UserPluginID: userPluginID,
-			Priority:     100,
-			ScheduledFor: time.Now(),
-			Attempts:     0,
-			Context:      ctx,
+			ID:               uuid.New(),
+			PluginInstanceID: pluginInstanceID,
+			Priority:         100,
+			ScheduledFor:     time.Now(),
+			Attempts:         0,
+			Context:          ctx,
 		}
 		
 		// First save to database for tracking
 		dbJob := database.RenderQueue{
-			ID:           job.ID,
-			UserPluginID: userPluginID,
-			Priority:     100,
-			ScheduledFor: time.Now(),
-			Status:       "pending",
+			ID:               job.ID,
+			PluginInstanceID: pluginInstanceID,
+			Priority:         100,
+			ScheduledFor:     time.Now(),
+			Status:           "pending",
 		}
 		
 		if err := qm.db.WithContext(ctx).Create(&dbJob).Error; err != nil {
@@ -83,73 +82,67 @@ func (qm *QueueManager) ScheduleImmediateRenderWithOptions(ctx context.Context, 
 		// Then submit directly to worker pool
 		if qm.workerPool.SubmitJob(job) {
 			logging.Info("[QUEUE_MANAGER] Submitted immediate render job directly to worker pool", 
-				"plugin_id", userPluginID, "job_id", job.ID)
+				"plugin_id", pluginInstanceID, "job_id", job.ID)
 			return nil
 		} else {
 			logging.Warn("[QUEUE_MANAGER] Worker pool channel full, falling back to database queue", 
-				"plugin_id", userPluginID)
+				"plugin_id", pluginInstanceID)
 		}
 	}
 	
 	// Fallback to regular database scheduling
-	return qm.ScheduleRender(ctx, userPluginID, 100, time.Now())
+	return qm.ScheduleRender(ctx, pluginInstanceID, 100, time.Now())
 }
 
-// ScheduleInitialRenders schedules initial render jobs for all active user plugins
+// ScheduleInitialRenders schedules initial render jobs for all active plugin instances
 func (qm *QueueManager) ScheduleInitialRenders(ctx context.Context) error {
-	var userPlugins []database.UserPlugin
+	var pluginInstances []database.PluginInstance
 	err := qm.db.WithContext(ctx).
-		Preload("Plugin").
+		Preload("PluginDefinition").
 		Where("is_active = ?", true).
-		Find(&userPlugins).Error
+		Find(&pluginInstances).Error
 	if err != nil {
-		return fmt.Errorf("failed to load active user plugins: %w", err)
+		return fmt.Errorf("failed to load active plugin instances: %w", err)
 	}
 
-	logging.Info("[QUEUE_MANAGER] Scheduling initial renders", "plugin_count", len(userPlugins))
+	logging.Info("[QUEUE_MANAGER] Scheduling initial renders", "plugin_count", len(pluginInstances))
 
-	for _, userPlugin := range userPlugins {
-		// Check if plugin requires processing before scheduling
-		plugin, exists := plugins.Get(userPlugin.Plugin.Type)
-		if !exists {
-			logging.Debug("[QUEUE_MANAGER] Skipping plugin - type not found in registry", "plugin_type", userPlugin.Plugin.Type)
-			continue
-		}
-
-		if !plugin.RequiresProcessing() {
-			logging.Debug("[QUEUE_MANAGER] Skipping plugin - doesn't require processing", "plugin_type", userPlugin.Plugin.Type)
+	for _, pluginInstance := range pluginInstances {
+		// Check if plugin requires processing using the unified field
+		if !pluginInstance.PluginDefinition.RequiresProcessing {
+			logging.Debug("[QUEUE_MANAGER] Skipping plugin - doesn't require processing", "plugin_type", pluginInstance.PluginDefinition.Identifier)
 			continue
 		}
 
 		// Check if there's already a pending job for this plugin
 		var existingCount int64
 		err := qm.db.WithContext(ctx).Model(&database.RenderQueue{}).
-			Where("user_plugin_id = ? AND status = ?", userPlugin.ID, "pending").
+			Where("plugin_instance_id = ? AND status = ?", pluginInstance.ID, "pending").
 			Count(&existingCount).Error
 		if err != nil {
-			logging.Error("[QUEUE_MANAGER] Failed to check existing jobs", "plugin_id", userPlugin.ID, "error", err)
+			logging.Error("[QUEUE_MANAGER] Failed to check existing jobs", "plugin_id", pluginInstance.ID, "error", err)
 			continue
 		}
 
 		if existingCount > 0 {
-			logging.Debug("[QUEUE_MANAGER] Skipping plugin - already has pending job", "plugin_id", userPlugin.ID)
+			logging.Debug("[QUEUE_MANAGER] Skipping plugin - already has pending job", "plugin_id", pluginInstance.ID)
 			continue
 		}
 
 		// Schedule immediate render for plugin activation
-		if err := qm.ScheduleImmediateRender(ctx, userPlugin.ID); err != nil {
-			logging.Error("[QUEUE_MANAGER] Failed to schedule render", "plugin_id", userPlugin.ID, "error", err)
+		if err := qm.ScheduleImmediateRender(ctx, pluginInstance.ID); err != nil {
+			logging.Error("[QUEUE_MANAGER] Failed to schedule render", "plugin_id", pluginInstance.ID, "error", err)
 		}
 	}
 
 	return nil
 }
 
-// UpdateRefreshInterval updates the refresh interval for a user plugin and reschedules
-func (qm *QueueManager) UpdateRefreshInterval(ctx context.Context, userPluginID uuid.UUID, newInterval int) error {
-	// Update the user plugin refresh interval
-	err := qm.db.WithContext(ctx).Model(&database.UserPlugin{}).
-		Where("id = ?", userPluginID).
+// UpdateRefreshInterval updates the refresh interval for a plugin instance and reschedules
+func (qm *QueueManager) UpdateRefreshInterval(ctx context.Context, pluginInstanceID uuid.UUID, newInterval int) error {
+	// Update the plugin instance refresh interval
+	err := qm.db.WithContext(ctx).Model(&database.PluginInstance{}).
+		Where("id = ?", pluginInstanceID).
 		Update("refresh_interval", newInterval).Error
 	if err != nil {
 		return fmt.Errorf("failed to update refresh interval: %w", err)
@@ -157,7 +150,7 @@ func (qm *QueueManager) UpdateRefreshInterval(ctx context.Context, userPluginID 
 
 	// Cancel any pending jobs for this plugin
 	err = qm.db.WithContext(ctx).Model(&database.RenderQueue{}).
-		Where("user_plugin_id = ? AND status = ?", userPluginID, "pending").
+		Where("plugin_instance_id = ? AND status = ?", pluginInstanceID, "pending").
 		Update("status", "cancelled").Error
 	if err != nil {
 		logging.Error("[QUEUE_MANAGER] Failed to cancel pending jobs", "error", err)
@@ -165,19 +158,19 @@ func (qm *QueueManager) UpdateRefreshInterval(ctx context.Context, userPluginID 
 
 	// Schedule a new job with the updated interval
 	nextRender := time.Now().Add(time.Duration(newInterval) * time.Second)
-	return qm.ScheduleRender(ctx, userPluginID, 0, nextRender)
+	return qm.ScheduleRender(ctx, pluginInstanceID, 0, nextRender)
 }
 
 // CancelPendingJobs cancels all pending jobs for a user plugin
-func (qm *QueueManager) CancelPendingJobs(ctx context.Context, userPluginID uuid.UUID) error {
+func (qm *QueueManager) CancelPendingJobs(ctx context.Context, pluginInstanceID uuid.UUID) error {
 	err := qm.db.WithContext(ctx).Model(&database.RenderQueue{}).
-		Where("user_plugin_id = ? AND status = ?", userPluginID, "pending").
+		Where("plugin_instance_id = ? AND status = ?", pluginInstanceID, "pending").
 		Update("status", "cancelled").Error
 	if err != nil {
 		return fmt.Errorf("failed to cancel pending jobs: %w", err)
 	}
 
-	logging.Info("[QUEUE_MANAGER] Cancelled pending jobs for plugin", "plugin_id", userPluginID)
+	logging.Info("[QUEUE_MANAGER] Cancelled pending jobs for plugin", "plugin_id", pluginInstanceID)
 	return nil
 }
 

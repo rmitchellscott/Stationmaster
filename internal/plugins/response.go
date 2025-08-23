@@ -125,3 +125,27 @@ func GetRefreshRate(response PluginResponse) (int, bool) {
 	
 	return 0, false
 }
+
+// CreateHTMLResponse creates a response containing HTML data
+func CreateHTMLResponse(html string) PluginResponse {
+	return gin.H{
+		"type":    "html",
+		"content": html,
+	}
+}
+
+// IsHTMLResponse checks if a response is an HTML response
+func IsHTMLResponse(response PluginResponse) bool {
+	if responseType, ok := response["type"].(string); ok {
+		return responseType == "html"
+	}
+	return false
+}
+
+// GetHTMLContent extracts HTML content from a response
+func GetHTMLContent(response PluginResponse) (string, bool) {
+	if content, ok := response["content"].(string); ok {
+		return content, true
+	}
+	return "", false
+}

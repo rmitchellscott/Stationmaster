@@ -89,7 +89,7 @@ import {
 } from "lucide-react";
 import { Device, isDeviceCurrentlySleeping } from "@/utils/deviceHelpers";
 
-interface UserPlugin {
+interface PluginInstance {
   id: string;
   user_id: string;
   plugin_id: string;
@@ -109,14 +109,14 @@ interface UserPlugin {
 interface PlaylistItem {
   id: string;
   playlist_id: string;
-  user_plugin_id: string;
+  plugin_instance_id: string;
   order_index: number;
   is_visible: boolean;
   importance: boolean;
   duration_override?: number;
   created_at: string;
   updated_at: string;
-  user_plugin?: UserPlugin;
+  plugin_instance?: PluginInstance;
   schedules?: any[];
   is_sleep_mode?: boolean; // Virtual field for sleep mode items
   sleep_schedule_text?: string; // Schedule text for sleep mode items
@@ -285,7 +285,7 @@ const createSleepModeItem = (sleepConfig: any, userTimezone: string): PlaylistIt
   return {
     id: 'virtual-sleep-mode',
     playlist_id: '',
-    user_plugin_id: '',
+    plugin_instance_id: '',
     order_index: -1, 
     is_visible: true,
     importance: false,
@@ -293,7 +293,7 @@ const createSleepModeItem = (sleepConfig: any, userTimezone: string): PlaylistIt
     updated_at: '',
     is_sleep_mode: true,
     sleep_schedule_text: fullScheduleText, 
-    user_plugin: {
+    plugin_instance: {
       id: 'sleep-mode',
       user_id: '',
       plugin_id: '',
@@ -431,10 +431,10 @@ function SortableTableRow({
       <TableCell>
         <div>
           <div className="font-medium">
-            {item.user_plugin?.name || "Unnamed Instance"}
+            {item.plugin_instance?.name || "Unnamed Instance"}
           </div>
           <div className="text-sm text-muted-foreground">
-            {item.user_plugin?.plugin?.name || "Unknown Plugin"}
+            {item.plugin_instance?.plugin_definition?.name || "Unknown Plugin"}
           </div>
           <div className="text-xs text-muted-foreground md:hidden mt-1">
             <span className="flex items-center gap-1">
@@ -795,13 +795,13 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
     
     return localTime; // Returns HH:MM
   };
-  const [userPlugins, setUserPlugins] = useState<UserPlugin[]>([]);
+  const [pluginInstances, setPluginInstances] = useState<PluginInstance[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Add item dialog
   const [showAddDialog, setShowAddDialog] = useState(false);
-  const [selectedUserPlugin, setSelectedUserPlugin] = useState<UserPlugin | null>(null);
+  const [selectedPluginInstance, setSelectedPluginInstance] = useState<PluginInstance | null>(null);
   const [addLoading, setAddLoading] = useState(false);
 
   // Edit item state (now used in schedule dialog)
@@ -984,14 +984,14 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
     }
   };
 
-  const fetchUserPlugins = async () => {
+  const fetchPluginInstances = async () => {
     try {
-      const response = await fetch("/api/user-plugins", {
+      const response = await fetch("/api/plugin-instances", {
         credentials: "include",
       });
       if (response.ok) {
         const data = await response.json();
-        setUserPlugins(data.user_plugins || []);
+        setPluginInstances(data.plugin_instances || []);
       }
     } catch (error) {
       console.error("Failed to fetch user plugins:", error);
@@ -999,7 +999,7 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
   };
 
   const addPlaylistItem = async () => {
-    if (!selectedUserPlugin || !selectedDeviceId) return;
+    if (!selectedPluginInstance || !selectedDeviceId) return;
 
     try {
       setAddLoading(true);
@@ -1022,13 +1022,13 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
             },
             credentials: "include",
             body: JSON.stringify({
-              user_plugin_id: selectedUserPlugin.id,
+              plugin_instance_id: selectedPluginInstance.id,
             }),
           });
 
           if (response.ok) {
             setShowAddDialog(false);
-            setSelectedUserPlugin(null);
+            setSelectedPluginInstance(null);
             await fetchPlaylistItems();
             onUpdate?.();
           } else {
@@ -1276,15 +1276,15 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
     }
   };
 
-  const getAvailableUserPlugins = () => {
-    const usedPluginIds = playlistItems.map(item => item.user_plugin_id);
-    return userPlugins.filter(plugin => !usedPluginIds.includes(plugin.id));
+  const getAvailablePluginInstances = () => {
+    const usedPluginIds = playlistItems.map(item => item.plugin_instance_id);
+    return pluginInstances.filter(plugin => !usedPluginIds.includes(plugin.id));
   };
 
   useEffect(() => {
     if (selectedDeviceId) {
       fetchPlaylistItems();
-      fetchUserPlugins();
+      fetchPluginInstances();
     }
   }, [selectedDeviceId]);
 
@@ -1368,16 +1368,16 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
               </Button>
               <Button
                 onClick={() => setShowAddDialog(true)}
-                disabled={getAvailableUserPlugins().length === 0}
+                disabled={getAvailablePluginInstances().length === 0}
               >
-                {getAvailableUserPlugins().length === 0 ? "All Plugins Added" : "Add Item"}
+                {getAvailablePluginInstances().length === 0 ? "All Plugins Added" : "Add Item"}
               </Button>
             </>
           )}
         </div>
       </div>
 
-      {getAvailableUserPlugins().length === 0 && playlistItems.length === 0 && (
+      {getAvailablePluginInstances().length === 0 && playlistItems.length === 0 && (
         <Alert>
           <AlertTriangle className="h-4 w-4" />
           <AlertDescription>
@@ -1400,9 +1400,9 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
             </p>
             <Button 
               onClick={() => setShowAddDialog(true)}
-              disabled={getAvailableUserPlugins().length === 0}
+              disabled={getAvailablePluginInstances().length === 0}
             >
-              {getAvailableUserPlugins().length === 0 ? "All Plugins Added" : "Add Item"}
+              {getAvailablePluginInstances().length === 0 ? "All Plugins Added" : "Add Item"}
             </Button>
           </CardContent>
         </Card>
@@ -1485,17 +1485,17 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
             <div>
               <Label>Select Plugin Instance</Label>
               <Select
-                value={selectedUserPlugin?.id || ""}
+                value={selectedPluginInstance?.id || ""}
                 onValueChange={(value) => {
-                  const plugin = userPlugins.find(p => p.id === value);
-                  setSelectedUserPlugin(plugin || null);
+                  const plugin = pluginInstances.find(p => p.id === value);
+                  setSelectedPluginInstance(plugin || null);
                 }}
               >
                 <SelectTrigger className="mt-2">
                   <SelectValue placeholder="Choose a plugin instance..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {getAvailableUserPlugins().map((userPlugin) => (
+                  {getAvailablePluginInstances().map((userPlugin) => (
                     <SelectItem key={userPlugin.id} value={userPlugin.id}>
                       {userPlugin.name}
                     </SelectItem>
@@ -1510,14 +1510,14 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
               variant="outline"
               onClick={() => {
                 setShowAddDialog(false);
-                setSelectedUserPlugin(null);
+                setSelectedPluginInstance(null);
               }}
             >
               Cancel
             </Button>
             <Button
               onClick={addPlaylistItem}
-              disabled={!selectedUserPlugin || addLoading}
+              disabled={!selectedPluginInstance || addLoading}
             >
               {addLoading ? "Adding..." : "Add Item"}
             </Button>
@@ -1531,7 +1531,7 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
           <DialogHeader>
             <DialogTitle>Manage Schedules & Settings</DialogTitle>
             <DialogDescription>
-              Configure schedules and settings for "{scheduleItem?.user_plugin?.name}". 
+              Configure schedules and settings for "{scheduleItem?.plugin_instance?.name}". 
               Multiple schedules can be created for different times and days.
             </DialogDescription>
           </DialogHeader>
@@ -1811,7 +1811,7 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
               Remove Playlist Item
             </AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to remove "{deleteItemDialog.item?.user_plugin?.name || 'this item'}" from the playlist?
+              Are you sure you want to remove "{deleteItemDialog.item?.plugin_instance?.name || 'this item'}" from the playlist?
               <br /><br />
               This will:
               <ul className="list-disc list-outside ml-6 mt-2 space-y-1">

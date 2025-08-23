@@ -268,7 +268,7 @@ func AddPlaylistItemHandler(c *gin.Context) {
 	}
 
 	var req struct {
-		UserPluginID     uuid.UUID `json:"user_plugin_id" binding:"required"`
+		PluginInstanceID uuid.UUID `json:"plugin_instance_id" binding:"required"`
 		Importance       bool      `json:"importance"`
 		DurationOverride *int      `json:"duration_override"`
 	}
@@ -280,7 +280,7 @@ func AddPlaylistItemHandler(c *gin.Context) {
 
 	db := database.GetDB()
 	playlistService := database.NewPlaylistService(db)
-	pluginService := database.NewPluginService(db)
+	unifiedPluginService := database.NewUnifiedPluginService(db)
 
 	// Verify playlist ownership
 	playlist, err := playlistService.GetPlaylistByID(playlistID)
@@ -294,19 +294,19 @@ func AddPlaylistItemHandler(c *gin.Context) {
 		return
 	}
 
-	// Verify user plugin ownership
-	userPlugin, err := pluginService.GetUserPluginByID(req.UserPluginID)
+	// Verify plugin instance ownership
+	pluginInstance, err := unifiedPluginService.GetPluginInstanceByID(req.PluginInstanceID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "User plugin not found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "Plugin instance not found"})
 		return
 	}
 
-	if userPlugin.UserID != userUUID {
+	if pluginInstance.UserID != userUUID {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
 		return
 	}
 
-	item, err := playlistService.AddItemToPlaylist(playlistID, req.UserPluginID, req.Importance, req.DurationOverride)
+	item, err := playlistService.AddItemToPlaylist(playlistID, req.PluginInstanceID, req.Importance, req.DurationOverride)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add item to playlist"})
 		return

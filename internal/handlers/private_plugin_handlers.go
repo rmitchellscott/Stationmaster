@@ -1,18 +1,14 @@
 package handlers
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/rmitchellscott/stationmaster/internal/auth"
 	"github.com/rmitchellscott/stationmaster/internal/database"
-	"github.com/rmitchellscott/stationmaster/internal/plugins"
-	"github.com/rmitchellscott/stationmaster/internal/plugins/private"
 	"github.com/rmitchellscott/stationmaster/internal/validation"
 )
 
@@ -388,121 +384,6 @@ func ValidatePrivatePluginHandler(c *gin.Context) {
 	})
 }
 
-// TestPrivatePluginRequest represents the request to test a private plugin
-type TestPrivatePluginRequest struct {
-	Plugin       CreatePrivatePluginRequest `json:"plugin" binding:"required"`
-	Layout       string                     `json:"layout" binding:"required,oneof=full half_vertical half_horizontal quadrant"`
-	SampleData   map[string]interface{}     `json:"sample_data"`
-	DeviceWidth  int                        `json:"device_width" binding:"required,min=1"`
-	DeviceHeight int                        `json:"device_height" binding:"required,min=1"`
-}
-
-// TestPrivatePluginHandler tests a private plugin with sample data
-func TestPrivatePluginHandler(c *gin.Context) {
-	user, ok := auth.RequireUser(c)
-	if !ok {
-		return
-	}
-
-	var req TestPrivatePluginRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request", "details": err.Error()})
-		return
-	}
-
-	startTime := time.Now()
-
-	// Convert request to private plugin model for testing
-	pollingConfigJSON, _ := json.Marshal(req.Plugin.PollingConfig)
-	formFieldsJSON, _ := json.Marshal(req.Plugin.FormFields)
-
-	testPlugin := &database.PrivatePlugin{
-		ID:              uuid.New(), // Generate temporary ID
-		UserID:          user.ID,
-		Name:            req.Plugin.Name,
-		Description:     req.Plugin.Description,
-		MarkupFull:      req.Plugin.MarkupFull,
-		MarkupHalfVert:  req.Plugin.MarkupHalfVert,
-		MarkupHalfHoriz: req.Plugin.MarkupHalfHoriz,
-		MarkupQuadrant:  req.Plugin.MarkupQuadrant,
-		SharedMarkup:    req.Plugin.SharedMarkup,
-		DataStrategy:    req.Plugin.DataStrategy,
-		PollingConfig:   pollingConfigJSON,
-		FormFields:      formFieldsJSON,
-		Version:         req.Plugin.Version,
-		WebhookToken:    "test-token", // Dummy token for testing
-	}
-
-	// Create a test device model
-	testDevice := &database.Device{
-		ID:   uuid.New(),
-		Name: "Test Device",
-		DeviceModel: &database.DeviceModel{
-			ModelName:    "Test Model",
-			DisplayName:  "Test Model",
-			ScreenWidth:  req.DeviceWidth,
-			ScreenHeight: req.DeviceHeight,
-			BitDepth:     1,
-		},
-	}
-
-	// Create private plugin instance
-	privatePlugin := private.NewPrivatePlugin(testPlugin)
-	
-	// Create plugin context with test data
-	pluginCtx := plugins.PluginContext{
-		Device: testDevice,
-		Settings: make(map[string]interface{}),
-	}
-
-	// Override the data fetching to use sample data
-	testData := req.SampleData
-	if testData == nil {
-		testData = map[string]interface{}{
-			"test": "This is test data",
-			"timestamp": time.Now().Format("2006-01-02 15:04:05"),
-		}
-	}
-
-	// For now, we'll create a simple test that renders with sample data
-	// TODO: Implement proper layout selection in the plugin context
-
-	// Process the plugin to generate the image
-	response, err := privatePlugin.Process(pluginCtx)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Plugin processing failed", 
-			"details": err.Error(),
-		})
-		return
-	}
-
-	// Check if response contains image data
-	if imageData, exists := response["image_data"]; exists {
-		if imageBytes, ok := imageData.([]byte); ok {
-			// Convert to base64 for display
-			base64Image := fmt.Sprintf("data:image/png;base64,%s", base64.StdEncoding.EncodeToString(imageBytes))
-			
-			renderTime := time.Since(startTime)
-			c.JSON(http.StatusOK, gin.H{
-				"message": "Plugin test completed successfully",
-				"preview_url": base64Image,
-				"render_time_ms": renderTime.Milliseconds(),
-				"layout": req.Layout,
-				"dimensions": gin.H{
-					"width": req.DeviceWidth,
-					"height": req.DeviceHeight,
-				},
-			})
-			return
-		}
-	}
-
-	c.JSON(http.StatusInternalServerError, gin.H{
-		"error": "Failed to generate image from plugin",
-		"details": "Plugin did not return valid image data",
-	})
-}
 
 // GetPrivatePluginStatsHandler returns statistics about private plugins (admin only)
 func GetPrivatePluginStatsHandler(c *gin.Context) {

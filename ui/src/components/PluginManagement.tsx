@@ -81,7 +81,7 @@ interface Plugin {
   updated_at: string;
 }
 
-interface UserPlugin {
+interface PluginInstance {
   id: string;
   user_id: string;
   plugin_id: string;
@@ -116,7 +116,7 @@ interface SortState {
 
 export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagementProps) {
   const { t } = useTranslation();
-  const [userPlugins, setUserPlugins] = useState<UserPlugin[]>([]);
+  const [pluginInstances, setPluginInstances] = useState<PluginInstance[]>([]);
   const [plugins, setPlugins] = useState<Plugin[]>([]);
   const [refreshRateOptions, setRefreshRateOptions] = useState<RefreshRateOption[]>([]);
   const [loading, setLoading] = useState(false);
@@ -154,7 +154,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
 
   // Edit plugin dialog
   const [showEditDialog, setShowEditDialog] = useState(false);
-  const [editUserPlugin, setEditUserPlugin] = useState<UserPlugin | null>(null);
+  const [editPluginInstance, setEditPluginInstance] = useState<PluginInstance | null>(null);
   const [editInstanceName, setEditInstanceName] = useState("");
   const [editInstanceSettings, setEditInstanceSettings] = useState<Record<string, any>>({});
   const [editInstanceRefreshRate, setEditInstanceRefreshRate] = useState<number>(86400);
@@ -168,7 +168,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
   // Delete confirmation dialog
   const [deletePluginDialog, setDeletePluginDialog] = useState<{
     isOpen: boolean;
-    plugin: UserPlugin | null;
+    plugin: PluginInstance | null;
   }>({ isOpen: false, plugin: null });
 
   // Private plugin management state
@@ -177,17 +177,17 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
   const [editingPrivatePlugin, setEditingPrivatePlugin] = useState<any | null>(null);
   const [previewingPrivatePlugin, setPreviewingPrivatePlugin] = useState<any | null>(null);
 
-  const fetchUserPlugins = async () => {
+  const fetchPluginInstances = async () => {
     try {
       setLoading(true);
-      const response = await fetch("/api/user-plugins", {
+      const response = await fetch("/api/plugin-instances", {
         credentials: "include",
       });
       if (response.ok) {
         const data = await response.json();
-        setUserPlugins(data.user_plugins || []);
+        setPluginInstances(data.plugin_instances || []);
       } else {
-        setError("Failed to fetch user plugins");
+        setError("Failed to fetch plugin instances");
       }
     } catch (error) {
       setError("Network error occurred");
@@ -198,7 +198,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
 
   const fetchPlugins = async () => {
     try {
-      const response = await fetch("/api/plugins", {
+      const response = await fetch("/api/plugin-definitions", {
         credentials: "include",
       });
       if (response.ok) {
@@ -212,7 +212,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
 
   const fetchRefreshRateOptions = async () => {
     try {
-      const response = await fetch("/api/plugins/refresh-rate-options", {
+      const response = await fetch("/api/plugin-definitions/refresh-rate-options", {
         credentials: "include",
       });
       if (response.ok) {
@@ -231,7 +231,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
       .replace(/validation failed: /, '');
   };
 
-  const createUserPlugin = async () => {
+  const createPluginInstance = async () => {
     if (!selectedPlugin || !instanceName.trim()) {
       setCreateDialogError("Please provide a name for the plugin instance");
       return;
@@ -242,7 +242,8 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
       setCreateDialogError(null);
 
       const requestBody: any = {
-        plugin_type: selectedPlugin.type,
+        definition_id: selectedPlugin.id,
+        definition_type: selectedPlugin.type, // "system" or "private"
         name: instanceName.trim(),
         settings: instanceSettings,
       };
@@ -252,7 +253,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
         requestBody.refresh_interval = instanceRefreshRate;
       }
 
-      const response = await fetch("/api/user-plugins", {
+      const response = await fetch("/api/plugin-instances", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -269,7 +270,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
         setInstanceSettings({});
         setInstanceRefreshRate(86400);
         setCreateDialogError(null);
-        await fetchUserPlugins();
+        await fetchPluginInstances();
         onUpdate?.();
       } else {
         const errorData = await response.json();
@@ -284,24 +285,24 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
   };
 
   const hasPluginInstanceChanges = () => {
-    if (!editUserPlugin) return false;
+    if (!editPluginInstance) return false;
     
     // Parse original settings
     let originalSettings = {};
     try {
-      originalSettings = editUserPlugin.settings ? JSON.parse(editUserPlugin.settings) : {};
+      originalSettings = editPluginInstance.settings ? JSON.parse(editPluginInstance.settings) : {};
     } catch (e) {
       originalSettings = {};
     }
     
     return (
-      editInstanceName.trim() !== editUserPlugin.name ||
+      editInstanceName.trim() !== editPluginInstance.name ||
       JSON.stringify(editInstanceSettings) !== JSON.stringify(originalSettings)
     );
   };
 
   const updatePluginInstance = async () => {
-    if (!editUserPlugin || !editInstanceName.trim()) {
+    if (!editPluginInstance || !editInstanceName.trim()) {
       setError("Please provide a name for the plugin instance");
       return;
     }
@@ -316,11 +317,11 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
       };
 
       // Only include refresh_interval for plugins that require processing
-      if (editUserPlugin.plugin?.requires_processing) {
+      if (editPluginInstance.plugin?.requires_processing) {
         requestBody.refresh_interval = editInstanceRefreshRate;
       }
 
-      const response = await fetch(`/api/user-plugins/${editUserPlugin.id}`, {
+      const response = await fetch(`/api/plugin-instances/${editPluginInstance.id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -332,11 +333,11 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
       if (response.ok) {
         setSuccessMessage("Plugin instance updated successfully!");
         setShowEditDialog(false);
-        setEditUserPlugin(null);
+        setEditPluginInstance(null);
         setEditInstanceName("");
         setEditInstanceSettings({});
         setEditInstanceRefreshRate(86400);
-        await fetchUserPlugins();
+        await fetchPluginInstances();
         onUpdate?.();
       } else {
         const errorData = await response.json();
@@ -350,8 +351,8 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
     }
   };
 
-  const forceRefreshUserPlugin = async () => {
-    if (!editUserPlugin) {
+  const forceRefreshPluginInstance = async () => {
+    if (!editPluginInstance) {
       setEditDialogError("No plugin selected");
       return;
     }
@@ -361,7 +362,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
       setEditDialogError(null);
       setEditDialogSuccess(null);
 
-      const response = await fetch(`/api/user-plugins/${editUserPlugin.id}/force-refresh`, {
+      const response = await fetch(`/api/plugin-instances/${editPluginInstance.id}/force-refresh`, {
         method: "POST",
         credentials: "include",
       });
@@ -379,16 +380,16 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
     }
   };
 
-  const deleteUserPlugin = async (userPluginId: string) => {
+  const deletePluginInstance = async (userPluginId: string) => {
     try {
       setError(null);
-      const response = await fetch(`/api/user-plugins/${userPluginId}`, {
+      const response = await fetch(`/api/plugin-instances/${userPluginId}`, {
         method: "DELETE",
         credentials: "include",
       });
 
       if (response.ok) {
-        await fetchUserPlugins();
+        await fetchPluginInstances();
         onUpdate?.();
       } else {
         const errorData = await response.json();
@@ -400,7 +401,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
   };
 
   useEffect(() => {
-    fetchUserPlugins();
+    fetchPluginInstances();
     fetchPlugins();
     fetchRefreshRateOptions();
   }, [selectedDeviceId]);
@@ -443,9 +444,9 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
     }));
   };
 
-  // Sort the userPlugins array based on current sort state
-  const sortedUserPlugins = React.useMemo(() => {
-    const sorted = [...userPlugins].sort((a, b) => {
+  // Sort the pluginInstances array based on current sort state
+  const sortedPluginInstances = React.useMemo(() => {
+    const sorted = [...pluginInstances].sort((a, b) => {
       let aValue: any;
       let bValue: any;
 
@@ -480,7 +481,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
     });
 
     return sorted;
-  }, [userPlugins, sortState]);
+  }, [pluginInstances, sortState]);
 
   // Private plugin handlers
   const handleCreatePrivatePlugin = () => {
@@ -834,7 +835,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
             <div className="flex items-center justify-center py-8">
               <div className="text-muted-foreground">Loading plugins...</div>
             </div>
-          ) : userPlugins.length === 0 ? (
+          ) : pluginInstances.length === 0 ? (
         <Card>
           <CardContent className="text-center py-8">
             <Puzzle className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
@@ -925,7 +926,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {sortedUserPlugins.map((userPlugin) => (
+                {sortedPluginInstances.map((userPlugin) => (
                   <TableRow key={userPlugin.id}>
                     <TableCell className="font-medium">
                       <div>
@@ -956,7 +957,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                           size="sm"
                           variant="outline"
                           onClick={() => {
-                            setEditUserPlugin(userPlugin);
+                            setEditPluginInstance(userPlugin);
                             setEditInstanceName(userPlugin.name);
                             
                             // Parse settings from JSON string to object
@@ -1052,9 +1053,21 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                           <CardHeader className="pb-2">
                             <CardTitle className="flex items-start justify-between gap-2">
                               <div className="min-w-0 flex-1">
-                                <div className="text-base font-semibold truncate">{plugin.name}</div>
+                                <div className="flex items-center gap-2 mb-1">
+                                  <div className="text-base font-semibold truncate">{plugin.name}</div>
+                                  <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                                    plugin.type === 'system' 
+                                      ? 'bg-blue-100 text-blue-800' 
+                                      : 'bg-purple-100 text-purple-800'
+                                  }`}>
+                                    {plugin.type === 'system' ? 'System' : 'Private'}
+                                  </span>
+                                </div>
                                 <div className="text-xs text-muted-foreground">
                                   v{plugin.version} by {plugin.author}
+                                  {plugin.instance_count !== undefined && (
+                                    <span className="ml-2">• {plugin.instance_count} instance{plugin.instance_count !== 1 ? 's' : ''}</span>
+                                  )}
                                 </div>
                               </div>
                             </CardTitle>
@@ -1192,7 +1205,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
             </Button>
             {selectedPlugin && (
               <Button
-                onClick={createUserPlugin}
+                onClick={createPluginInstance}
                 disabled={!instanceName.trim() || createLoading}
               >
                 {createLoading ? "Creating..." : "Create Instance"}
@@ -1218,7 +1231,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
           <DialogHeader>
             <DialogTitle>Edit Plugin Instance</DialogTitle>
             <DialogDescription>
-              Update the settings for "{editUserPlugin?.name}".
+              Update the settings for "{editPluginInstance?.name}".
             </DialogDescription>
           </DialogHeader>
 
@@ -1248,7 +1261,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
               />
             </div>
 
-            {editUserPlugin?.plugin?.requires_processing && (
+            {editPluginInstance?.plugin?.requires_processing && (
               <div>
                 <Label htmlFor="edit-instance-refresh-rate">Refresh Rate</Label>
                 <div className="flex gap-2 mt-2">
@@ -1269,7 +1282,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                   </Select>
                   <Button
                     variant="outline"
-                    onClick={forceRefreshUserPlugin}
+                    onClick={forceRefreshPluginInstance}
                     disabled={forceRefreshLoading}
                     className="gap-2"
                   >
@@ -1280,7 +1293,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
               </div>
             )}
 
-            {editUserPlugin?.plugin && (
+            {editPluginInstance?.plugin && (
               <>
                 <Separator />
                 <Card>
@@ -1292,7 +1305,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                   </CardHeader>
                   <CardContent className="pt-0">
                     {renderSettingsForm(
-                      editUserPlugin.plugin,
+                      editPluginInstance.plugin,
                       editInstanceSettings,
                       (key: string, value: any) => {
                         setEditInstanceSettings(prev => ({ ...prev, [key]: value }));
@@ -1362,7 +1375,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
               variant="destructive"
               onClick={async () => {
                 if (deletePluginDialog.plugin) {
-                  await deleteUserPlugin(deletePluginDialog.plugin.id);
+                  await deletePluginInstance(deletePluginDialog.plugin.id);
                   setDeletePluginDialog({ isOpen: false, plugin: null });
                 }
               }}

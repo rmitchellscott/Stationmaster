@@ -8,19 +8,19 @@ import (
 )
 
 // NewPluginContext creates a new plugin context with parsed settings
-func NewPluginContext(device *database.Device, userPlugin *database.UserPlugin) (PluginContext, error) {
+func NewPluginContext(device *database.Device, pluginInstance *database.PluginInstance) (PluginContext, error) {
 	settings := make(map[string]interface{})
 	
-	if userPlugin.Settings != "" {
-		if err := json.Unmarshal([]byte(userPlugin.Settings), &settings); err != nil {
+	if len(pluginInstance.Settings) > 0 {
+		if err := json.Unmarshal(pluginInstance.Settings, &settings); err != nil {
 			return PluginContext{}, fmt.Errorf("failed to parse plugin settings: %w", err)
 		}
 	}
 	
 	return PluginContext{
-		Device:     device,
-		UserPlugin: userPlugin,
-		Settings:   settings,
+		Device:         device,
+		PluginInstance: pluginInstance,
+		Settings:       settings,
 	}, nil
 }
 

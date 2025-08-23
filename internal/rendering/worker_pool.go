@@ -17,12 +17,12 @@ import (
 
 // RenderJob represents a job to be processed by the worker pool
 type RenderJob struct {
-	ID           uuid.UUID
-	UserPluginID uuid.UUID
-	Priority     int
-	ScheduledFor time.Time
-	Attempts     int
-	Context      context.Context
+	ID               uuid.UUID
+	PluginInstanceID uuid.UUID
+	Priority         int
+	ScheduledFor     time.Time
+	Attempts         int
+	Context          context.Context
 }
 
 // JobResult represents the result of a render job
@@ -263,12 +263,12 @@ func (p *RenderWorkerPool) loadPendingJobs(ctx context.Context) error {
 		WHERE status = ? AND scheduled_for <= ?
 		AND id = (
 			SELECT id FROM render_queues rq2
-			WHERE rq2.user_plugin_id = rq1.user_plugin_id
+			WHERE rq2.plugin_instance_id = rq1.plugin_instance_id
 			AND rq2.status = ? AND rq2.scheduled_for <= ?
 			ORDER BY priority DESC, scheduled_for ASC
 			LIMIT 1
 		)
-		GROUP BY user_plugin_id, id
+		GROUP BY plugin_instance_id, id
 		LIMIT 20
 	`, "pending", time.Now(), "pending", time.Now()).Scan(&jobIDs).Error
 
@@ -300,12 +300,12 @@ func (p *RenderWorkerPool) loadPendingJobs(ctx context.Context) error {
 	submitted := 0
 	for _, dbJob := range dbJobs {
 		job := RenderJob{
-			ID:           dbJob.ID,
-			UserPluginID: dbJob.UserPluginID,
-			Priority:     dbJob.Priority,
-			ScheduledFor: dbJob.ScheduledFor,
-			Attempts:     dbJob.Attempts,
-			Context:      ctx,
+			ID:               dbJob.ID,
+			PluginInstanceID: dbJob.PluginInstanceID,
+			Priority:         dbJob.Priority,
+			ScheduledFor:     dbJob.ScheduledFor,
+			Attempts:         dbJob.Attempts,
+			Context:          ctx,
 		}
 		
 		if p.SubmitJob(job) {
@@ -393,7 +393,7 @@ func (p *RenderWorkerPool) broadcastJobUpdate(ctx context.Context, jobID uuid.UU
 	// Get user context from job to determine who to notify
 	var job database.RenderQueue
 	dbErr := p.db.WithContext(ctx).
-		Preload("UserPlugin.User").
+		Preload("PluginInstance.User").
 		First(&job, jobID).Error
 	if dbErr != nil {
 		logging.Error("[WORKER_POOL] Failed to load job for SSE broadcast", "job_id", jobID, "error", dbErr)
@@ -403,7 +403,7 @@ func (p *RenderWorkerPool) broadcastJobUpdate(ctx context.Context, jobID uuid.UU
 	// Prepare event data
 	eventData := map[string]interface{}{
 		"job_id":           jobID.String(),
-		"user_plugin_id":   job.UserPluginID.String(),
+		"plugin_instance_id": job.PluginInstanceID.String(),
 		"status":           status,
 		"message":          message,
 		"timestamp":        time.Now().UTC(),
@@ -414,17 +414,17 @@ func (p *RenderWorkerPool) broadcastJobUpdate(ctx context.Context, jobID uuid.UU
 	}
 	
 	// Broadcast to the user who owns this plugin
-	if job.UserPlugin.UserID != uuid.Nil {
+	if job.PluginInstance.UserID != uuid.Nil {
 		event := sse.Event{
 			Type: "render_job_update",
 			Data: eventData,
 		}
 		
-		p.sseService.BroadcastToUser(job.UserPlugin.UserID, event)
+		p.sseService.BroadcastToUser(job.PluginInstance.UserID, event)
 		
 		logging.Debug("[WORKER_POOL] Broadcasted job update via SSE", 
 			"job_id", jobID, 
-			"user_id", job.UserPlugin.UserID,
+			"user_id", job.PluginInstance.UserID,
 			"status", status)
 	}
 }
@@ -490,7 +490,7 @@ func (w *Worker) processJob(job RenderJob) {
 	atomic.AddInt64(&w.pool.metrics.TotalJobs, 1)
 	atomic.AddInt32(&w.pool.metrics.QueueLength, -1)
 	
-	logging.Debug("[WORKER] Processing job", "worker_id", w.id, "job_id", job.ID, "plugin_id", job.UserPluginID)
+	logging.Debug("[WORKER] Processing job", "worker_id", w.id, "job_id", job.ID, "plugin_id", job.PluginInstanceID)
 	
 	// Mark job as processing in database
 	now := time.Now()

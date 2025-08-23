@@ -25,10 +25,11 @@ import (
 	"github.com/rmitchellscott/stationmaster/internal/database"
 	"github.com/rmitchellscott/stationmaster/internal/handlers"
 	"github.com/rmitchellscott/stationmaster/internal/logging"
+	"github.com/rmitchellscott/stationmaster/internal/plugins"
+	_ "github.com/rmitchellscott/stationmaster/internal/plugins/private" // Register private plugin factory
 	"github.com/rmitchellscott/stationmaster/internal/pollers"
 	"github.com/rmitchellscott/stationmaster/internal/rendering"
 	"github.com/rmitchellscott/stationmaster/internal/sse"
-	"github.com/rmitchellscott/stationmaster/internal/sync"
 	"github.com/rmitchellscott/stationmaster/internal/trmnl"
 
 	"github.com/rmitchellscott/stationmaster/internal/version"
@@ -86,11 +87,9 @@ func main() {
 	// Register pollers
 	db := database.GetDB()
 	
-	// Sync plugin registry with database
-	if err := sync.SyncPluginRegistry(db); err != nil {
-		logging.Warn("Failed to sync plugin registry", "error", err)
-		// Don't fail startup, but log the warning
-	}
+	
+	// Initialize plugin factory
+	plugins.InitPluginFactory(db)
 	
 	// Initialize plugin processor with database
 	if err := trmnl.InitPluginProcessor(db); err != nil {
@@ -384,11 +383,6 @@ func main() {
 		admin.GET("/devices/stats", handlers.GetDeviceStatsHandler)       // GET /api/admin/devices/stats - get device statistics
 		admin.DELETE("/devices/:id/unlink", handlers.UnlinkDeviceHandler) // DELETE /api/admin/devices/:id/unlink - unlink device
 
-		// Admin plugin management
-		admin.POST("/plugins", handlers.CreatePluginHandler)        // POST /api/admin/plugins - create system plugin
-		admin.PUT("/plugins/:id", handlers.UpdatePluginHandler)     // PUT /api/admin/plugins/:id - update system plugin
-		admin.DELETE("/plugins/:id", handlers.DeletePluginHandler)  // DELETE /api/admin/plugins/:id - delete system plugin
-		admin.GET("/plugins/stats", handlers.GetPluginStatsHandler) // GET /api/admin/plugins/stats - get plugin statistics
 		admin.GET("/private-plugins/stats", handlers.GetPrivatePluginStatsHandler) // GET /api/admin/private-plugins/stats - get private plugin statistics
 
 		// Firmware management endpoints
@@ -425,17 +419,21 @@ func main() {
 		devices.DELETE("/:id/unmirror", handlers.UnmirrorDeviceHandler)     // DELETE /api/devices/:id/unmirror - stop mirroring
 	}
 
-	// Plugin management endpoints
-	plugins := protected.Group("/plugins")
+
+	// Unified plugin system endpoints
+	pluginDefs := protected.Group("/plugin-definitions")
 	{
-		plugins.GET("", handlers.GetPluginsHandler) // GET /api/plugins - list available plugins
-		plugins.GET("/info", handlers.GetPluginInfoHandler) // GET /api/plugins/info - get detailed plugin information
-		plugins.GET("/types", handlers.GetAvailablePluginTypesHandler) // GET /api/plugins/types - get available plugin types
-		plugins.GET("/types/:type", handlers.GetPluginByTypeHandler) // GET /api/plugins/types/:type - get specific plugin info
-		plugins.POST("/validate", handlers.ValidatePluginSettingsHandler) // POST /api/plugins/validate - validate plugin settings
-		plugins.GET("/refresh-rate-options", handlers.GetRefreshRateOptionsHandler) // GET /api/plugins/refresh-rate-options - get refresh rate options
-		plugins.GET("/registry/stats", handlers.GetPluginRegistryStatsHandler) // GET /api/plugins/registry/stats - registry statistics
+		pluginDefs.GET("", handlers.GetAvailablePluginDefinitionsHandler) // GET /api/plugin-definitions - list all available plugin definitions (system + private)
+		pluginDefs.GET("/refresh-rate-options", handlers.GetRefreshRateOptionsHandler) // GET /api/plugin-definitions/refresh-rate-options - get available refresh rates
+		pluginDefs.POST("/validate-settings", handlers.ValidatePluginSettingsHandler) // POST /api/plugin-definitions/validate-settings - validate plugin settings
+		pluginDefs.GET("/types", handlers.GetAvailablePluginTypesHandler) // GET /api/plugin-definitions/types - get available plugin types
 	}
+
+	protected.GET("/plugin-instances", handlers.GetPluginInstancesHandler) // GET /api/plugin-instances - list user's plugin instances
+	protected.POST("/plugin-instances", handlers.CreatePluginInstanceFromDefinitionHandler) // POST /api/plugin-instances - create plugin instance from definition
+	protected.PUT("/plugin-instances/:id", handlers.UpdatePluginInstanceHandler) // PUT /api/plugin-instances/:id - update plugin instance
+	protected.DELETE("/plugin-instances/:id", handlers.DeletePluginInstanceHandler) // DELETE /api/plugin-instances/:id - delete plugin instance
+	protected.POST("/plugin-instances/:id/force-refresh", handlers.ForceRefreshPluginInstanceHandler) // POST /api/plugin-instances/:id/force-refresh - force refresh plugin instance
 
 	// Private plugin management endpoints
 	privatePlugins := protected.Group("/private-plugins")
@@ -446,20 +444,9 @@ func main() {
 		privatePlugins.PUT("/:id", handlers.UpdatePrivatePluginHandler)                    // PUT /api/private-plugins/:id - update private plugin
 		privatePlugins.DELETE("/:id", handlers.DeletePrivatePluginHandler)                 // DELETE /api/private-plugins/:id - delete private plugin
 		privatePlugins.POST("/:id/regenerate-token", handlers.RegenerateWebhookTokenHandler) // POST /api/private-plugins/:id/regenerate-token - regenerate webhook token
-		privatePlugins.POST("/test", handlers.TestPrivatePluginHandler)                    // POST /api/private-plugins/test - test plugin with sample data
 		privatePlugins.POST("/validate", handlers.ValidatePrivatePluginHandler)            // POST /api/private-plugins/validate - validate plugin templates
 	}
 
-	// User plugin management endpoints
-	userPlugins := protected.Group("/user-plugins")
-	{
-		userPlugins.GET("", handlers.GetUserPluginsHandler)          // GET /api/user-plugins - list user's plugin instances
-		userPlugins.POST("", handlers.CreateUserPluginHandler)       // POST /api/user-plugins - create plugin instance
-		userPlugins.GET("/:id", handlers.GetUserPluginHandler)           // GET /api/user-plugins/:id - get plugin instance
-		userPlugins.PUT("/:id", handlers.UpdateUserPluginHandler)        // PUT /api/user-plugins/:id - update plugin instance
-		userPlugins.POST("/:id/force-refresh", handlers.ForceRefreshUserPluginHandler) // POST /api/user-plugins/:id/force-refresh - force re-render
-		userPlugins.DELETE("/:id", handlers.DeleteUserPluginHandler)     // DELETE /api/user-plugins/:id - delete plugin instance
-	}
 
 	// Playlist management endpoints
 	playlists := protected.Group("/playlists")

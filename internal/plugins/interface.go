@@ -15,9 +15,9 @@ const (
 
 // PluginContext provides context information to plugins
 type PluginContext struct {
-	Device     *database.Device
-	UserPlugin *database.UserPlugin
-	Settings   map[string]interface{}
+	Device         *database.Device
+	PluginInstance *database.PluginInstance
+	Settings       map[string]interface{}
 }
 
 // PluginResponse is the response format returned by plugins

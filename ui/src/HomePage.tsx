@@ -42,8 +42,8 @@ export default function HomePage() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [userPlugins, setUserPlugins] = useState([]);
-  const [userPluginsLoading, setUserPluginsLoading] = useState(false);
+  const [pluginInstances, setPluginInstances] = useState([]);
+  const [pluginInstancesLoading, setPluginInstancesLoading] = useState(false);
   const [playlistItems, setPlaylistItems] = useState([]);
   const [playlistItemsLoading, setPlaylistItemsLoading] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(true);
@@ -106,20 +106,20 @@ export default function HomePage() {
   };
 
   // Fetch user plugins
-  const fetchUserPlugins = async () => {
+  const fetchPluginInstances = async () => {
     try {
-      setUserPluginsLoading(true);
-      const response = await fetch("/api/user-plugins", {
+      setPluginInstancesLoading(true);
+      const response = await fetch("/api/plugin-instances", {
         credentials: "include",
       });
       if (response.ok) {
         const data = await response.json();
-        setUserPlugins(data.user_plugins || []);
+        setPluginInstances(data.plugin_instances || []);
       }
     } catch (error) {
-      console.error("Failed to fetch user plugins:", error);
+      console.error("Failed to fetch plugin instances:", error);
     } finally {
-      setUserPluginsLoading(false);
+      setPluginInstancesLoading(false);
     }
   };
 
@@ -227,7 +227,7 @@ export default function HomePage() {
   useEffect(() => {
     if (isAuthenticated) {
       fetchDevices();
-      fetchUserPlugins();
+      fetchPluginInstances();
     }
   }, [isAuthenticated]);
 
@@ -367,7 +367,7 @@ export default function HomePage() {
               <TabsContent value="plugins" className="mt-6">
                 <PluginManagement 
                   selectedDeviceId={selectedDeviceId || ""}
-                  onUpdate={fetchUserPlugins}
+                  onUpdate={fetchPluginInstances}
                 />
               </TabsContent>
               

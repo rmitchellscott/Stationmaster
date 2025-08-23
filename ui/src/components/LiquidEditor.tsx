@@ -260,12 +260,6 @@ export function LiquidEditor({
     const currentTheme = theme === 'dark' ? 'liquid-dark' : 'liquid-light';
     monaco.editor.setTheme(currentTheme);
 
-    // Add placeholder if empty
-    if (!value && placeholder) {
-      editor.setValue(`<!-- ${placeholder} -->\n`);
-      editor.setSelection(new monaco.Selection(2, 1, 2, 1));
-    }
-
     // Configure editor options
     editor.updateOptions({
       fontSize: 13,
@@ -282,6 +276,26 @@ export function LiquidEditor({
       }
     });
   };
+
+  // Set initial value and handle value changes
+  useEffect(() => {
+    if (editorRef.current) {
+      const currentValue = editorRef.current.getValue();
+      const targetValue = value || (placeholder ? `<!-- ${placeholder} -->\n` : '');
+      
+      if (currentValue !== targetValue) {
+        editorRef.current.setValue(targetValue);
+        
+        // Set cursor position for placeholder
+        if (!value && placeholder) {
+          const monaco = (window as any).monaco;
+          if (monaco) {
+            editorRef.current.setSelection(new monaco.Selection(2, 1, 2, 1));
+          }
+        }
+      }
+    }
+  }, [value, placeholder]);
 
   // Update theme when it changes
   useEffect(() => {

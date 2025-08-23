@@ -7,6 +7,7 @@ import { ConfigProvider } from '@/components/ConfigProvider';
 import { Layout } from '@/components/Layout';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { UserSettingsPage } from '@/components/UserSettingsPage';
+import { PrivatePluginEditorPage } from '@/components/PrivatePluginEditorPage';
 import { AdminPage } from '@/components/AdminPage';
 import { AdminPanel } from '@/components/AdminPanel';
 import { PasswordReset } from '@/components/PasswordReset';
@@ -32,6 +33,11 @@ function AppContent() {
           <Route path="settings" element={
             <ProtectedRoute>
               <UserSettingsPage />
+            </ProtectedRoute>
+          } />
+          <Route path="plugins/private/edit" element={
+            <ProtectedRoute>
+              <PrivatePluginEditorPage />
             </ProtectedRoute>
           } />
           <Route path="admin" element={

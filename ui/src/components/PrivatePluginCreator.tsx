@@ -101,6 +101,7 @@ interface PrivatePluginCreatorProps {
   onClose: () => void;
   onSave: (plugin: PrivatePlugin) => void;
   onCancel: () => void;
+  standalone?: boolean;
 }
 
 const layoutTabs: LayoutTab[] = [
@@ -141,7 +142,8 @@ export function PrivatePluginCreator({
   isOpen, 
   onClose, 
   onSave, 
-  onCancel 
+  onCancel,
+  standalone = false
 }: PrivatePluginCreatorProps) {
   const { t } = useTranslation();
   
@@ -462,6 +464,281 @@ export function PrivatePluginCreator({
     }
   };
 
+  // Main content component
+  const renderMainContent = () => (
+    <>
+      {!standalone && (
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h2 className="text-xl font-semibold">
+              {plugin ? 'Edit Private Plugin' : 'Create Private Plugin'}
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Create custom plugins using Liquid templates and TRMNL's design framework
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowHelp(true)}
+            className="shrink-0"
+          >
+            <HelpCircle className="h-4 w-4 mr-2" />
+            Help
+          </Button>
+        </div>
+      )}
+
+      {standalone && (
+        <div className="flex items-center justify-between mb-6">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowHelp(true)}
+          >
+            <HelpCircle className="h-4 w-4 mr-2" />
+            Help
+          </Button>
+        </div>
+      )}
+
+      <div className="space-y-6">
+        {error && (
+          <Alert variant="destructive">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+
+        {success && (
+          <Alert>
+            <CheckCircle className="h-4 w-4" />
+            <AlertDescription>{success}</AlertDescription>
+          </Alert>
+        )}
+
+        {validationResults && !validationResults.valid && (
+          <Alert variant="destructive">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription>
+              <div className="space-y-2">
+                <div className="font-medium">Validation Failed</div>
+                {validationResults.errors.map((error, index) => (
+                  <div key={index} className="text-sm">• {error}</div>
+                ))}
+              </div>
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {validationResults && validationResults.warnings.length > 0 && (
+          <Alert variant="default">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription>
+              <div className="space-y-2">
+                <div className="font-medium">Validation Warnings</div>
+                {validationResults.warnings.map((warning, index) => (
+                  <div key={index} className="text-sm">• {warning}</div>
+                ))}
+              </div>
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* Basic Information */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Basic Information</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div>
+              <Label htmlFor="name">Plugin Name</Label>
+              <Input
+                id="name"
+                value={formData.name}
+                onChange={(e) => handleInputChange('name', e.target.value)}
+                placeholder="My Awesome Plugin"
+                className="mt-2"
+              />
+            </div>
+            <div>
+              <Label htmlFor="description">Description</Label>
+              <Textarea
+                id="description"
+                value={formData.description}
+                onChange={(e) => handleInputChange('description', e.target.value)}
+                placeholder="Describe what your plugin does..."
+                className="mt-2"
+                rows={3}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="version">Version</Label>
+                <Input
+                  id="version"
+                  value={formData.version}
+                  onChange={(e) => handleInputChange('version', e.target.value)}
+                  placeholder="1.0.0"
+                  className="mt-2"
+                />
+              </div>
+              <div>
+                <Label htmlFor="data_strategy">Data Strategy</Label>
+                <Select
+                  value={formData.data_strategy}
+                  onValueChange={(value) => handleInputChange('data_strategy', value as any)}
+                >
+                  <SelectTrigger className="mt-2">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="webhook">Webhook</SelectItem>
+                    <SelectItem value="polling">Polling</SelectItem>
+                    <SelectItem value="merge">Plugin Merge</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Data Strategy Configuration */}
+        {renderDataStrategyConfig()}
+
+        {/* Layout Templates */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Code2 className="h-4 w-4" />
+              Layout Templates
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Tabs value={activeLayoutTab} onValueChange={setActiveLayoutTab}>
+              <TabsList className="grid w-full grid-cols-5">
+                {layoutTabs.map((tab) => (
+                  <TabsTrigger key={tab.id} value={tab.id} className="flex items-center gap-2">
+                    {tab.icon}
+                    <span className="hidden sm:inline">{tab.label}</span>
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+
+              {layoutTabs.map((tab) => (
+                <TabsContent key={tab.id} value={tab.id} className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="font-semibold">{tab.label}</h3>
+                      <p className="text-sm text-muted-foreground">{tab.description}</p>
+                    </div>
+                    <div className="flex gap-2">
+                      {tab.id !== 'shared' && (
+                        <Select onValueChange={(from) => copyTemplate(from, tab.id)}>
+                          <SelectTrigger className="w-40">
+                            <SelectValue placeholder="Copy from..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {layoutTabs
+                              .filter(t => t.id !== tab.id)
+                              .map(t => (
+                                <SelectItem key={t.id} value={t.id}>
+                                  {t.label}
+                                </SelectItem>
+                              ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                      <Button variant="outline" size="sm" onClick={() => setShowPreview(true)}>
+                        <Eye className="h-4 w-4 mr-2" />
+                        Preview
+                      </Button>
+                    </div>
+                  </div>
+
+                  {(plugin || !standalone) ? (
+                    <LiquidEditor
+                      key={`${tab.id}-${plugin?.id || 'new'}`}
+                      value={getLayoutMarkup(tab.id)}
+                      onChange={(value) => handleLayoutMarkupChange(tab.id, value)}
+                      placeholder={`Enter Liquid template for ${tab.label.toLowerCase()}...`}
+                      height="400px"
+                    />
+                  ) : (
+                    <div className="border rounded-md flex items-center justify-center text-muted-foreground bg-muted/10" style={{height: '400px'}}>
+                      <div className="text-center">
+                        <div className="text-sm">Loading plugin content...</div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="text-xs text-muted-foreground">
+                    <p>Available variables: `data.*`, `trmnl.user.*`, `trmnl.device.*`, `layout.*`, `instance_id`</p>
+                    <p>Uses TRMNL framework CSS classes. Templates are automatically wrapped with proper layout structure.</p>
+                  </div>
+                </TabsContent>
+              ))}
+            </Tabs>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Action buttons - only show in standalone mode */}
+      {standalone && (
+        <>
+          <Separator className="my-6" />
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={onCancel} disabled={loading || validating}>
+              Cancel
+            </Button>
+            <Button 
+              variant="outline" 
+              onClick={validateTemplates} 
+              disabled={loading || validating}
+              className="text-blue-600 border-blue-600 hover:bg-blue-50"
+            >
+              {validating ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Validating...
+                </>
+              ) : (
+                <>
+                  <Shield className="h-4 w-4 mr-2" />
+                  Validate Templates
+                </>
+              )}
+            </Button>
+            <Button onClick={handleSave} disabled={loading || validating}>
+              {loading ? "Saving..." : (plugin ? "Update Plugin" : "Create Plugin")}
+            </Button>
+          </div>
+        </>
+      )}
+    </>
+  );
+
+  if (standalone) {
+    return (
+      <>
+        {renderMainContent()}
+        
+        {/* Plugin Preview Dialog */}
+        <PluginPreview
+          plugin={formData}
+          isOpen={showPreview}
+          onClose={() => setShowPreview(false)}
+        />
+
+        {/* Help Dialog */}
+        <PrivatePluginHelp
+          isOpen={showHelp}
+          onClose={() => setShowHelp(false)}
+        />
+      </>
+    );
+  }
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
@@ -488,177 +765,7 @@ export function PrivatePluginCreator({
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto">
-          <div className="space-y-6">
-            {error && (
-              <Alert variant="destructive">
-                <AlertTriangle className="h-4 w-4" />
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
-
-            {success && (
-              <Alert>
-                <CheckCircle className="h-4 w-4" />
-                <AlertDescription>{success}</AlertDescription>
-              </Alert>
-            )}
-
-            {validationResults && !validationResults.valid && (
-              <Alert variant="destructive">
-                <AlertTriangle className="h-4 w-4" />
-                <AlertDescription>
-                  <div className="space-y-2">
-                    <div className="font-medium">Validation Failed</div>
-                    {validationResults.errors.map((error, index) => (
-                      <div key={index} className="text-sm">• {error}</div>
-                    ))}
-                  </div>
-                </AlertDescription>
-              </Alert>
-            )}
-
-            {validationResults && validationResults.warnings.length > 0 && (
-              <Alert variant="default">
-                <AlertTriangle className="h-4 w-4" />
-                <AlertDescription>
-                  <div className="space-y-2">
-                    <div className="font-medium">Validation Warnings</div>
-                    {validationResults.warnings.map((warning, index) => (
-                      <div key={index} className="text-sm">• {warning}</div>
-                    ))}
-                  </div>
-                </AlertDescription>
-              </Alert>
-            )}
-
-            {/* Basic Information */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Basic Information</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <Label htmlFor="name">Plugin Name</Label>
-                  <Input
-                    id="name"
-                    value={formData.name}
-                    onChange={(e) => handleInputChange('name', e.target.value)}
-                    placeholder="My Awesome Plugin"
-                    className="mt-2"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="description">Description</Label>
-                  <Textarea
-                    id="description"
-                    value={formData.description}
-                    onChange={(e) => handleInputChange('description', e.target.value)}
-                    placeholder="Describe what your plugin does..."
-                    className="mt-2"
-                    rows={3}
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="version">Version</Label>
-                    <Input
-                      id="version"
-                      value={formData.version}
-                      onChange={(e) => handleInputChange('version', e.target.value)}
-                      placeholder="1.0.0"
-                      className="mt-2"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="data_strategy">Data Strategy</Label>
-                    <Select
-                      value={formData.data_strategy}
-                      onValueChange={(value) => handleInputChange('data_strategy', value as any)}
-                    >
-                      <SelectTrigger className="mt-2">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="webhook">Webhook</SelectItem>
-                        <SelectItem value="polling">Polling</SelectItem>
-                        <SelectItem value="merge">Plugin Merge</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Data Strategy Configuration */}
-            {renderDataStrategyConfig()}
-
-            {/* Layout Templates */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Code2 className="h-4 w-4" />
-                  Layout Templates
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <Tabs value={activeLayoutTab} onValueChange={setActiveLayoutTab}>
-                  <TabsList className="grid w-full grid-cols-5">
-                    {layoutTabs.map((tab) => (
-                      <TabsTrigger key={tab.id} value={tab.id} className="flex items-center gap-2">
-                        {tab.icon}
-                        <span className="hidden sm:inline">{tab.label}</span>
-                      </TabsTrigger>
-                    ))}
-                  </TabsList>
-
-                  {layoutTabs.map((tab) => (
-                    <TabsContent key={tab.id} value={tab.id} className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h3 className="font-semibold">{tab.label}</h3>
-                          <p className="text-sm text-muted-foreground">{tab.description}</p>
-                        </div>
-                        <div className="flex gap-2">
-                          {tab.id !== 'shared' && (
-                            <Select onValueChange={(from) => copyTemplate(from, tab.id)}>
-                              <SelectTrigger className="w-40">
-                                <SelectValue placeholder="Copy from..." />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {layoutTabs
-                                  .filter(t => t.id !== tab.id)
-                                  .map(t => (
-                                    <SelectItem key={t.id} value={t.id}>
-                                      {t.label}
-                                    </SelectItem>
-                                  ))}
-                              </SelectContent>
-                            </Select>
-                          )}
-                          <Button variant="outline" size="sm" onClick={() => setShowPreview(true)}>
-                            <Eye className="h-4 w-4 mr-2" />
-                            Preview
-                          </Button>
-                        </div>
-                      </div>
-
-                      <LiquidEditor
-                        value={getLayoutMarkup(tab.id)}
-                        onChange={(value) => handleLayoutMarkupChange(tab.id, value)}
-                        placeholder={`Enter Liquid template for ${tab.label.toLowerCase()}...`}
-                        height="400px"
-                      />
-
-                      <div className="text-xs text-muted-foreground">
-                        <p>Available variables: `data.*`, `trmnl.user.*`, `trmnl.device.*`, `layout.*`, `instance_id`</p>
-                        <p>Uses TRMNL framework CSS classes. Templates are automatically wrapped with proper layout structure.</p>
-                      </div>
-                    </TabsContent>
-                  ))}
-                </Tabs>
-              </CardContent>
-            </Card>
-          </div>
+          {renderMainContent()}
         </div>
 
         <Separator />

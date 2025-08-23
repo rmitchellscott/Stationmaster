@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
   Dialog,
@@ -62,7 +63,6 @@ import {
   ChevronsUpDown,
 } from "lucide-react";
 import { PrivatePluginList } from "./PrivatePluginList";
-import { PrivatePluginCreator } from "./PrivatePluginCreator";
 import { PluginPreview } from "./PluginPreview";
 import { LiquidEditor } from "./LiquidEditor";
 import { PrivatePluginHelp } from "./PrivatePluginHelp";
@@ -115,7 +115,9 @@ interface SortState {
 }
 
 export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagementProps) {
+  const navigate = useNavigate();
   const { t } = useTranslation();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [pluginInstances, setPluginInstances] = useState<PluginInstance[]>([]);
   const [plugins, setPlugins] = useState<Plugin[]>([]);
   const [refreshRateOptions, setRefreshRateOptions] = useState<RefreshRateOption[]>([]);
@@ -172,10 +174,19 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
   }>({ isOpen: false, plugin: null });
 
   // Private plugin management state
-  const [activeTab, setActiveTab] = useState<'instances' | 'private'>('instances');
-  const [showPrivatePluginCreator, setShowPrivatePluginCreator] = useState(false);
-  const [editingPrivatePlugin, setEditingPrivatePlugin] = useState<any | null>(null);
   const [previewingPrivatePlugin, setPreviewingPrivatePlugin] = useState<any | null>(null);
+
+  // Get active subtab from URL query parameters
+  const activeTab = (searchParams.get('subtab') as 'instances' | 'private') || 'instances';
+
+  // Handle subtab change by updating URL query parameters
+  const handleSubTabChange = (subtab: string) => {
+    const newSearchParams = new URLSearchParams(searchParams);
+    newSearchParams.set('subtab', subtab);
+    // Ensure main tab is set to plugins
+    newSearchParams.set('tab', 'plugins');
+    setSearchParams(newSearchParams);
+  };
 
   const fetchPluginInstances = async () => {
     try {
@@ -490,54 +501,17 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
 
   // Private plugin handlers
   const handleCreatePrivatePlugin = () => {
-    setEditingPrivatePlugin(null);
-    setShowPrivatePluginCreator(true);
+    navigate('/plugins/private/edit');
   };
 
   const handleEditPrivatePlugin = (plugin: any) => {
-    setEditingPrivatePlugin(plugin);
-    setShowPrivatePluginCreator(true);
+    navigate(`/plugins/private/edit?pluginId=${plugin.id}`);
   };
 
   const handlePreviewPrivatePlugin = (plugin: any) => {
     setPreviewingPrivatePlugin(plugin);
   };
 
-  const handleSavePrivatePlugin = async (plugin: any) => {
-    try {
-      const url = editingPrivatePlugin ? `/api/private-plugins/${editingPrivatePlugin.id}` : '/api/private-plugins';
-      const method = editingPrivatePlugin ? 'PUT' : 'POST';
-
-      const response = await fetch(url, {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify(plugin),
-      });
-
-      if (response.ok) {
-        setSuccessMessage(`Private plugin ${editingPrivatePlugin ? 'updated' : 'created'} successfully!`);
-        setShowPrivatePluginCreator(false);
-        setEditingPrivatePlugin(null);
-        // Refresh the private plugin list if we're on that tab
-        if (activeTab === 'private') {
-          // The PrivatePluginList component will handle its own refresh
-        }
-      } else {
-        const errorData = await response.json();
-        setError(errorData.error || `Failed to ${editingPrivatePlugin ? 'update' : 'create'} private plugin`);
-      }
-    } catch (error) {
-      setError('Network error occurred');
-    }
-  };
-
-  const handleCancelPrivatePlugin = () => {
-    setShowPrivatePluginCreator(false);
-    setEditingPrivatePlugin(null);
-  };
 
   const renderSettingsForm = (plugin: Plugin, settings: Record<string, any>, onChange: (key: string, value: any) => void) => {
     let schema;
@@ -817,7 +791,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
         </div>
       </div>
 
-      <Tabs value={activeTab} onValueChange={(tab) => setActiveTab(tab as any)}>
+      <Tabs value={activeTab} onValueChange={handleSubTabChange}>
         <TabsList>
           <TabsTrigger value="instances">Plugin Instances</TabsTrigger>
           <TabsTrigger value="private">Private Plugins</TabsTrigger>
@@ -1401,14 +1375,6 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
         </TabsContent>
       </Tabs>
 
-      {/* Private Plugin Creator Dialog */}
-      <PrivatePluginCreator
-        plugin={editingPrivatePlugin}
-        isOpen={showPrivatePluginCreator}
-        onClose={() => setShowPrivatePluginCreator(false)}
-        onSave={handleSavePrivatePlugin}
-        onCancel={handleCancelPrivatePlugin}
-      />
 
       {/* Private Plugin Preview Dialog */}
       {/* {previewingPrivatePlugin && (

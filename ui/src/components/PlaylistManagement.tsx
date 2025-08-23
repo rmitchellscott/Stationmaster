@@ -302,7 +302,7 @@ const createSleepModeItem = (sleepConfig: any, userTimezone: string): PlaylistIt
       is_active: true,
       created_at: '',
       updated_at: '',
-      plugin: {
+      plugin_definition: {
         id: 'sleep-mode',
         name: 'Device Setting', 
         type: 'system',

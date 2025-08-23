@@ -1,13 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
+// Removed unused dialog imports
 import {
   Alert,
   AlertDescription,
@@ -97,11 +90,8 @@ interface LayoutTab {
 
 interface PrivatePluginCreatorProps {
   plugin?: PrivatePlugin;
-  isOpen: boolean;
-  onClose: () => void;
   onSave: (plugin: PrivatePlugin) => void;
   onCancel: () => void;
-  standalone?: boolean;
 }
 
 const layoutTabs: LayoutTab[] = [
@@ -139,11 +129,8 @@ const layoutTabs: LayoutTab[] = [
 
 export function PrivatePluginCreator({ 
   plugin, 
-  isOpen, 
-  onClose, 
   onSave, 
-  onCancel,
-  standalone = false
+  onCancel
 }: PrivatePluginCreatorProps) {
   const { t } = useTranslation();
   
@@ -467,40 +454,25 @@ export function PrivatePluginCreator({
   // Main content component
   const renderMainContent = () => (
     <>
-      {!standalone && (
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h2 className="text-xl font-semibold">
-              {plugin ? 'Edit Private Plugin' : 'Create Private Plugin'}
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              Create custom plugins using Liquid templates and TRMNL's design framework
-            </p>
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowHelp(true)}
-            className="shrink-0"
-          >
-            <HelpCircle className="h-4 w-4 mr-2" />
-            Help
-          </Button>
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h2 className="text-xl font-semibold">
+            {plugin ? 'Edit Private Plugin' : 'Create Private Plugin'}
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Create custom plugins using Liquid templates and TRMNL's design framework
+          </p>
         </div>
-      )}
-
-      {standalone && (
-        <div className="flex items-center justify-between mb-6">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowHelp(true)}
-          >
-            <HelpCircle className="h-4 w-4 mr-2" />
-            Help
-          </Button>
-        </div>
-      )}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setShowHelp(true)}
+          className="shrink-0"
+        >
+          <HelpCircle className="h-4 w-4 mr-2" />
+          Help
+        </Button>
+      </div>
 
       <div className="space-y-6">
         {error && (
@@ -656,21 +628,13 @@ export function PrivatePluginCreator({
                     </div>
                   </div>
 
-                  {(plugin || !standalone) ? (
-                    <LiquidEditor
-                      key={`${tab.id}-${plugin?.id || 'new'}`}
-                      value={getLayoutMarkup(tab.id)}
-                      onChange={(value) => handleLayoutMarkupChange(tab.id, value)}
-                      placeholder={`Enter Liquid template for ${tab.label.toLowerCase()}...`}
-                      height="400px"
-                    />
-                  ) : (
-                    <div className="border rounded-md flex items-center justify-center text-muted-foreground bg-muted/10" style={{height: '400px'}}>
-                      <div className="text-center">
-                        <div className="text-sm">Loading plugin content...</div>
-                      </div>
-                    </div>
-                  )}
+                  <LiquidEditor
+                    key={`${tab.id}-${plugin?.id || 'new'}`}
+                    value={getLayoutMarkup(tab.id)}
+                    onChange={(value) => handleLayoutMarkupChange(tab.id, value)}
+                    placeholder={`Enter Liquid template for ${tab.label.toLowerCase()}...`}
+                    height="400px"
+                  />
 
                   <div className="text-xs text-muted-foreground">
                     <p>Available variables: `data.*`, `trmnl.user.*`, `trmnl.device.*`, `layout.*`, `instance_id`</p>
@@ -683,121 +647,41 @@ export function PrivatePluginCreator({
         </Card>
       </div>
 
-      {/* Action buttons - only show in standalone mode */}
-      {standalone && (
-        <>
-          <Separator className="my-6" />
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={onCancel} disabled={loading || validating}>
-              Cancel
-            </Button>
-            <Button 
-              variant="outline" 
-              onClick={validateTemplates} 
-              disabled={loading || validating}
-              className="text-blue-600 border-blue-600 hover:bg-blue-50"
-            >
-              {validating ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  Validating...
-                </>
-              ) : (
-                <>
-                  <Shield className="h-4 w-4 mr-2" />
-                  Validate Templates
-                </>
-              )}
-            </Button>
-            <Button onClick={handleSave} disabled={loading || validating}>
-              {loading ? "Saving..." : (plugin ? "Update Plugin" : "Create Plugin")}
-            </Button>
-          </div>
-        </>
-      )}
+      {/* Action buttons */}
+      <Separator className="my-6" />
+      <div className="flex justify-end gap-2">
+        <Button variant="outline" onClick={onCancel} disabled={loading || validating}>
+          Cancel
+        </Button>
+        <Button 
+          variant="outline" 
+          onClick={validateTemplates} 
+          disabled={loading || validating}
+          className="text-blue-600 border-blue-600 hover:bg-blue-50"
+        >
+          {validating ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              Validating...
+            </>
+          ) : (
+            <>
+              <Shield className="h-4 w-4 mr-2" />
+              Validate Templates
+            </>
+          )}
+        </Button>
+        <Button onClick={handleSave} disabled={loading || validating}>
+          {loading ? "Saving..." : (plugin ? "Update Plugin" : "Create Plugin")}
+        </Button>
+      </div>
     </>
   );
 
-  if (standalone) {
-    return (
-      <>
-        {renderMainContent()}
-        
-        {/* Plugin Preview Dialog */}
-        <PluginPreview
-          plugin={formData}
-          isOpen={showPreview}
-          onClose={() => setShowPreview(false)}
-        />
-
-        {/* Help Dialog */}
-        <PrivatePluginHelp
-          isOpen={showHelp}
-          onClose={() => setShowHelp(false)}
-        />
-      </>
-    );
-  }
-
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
-        <DialogHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <DialogTitle>
-                {plugin ? 'Edit Private Plugin' : 'Create Private Plugin'}
-              </DialogTitle>
-              <DialogDescription>
-                Create custom plugins using Liquid templates and TRMNL's design framework
-              </DialogDescription>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowHelp(true)}
-              className="shrink-0"
-            >
-              <HelpCircle className="h-4 w-4 mr-2" />
-              Help
-            </Button>
-          </div>
-        </DialogHeader>
-
-        <div className="flex-1 overflow-y-auto">
-          {renderMainContent()}
-        </div>
-
-        <Separator />
-
-        <DialogFooter>
-          <Button variant="outline" onClick={onCancel} disabled={loading || validating}>
-            Cancel
-          </Button>
-          <Button 
-            variant="outline" 
-            onClick={validateTemplates} 
-            disabled={loading || validating}
-            className="text-blue-600 border-blue-600 hover:bg-blue-50"
-          >
-            {validating ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                Validating...
-              </>
-            ) : (
-              <>
-                <Shield className="h-4 w-4 mr-2" />
-                Validate Templates
-              </>
-            )}
-          </Button>
-          <Button onClick={handleSave} disabled={loading || validating}>
-            {loading ? "Saving..." : (plugin ? "Update Plugin" : "Create Plugin")}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-
+    <>
+      {renderMainContent()}
+      
       {/* Plugin Preview Dialog */}
       <PluginPreview
         plugin={formData}
@@ -810,6 +694,6 @@ export function PrivatePluginCreator({
         isOpen={showHelp}
         onClose={() => setShowHelp(false)}
       />
-    </Dialog>
+    </>
   );
 }

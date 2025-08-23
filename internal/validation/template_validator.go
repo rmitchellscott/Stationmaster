@@ -172,6 +172,23 @@ func (v *TemplateValidator) verifyContainerization(template string, templateName
 	return errors, warnings
 }
 
+// mergeTemplates combines shared markup with a layout template
+func (v *TemplateValidator) mergeTemplates(sharedMarkup, layoutTemplate string) string {
+	sharedTrimmed := strings.TrimSpace(sharedMarkup)
+	layoutTrimmed := strings.TrimSpace(layoutTemplate)
+	
+	if sharedTrimmed == "" {
+		return layoutTemplate
+	}
+	if layoutTrimmed == "" {
+		return sharedMarkup
+	}
+	
+	// Merge shared markup with layout template
+	// Shared markup typically contains common elements, layout has specific content
+	return sharedTrimmed + "\n" + layoutTrimmed
+}
+
 // ValidateAllTemplates validates all layout templates for a private plugin
 func (v *TemplateValidator) ValidateAllTemplates(fullTemplate, halfVertTemplate, halfHorizTemplate, quadrantTemplate, sharedTemplate string) ValidationResult {
 	combinedResult := ValidationResult{
@@ -181,21 +198,35 @@ func (v *TemplateValidator) ValidateAllTemplates(fullTemplate, halfVertTemplate,
 		Errors:   []string{},
 	}
 
-	templates := map[string]string{
-		"full layout":        fullTemplate,
-		"half vertical":      halfVertTemplate,
-		"half horizontal":    halfHorizTemplate,
-		"quadrant":          quadrantTemplate,
-		"shared markup":      sharedTemplate,
+	// First, validate shared markup separately if it exists
+	if strings.TrimSpace(sharedTemplate) != "" {
+		sharedResult := v.ValidateTemplate(sharedTemplate, "shared markup")
+		combinedResult.Errors = append(combinedResult.Errors, sharedResult.Errors...)
+		combinedResult.Warnings = append(combinedResult.Warnings, sharedResult.Warnings...)
+		
+		if !sharedResult.Valid {
+			combinedResult.Valid = false
+		}
 	}
 
-	// Validate each template
-	for name, template := range templates {
+	// Define layout templates to validate
+	layoutTemplates := map[string]string{
+		"full layout":       fullTemplate,
+		"half vertical":     halfVertTemplate,
+		"half horizontal":   halfHorizTemplate,
+		"quadrant":         quadrantTemplate,
+	}
+
+	// Validate each layout template (merged with shared markup if applicable)
+	for name, template := range layoutTemplates {
 		if strings.TrimSpace(template) == "" {
 			continue // Skip empty templates
 		}
 
-		result := v.ValidateTemplate(template, name)
+		// Merge with shared markup and validate the combined result
+		mergedTemplate := v.mergeTemplates(sharedTemplate, template)
+		result := v.ValidateTemplate(mergedTemplate, name)
+		
 		combinedResult.Errors = append(combinedResult.Errors, result.Errors...)
 		combinedResult.Warnings = append(combinedResult.Warnings, result.Warnings...)
 		

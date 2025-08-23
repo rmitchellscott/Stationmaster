@@ -47,9 +47,14 @@ export function PrivatePluginEditorPage() {
   // Fetch plugin data if editing
   useEffect(() => {
     const fetchPlugin = async () => {
-      if (!pluginId) return;
+      console.log('fetchPlugin called, pluginId:', pluginId);
+      if (!pluginId) {
+        console.log('No pluginId, returning early');
+        return;
+      }
       
       try {
+        console.log('Setting loading to true');
         setLoading(true);
         setError(null);
         
@@ -67,6 +72,7 @@ export function PrivatePluginEditorPage() {
       } catch (error) {
         setError('Network error occurred');
       } finally {
+        console.log('Setting loading to false');
         setLoading(false);
       }
     };
@@ -113,7 +119,10 @@ export function PrivatePluginEditorPage() {
     navigate('/?tab=plugins&subtab=private');
   };
 
+  console.log('Render check - loading:', loading, 'pluginId:', pluginId, 'isEditing:', isEditing);
+  
   if (loading) {
+    console.log('Showing loading state');
     return (
       <div className="bg-background pt-0 pb-8 px-0 sm:px-8">
         <div className="max-w-6xl mx-0 sm:mx-auto space-y-6">
@@ -164,11 +173,8 @@ export function PrivatePluginEditorPage() {
           <CardContent>
             <PrivatePluginCreator
               plugin={plugin}
-              isOpen={true}
-              onClose={handleCancel}
               onSave={handleSavePlugin}
               onCancel={handleCancel}
-              standalone={true}
             />
           </CardContent>
         </Card>

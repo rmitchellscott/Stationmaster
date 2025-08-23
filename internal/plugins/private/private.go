@@ -3,6 +3,7 @@ package private
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/rmitchellscott/stationmaster/internal/database"
@@ -78,49 +79,45 @@ func (p *PrivatePlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespon
 			fmt.Errorf("device model is required for private plugin processing")
 	}
 	
-	// Get instance settings
-	settings := ctx.Settings
+	// Get the user's template from the definition
+	if p.definition.MarkupFull == nil || *p.definition.MarkupFull == "" {
+		return plugins.CreateErrorResponse("No template defined for private plugin"),
+			fmt.Errorf("markup_full is empty for private plugin %s", p.definition.ID)
+	}
 	
-	// Create HTML content for this private plugin instance
+	userTemplate := *p.definition.MarkupFull
+	
+	// Basic template variable substitution
+	processedTemplate := userTemplate
+	processedTemplate = strings.ReplaceAll(processedTemplate, "{{ timestamp }}", time.Now().Format("2006-01-02 15:04:05"))
+	processedTemplate = strings.ReplaceAll(processedTemplate, "{{timestamp}}", time.Now().Format("2006-01-02 15:04:05"))
+	
+	// Create complete HTML document with TRMNL framework
 	html := fmt.Sprintf(`<!DOCTYPE html>
 <html>
 <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>%s</title>
+    <link rel="stylesheet" href="https://usetrmnl.com/css/latest/plugins.css">
     <style>
         body { 
-            font-family: Arial, sans-serif; 
-            padding: 20px; 
-            background: #f0f0f0;
             width: %dpx; 
             height: %dpx; 
             margin: 0; 
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        .content {
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            text-align: center;
+            padding: 0;
         }
     </style>
 </head>
 <body>
-    <div class="content">
-        <h2>%s</h2>
-        <p>Private Plugin Instance</p>
-        <p>Definition: %s</p>
-        <p>Settings: %v</p>
-        <p>Generated at: %s</p>
-    </div>
+    %s
+    <script src="https://usetrmnl.com/js/latest/plugins.js"></script>
 </body>
 </html>`,
+		p.Name(),
 		ctx.Device.DeviceModel.ScreenWidth,
 		ctx.Device.DeviceModel.ScreenHeight,
-		p.Name(),
-		p.definition.Name,
-		settings,
-		time.Now().Format("2006-01-02 15:04:05"))
+		processedTemplate)
 	
 	// Create browserless renderer
 	renderer, err := rendering.NewBrowserlessRenderer()

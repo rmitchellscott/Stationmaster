@@ -122,7 +122,9 @@ func (pp *PluginProcessor) processUnifiedPluginInstance(device *database.Device,
 			"filename":  fmt.Sprintf("pre_rendered_%s", time.Now().Format("20060102150405")),
 		}
 		
-		logging.Info("[PLUGIN] Using pre-rendered content", "plugin_type", plugin.Type())
+		logging.Info("[PLUGIN] Using pre-rendered content", 
+			"plugin_type", plugin.Type(), 
+			"plugin_name", pluginInstance.Name)
 	} else {
 		// No pre-rendered content available, fall back to on-demand processing
 		if plugin.RequiresProcessing() {

@@ -425,6 +425,8 @@ func (p *RenderWorkerPool) broadcastJobUpdate(ctx context.Context, jobID uuid.UU
 		logging.Debug("[WORKER_POOL] Broadcasted job update via SSE", 
 			"job_id", jobID, 
 			"user_id", job.PluginInstance.UserID,
+			"plugin_name", job.PluginInstance.Name,
+			"username", job.PluginInstance.User.Username,
 			"status", status)
 	}
 }
@@ -490,7 +492,24 @@ func (w *Worker) processJob(job RenderJob) {
 	atomic.AddInt64(&w.pool.metrics.TotalJobs, 1)
 	atomic.AddInt32(&w.pool.metrics.QueueLength, -1)
 	
-	logging.Debug("[WORKER] Processing job", "worker_id", w.id, "job_id", job.ID, "plugin_id", job.PluginInstanceID)
+	// Load plugin instance to get name and user context for better logging
+	var pluginInstance database.PluginInstance
+	pluginErr := w.pool.db.WithContext(job.Context).
+		Preload("User").
+		Preload("PluginDefinition").
+		First(&pluginInstance, job.PluginInstanceID).Error
+	
+	if pluginErr != nil {
+		logging.Debug("[WORKER] Processing job", "worker_id", w.id, "job_id", job.ID, "plugin_id", job.PluginInstanceID, "error", "failed to load plugin context")
+	} else {
+		logging.Debug("[WORKER] Processing job", 
+			"worker_id", w.id, 
+			"job_id", job.ID, 
+			"plugin_id", job.PluginInstanceID,
+			"plugin_name", pluginInstance.Name,
+			"plugin_type", pluginInstance.PluginDefinition.PluginType,
+			"username", pluginInstance.User.Username)
+	}
 	
 	// Mark job as processing in database
 	now := time.Now()

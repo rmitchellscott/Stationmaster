@@ -377,7 +377,14 @@ func (w *RenderWorker) renderForDeviceModel(ctx context.Context, pluginInstance 
 		return fmt.Errorf("failed to store rendered content: %w", err)
 	}
 
-	logging.Info("[RENDER_WORKER] Rendered plugin", "type", pluginInstance.PluginDefinition.PluginType, "width", deviceModel.ScreenWidth, "height", deviceModel.ScreenHeight, "bit_depth", deviceModel.BitDepth, "path", imagePath)
+	logging.Info("[RENDER_WORKER] Rendered plugin", 
+		"type", pluginInstance.PluginDefinition.PluginType, 
+		"plugin_name", pluginInstance.Name,
+		"username", pluginInstance.User.Username,
+		"width", deviceModel.ScreenWidth, 
+		"height", deviceModel.ScreenHeight, 
+		"bit_depth", deviceModel.BitDepth, 
+		"path", imagePath)
 
 	return nil
 }
@@ -442,7 +449,11 @@ func (w *RenderWorker) scheduleNextRender(ctx context.Context, pluginInstance da
 	if err != nil {
 		logging.Info("[RENDER_WORKER] Failed to schedule next render", "error", err)
 	} else {
-		logging.Info("[RENDER_WORKER] Scheduled next render", "plugin", pluginInstance.Name, "scheduled_for", nextRender.Format(time.RFC3339))
+		logging.Info("[RENDER_WORKER] Scheduled next render", 
+			"plugin", pluginInstance.Name, 
+			"username", pluginInstance.User.Username,
+			"plugin_type", pluginInstance.PluginDefinition.PluginType,
+			"scheduled_for", nextRender.Format(time.RFC3339))
 	}
 }
 

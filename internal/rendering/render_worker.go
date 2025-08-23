@@ -1,10 +1,13 @@
 package rendering
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"image"
+	_ "image/png" // Register PNG decoder
 	"os"
 	"path/filepath"
 	"time"
@@ -13,6 +16,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/rmitchellscott/stationmaster/internal/database"
+	"github.com/rmitchellscott/stationmaster/internal/imageprocessing"
 	"github.com/rmitchellscott/stationmaster/internal/logging"
 	"github.com/rmitchellscott/stationmaster/internal/plugins"
 )
@@ -310,7 +314,38 @@ func (w *RenderWorker) renderForDeviceModel(ctx context.Context, pluginInstance 
 	if plugin.PluginType() == plugins.PluginTypeImage {
 		// Check if plugin provided image data (new approach)
 		if imageData, ok := plugins.GetImageData(response); ok {
-			// Save image data to disk using same pattern as data plugins
+			var processedImageData []byte
+
+			// For private plugins, we need to process the image to correct bit depth
+			if pluginInstance.PluginDefinition.PluginType == "private" {
+				// Decode the raw PNG image from browserless
+				img, _, err := image.Decode(bytes.NewReader(imageData))
+				if err != nil {
+					return fmt.Errorf("failed to decode private plugin image: %w", err)
+				}
+
+				// Convert to grayscale and quantize to target bit depth (no dithering)
+				quantizedImg := imageprocessing.QuantizeToGrayscalePalette(img, deviceModel.BitDepth)
+				if quantizedImg == nil {
+					return fmt.Errorf("failed to quantize private plugin image")
+				}
+
+				// Encode as PNG with correct bit depth
+				processedImageData, err = imageprocessing.EncodePalettedPNG(quantizedImg, deviceModel.BitDepth)
+				if err != nil {
+					return fmt.Errorf("failed to encode private plugin image: %w", err)
+				}
+
+				logging.Debug("[RENDER_WORKER] Processed private plugin image", 
+					"original_size", len(imageData), 
+					"processed_size", len(processedImageData),
+					"bit_depth", deviceModel.BitDepth)
+			} else {
+				// For other image plugins, use raw data (they may already be processed)
+				processedImageData = imageData
+			}
+
+			// Save processed image data to disk
 			randomString := generateRandomString(10)
 			filename := fmt.Sprintf("%s_%s_%dx%d_%d_%s.png",
 				pluginInstance.ID, pluginInstance.PluginDefinition.PluginType,
@@ -318,7 +353,7 @@ func (w *RenderWorker) renderForDeviceModel(ctx context.Context, pluginInstance 
 			imagePath = filepath.Join(w.renderedDir, filename)
 
 			// Write file with better error handling
-			err = os.WriteFile(imagePath, imageData, 0644)
+			err = os.WriteFile(imagePath, processedImageData, 0644)
 			if err != nil {
 				return fmt.Errorf("failed to save image plugin image: %w", err)
 			}
@@ -330,18 +365,13 @@ func (w *RenderWorker) renderForDeviceModel(ctx context.Context, pluginInstance 
 				logging.Warn("[RENDER_WORKER] File verification failed", "path", imagePath, "error", err)
 			}
 
-			// Verify file size matches expected size
+			// Get final file size
 			fileInfo, err := os.Stat(imagePath)
 			if err != nil {
-				logging.Warn("[RENDER_WORKER] Could not verify file size", "path", imagePath, "error", err)
-				fileSize = int64(len(imageData)) // Use expected size
+				logging.Warn("[RENDER_WORKER] Could not get file size", "path", imagePath, "error", err)
+				fileSize = int64(len(processedImageData)) // Use expected size
 			} else {
-				actualSize := fileInfo.Size()
-				expectedSize := int64(len(imageData))
-				if actualSize != expectedSize {
-					logging.Warn("[RENDER_WORKER] File size mismatch", "path", imagePath, "expected", expectedSize, "actual", actualSize)
-				}
-				fileSize = actualSize
+				fileSize = fileInfo.Size()
 			}
 
 			logging.Debug("[RENDER_WORKER] Successfully wrote image file", "path", imagePath, "size", fileSize)

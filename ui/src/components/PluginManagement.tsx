@@ -373,7 +373,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
       });
 
       if (response.ok) {
-        setEditDialogSuccess("Plugin refresh triggered successfully! Content will be re-rendered on next request.");
+        setEditDialogSuccess("Content refresh started! Your plugin will update shortly.");
       } else {
         const errorData = await response.json();
         setEditDialogError(errorData.error || "Failed to force refresh plugin");

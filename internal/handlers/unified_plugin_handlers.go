@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"sort"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -294,10 +295,32 @@ func ForceRefreshPluginInstanceHandler(c *gin.Context) {
 
 	// Try as unified PluginInstance first
 	var unifiedInstance database.PluginInstance
-	err := db.Where("id = ? AND user_id = ?", instanceID, userID).First(&unifiedInstance).Error
+	err := db.Preload("PluginDefinition").Where("id = ? AND user_id = ?", instanceID, userID).First(&unifiedInstance).Error
 	if err == nil {
-		// For unified instances, clear any pre-rendered content
+		// For unified instances, clear any pre-rendered content first
 		db.Where("plugin_instance_id = ?", unifiedInstance.ID).Delete(&database.RenderedContent{})
+
+		// Check if this plugin requires processing (rendering)
+		if unifiedInstance.PluginDefinition.RequiresProcessing {
+			// Schedule an immediate high-priority render job
+			renderJob := database.RenderQueue{
+				ID:               uuid.New(),
+				PluginInstanceID: unifiedInstance.ID,
+				Priority:         999, // High priority for force refresh
+				ScheduledFor:     time.Now(),
+				Status:           "pending",
+			}
+
+			err = db.Create(&renderJob).Error
+			if err != nil {
+				logging.Error("[FORCE_REFRESH] Failed to schedule immediate render job", "instance_id", instanceID, "error", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to schedule render job"})
+				return
+			}
+
+			logging.Info("[FORCE_REFRESH] Scheduled immediate render job", "instance_name", unifiedInstance.Name, "instance_id", instanceID, "job_id", renderJob.ID)
+		}
+
 		c.JSON(http.StatusOK, gin.H{"message": "Plugin refresh triggered successfully"})
 		return
 	}

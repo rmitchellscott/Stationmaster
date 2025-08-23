@@ -152,6 +152,18 @@ func (w *RenderWorker) processRenderJob(ctx context.Context, job database.Render
 		return nil
 	}
 
+	// Check if plugin definition was loaded correctly
+	if pluginInstance.PluginDefinition.ID == uuid.Nil {
+		w.markJobCancelled(ctx, job, "plugin definition not found or inactive")
+		return nil
+	}
+
+	// Check if plugin definition is still active
+	if !pluginInstance.PluginDefinition.IsActive {
+		w.markJobCancelled(ctx, job, "plugin definition is inactive")
+		return nil
+	}
+
 	// Get all device models for this user's devices
 	var deviceModels []database.DeviceModel
 	err = w.db.WithContext(ctx).
@@ -211,20 +223,22 @@ func (w *RenderWorker) renderForDeviceModel(ctx context.Context, pluginInstance 
 	var plugin plugins.Plugin
 	var err error
 	
-	// Check if this is a private plugin
+	// Create plugin based on type
 	if pluginInstance.PluginDefinition.PluginType == "private" {
 		// Use private plugin factory
 		plugin, err = w.factory.CreatePlugin(&pluginInstance.PluginDefinition, &pluginInstance)
 		if err != nil {
 			return fmt.Errorf("failed to create private plugin: %w", err)
 		}
-	} else {
+	} else if pluginInstance.PluginDefinition.PluginType == "system" {
 		// System plugin - get from registry
 		var exists bool
 		plugin, exists = plugins.Get(pluginInstance.PluginDefinition.Identifier)
 		if !exists {
-			return fmt.Errorf("plugin type %s not found", pluginInstance.PluginDefinition.Identifier)
+			return fmt.Errorf("system plugin %s not found in registry", pluginInstance.PluginDefinition.Identifier)
 		}
+	} else {
+		return fmt.Errorf("unknown plugin type: %s", pluginInstance.PluginDefinition.PluginType)
 	}
 
 	// Skip rendering for plugins that don't require processing
@@ -252,41 +266,7 @@ func (w *RenderWorker) renderForDeviceModel(ctx context.Context, pluginInstance 
 		return fmt.Errorf("plugin processing failed: %w", err)
 	}
 
-	var imagePath string
-	var fileSize int64
-
-	if plugin.PluginType() == plugins.PluginTypeImage {
-		// Check if plugin provided image data (new approach)
-		if imageData, ok := plugins.GetImageData(response); ok {
-			// Save image data to disk using same pattern as data plugins
-			randomString := generateRandomString(10)
-			filename := fmt.Sprintf("%s_%s_%dx%d_%d_%s.png",
-				pluginInstance.ID, pluginInstance.PluginDefinition.PluginType,
-				deviceModel.ScreenWidth, deviceModel.ScreenHeight, deviceModel.BitDepth, randomString)
-			imagePath = filepath.Join(w.renderedDir, filename)
-
-			err = os.WriteFile(imagePath, imageData, 0644)
-			if err != nil {
-				return fmt.Errorf("failed to save image plugin image: %w", err)
-			}
-
-			fileSize = int64(len(imageData))
-		} else {
-			// Fallback to URL reference for backward compatibility
-			imageURL, ok := plugins.GetImageURL(response)
-			if !ok {
-				return fmt.Errorf("image plugin response missing image URL and image data")
-			}
-			imagePath = imageURL
-			fileSize = 0 // URL reference, no local file
-		}
-	} else if plugin.PluginType() == plugins.PluginTypeData {
-		// Data plugins are not supported without HTML renderer
-		logging.Debug("[RENDER_WORKER] Skipping data plugin rendering - HTML rendering not available", "plugin_type", pluginInstance.PluginDefinition.PluginType)
-		return nil // Skip this render, don't error
-	}
-
-	// Clean up old rendered content and files for this resolution
+	// Clean up old rendered content and files for this resolution BEFORE creating new ones
 	var oldContent []database.RenderedContent
 	err = w.db.WithContext(ctx).
 		Where("plugin_instance_id = ? AND width = ? AND height = ? AND bit_depth = ?",
@@ -295,7 +275,7 @@ func (w *RenderWorker) renderForDeviceModel(ctx context.Context, pluginInstance 
 	if err != nil {
 		logging.Error("[RENDER_WORKER] Failed to find old content", "error", err)
 	} else {
-		// Delete old image files
+		// Delete old image files first
 		for _, content := range oldContent {
 			var fullPath string
 			if filepath.IsAbs(content.ImagePath) {
@@ -322,6 +302,62 @@ func (w *RenderWorker) renderForDeviceModel(ctx context.Context, pluginInstance 
 		if err != nil {
 			logging.Error("[RENDER_WORKER] Failed to clean up old content records", "error", err)
 		}
+	}
+
+	var imagePath string
+	var fileSize int64
+
+	if plugin.PluginType() == plugins.PluginTypeImage {
+		// Check if plugin provided image data (new approach)
+		if imageData, ok := plugins.GetImageData(response); ok {
+			// Save image data to disk using same pattern as data plugins
+			randomString := generateRandomString(10)
+			filename := fmt.Sprintf("%s_%s_%dx%d_%d_%s.png",
+				pluginInstance.ID, pluginInstance.PluginDefinition.PluginType,
+				deviceModel.ScreenWidth, deviceModel.ScreenHeight, deviceModel.BitDepth, randomString)
+			imagePath = filepath.Join(w.renderedDir, filename)
+
+			// Write file with better error handling
+			err = os.WriteFile(imagePath, imageData, 0644)
+			if err != nil {
+				return fmt.Errorf("failed to save image plugin image: %w", err)
+			}
+
+			// Verify file was actually written and is accessible
+			if _, err := os.Stat(imagePath); os.IsNotExist(err) {
+				return fmt.Errorf("image file was not created successfully: %s", imagePath)
+			} else if err != nil {
+				logging.Warn("[RENDER_WORKER] File verification failed", "path", imagePath, "error", err)
+			}
+
+			// Verify file size matches expected size
+			fileInfo, err := os.Stat(imagePath)
+			if err != nil {
+				logging.Warn("[RENDER_WORKER] Could not verify file size", "path", imagePath, "error", err)
+				fileSize = int64(len(imageData)) // Use expected size
+			} else {
+				actualSize := fileInfo.Size()
+				expectedSize := int64(len(imageData))
+				if actualSize != expectedSize {
+					logging.Warn("[RENDER_WORKER] File size mismatch", "path", imagePath, "expected", expectedSize, "actual", actualSize)
+				}
+				fileSize = actualSize
+			}
+
+			logging.Debug("[RENDER_WORKER] Successfully wrote image file", "path", imagePath, "size", fileSize)
+		} else {
+			// Fallback to URL reference for backward compatibility
+			imageURL, ok := plugins.GetImageURL(response)
+			if !ok {
+				return fmt.Errorf("image plugin response missing image URL and image data")
+			}
+			imagePath = imageURL
+			fileSize = 0 // URL reference, no local file
+		}
+	} else if plugin.PluginType() == plugins.PluginTypeData {
+		// Data plugins are not supported without HTML renderer
+		logging.Debug("[RENDER_WORKER] Skipping data plugin rendering - HTML rendering not available", "plugin_type", pluginInstance.PluginDefinition.PluginType)
+		return nil // Skip this render, don't error
 	}
 
 	// Store rendered content record
@@ -355,17 +391,21 @@ func (w *RenderWorker) scheduleNextRender(ctx context.Context, pluginInstance da
 	// Check if plugin requires processing before scheduling
 	var requiresProcessing bool
 	
-	if len(pluginInstance.PluginDefinition.PluginType) > 8 && pluginInstance.PluginDefinition.PluginType[:8] == "private_" {
+	if pluginInstance.PluginDefinition.PluginType == "private" {
 		// Private plugins always require processing (they generate HTML)
 		requiresProcessing = true
-	} else {
+	} else if pluginInstance.PluginDefinition.PluginType == "system" {
 		// System plugin - check registry
 		plugin, exists := plugins.Get(pluginInstance.PluginDefinition.Identifier)
 		if !exists {
-			logging.Info("[RENDER_WORKER] Skipping next render schedule", "plugin", pluginInstance.PluginDefinition.Identifier, "type", pluginInstance.PluginDefinition.PluginType, "reason", "plugin not found")
+			logging.Warn("[RENDER_WORKER] System plugin not found in registry", "plugin", pluginInstance.PluginDefinition.Identifier, "instance_name", pluginInstance.Name, "instance_id", pluginInstance.ID)
 			return
 		}
 		requiresProcessing = plugin.RequiresProcessing()
+	} else {
+		// Unknown plugin type
+		logging.Error("[RENDER_WORKER] Unknown plugin type", "plugin_type", pluginInstance.PluginDefinition.PluginType, "instance_name", pluginInstance.Name, "instance_id", pluginInstance.ID)
+		return
 	}
 	
 	if !requiresProcessing {

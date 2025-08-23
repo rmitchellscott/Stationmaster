@@ -115,6 +115,150 @@ func RunMigrations(logPrefix string) error {
 				return tx.Migrator().DropTable(&PrivatePlugin{})
 			},
 		},
+		{
+			ID: "20250823_cleanup_legacy_plugin_system",
+			Migrate: func(tx *gorm.DB) error {
+				logging.Info("[MIGRATION] Cleaning up legacy plugin system")
+
+				// Drop legacy tables if they exist
+				legacyTables := []string{"user_plugins", "plugins"}
+				for _, tableName := range legacyTables {
+					if tx.Migrator().HasTable(tableName) {
+						logging.Info("[MIGRATION] Dropping legacy table", "table", tableName)
+						if err := tx.Migrator().DropTable(tableName); err != nil {
+							logging.Warn("[MIGRATION] Failed to drop legacy table", "table", tableName, "error", err)
+							// Don't fail the migration if we can't drop legacy tables
+							// They might have constraints we need to handle manually
+						}
+					}
+				}
+
+				// Clean up any orphaned render queue entries
+				var orphanedCount int64
+				result := tx.Exec(`DELETE FROM render_queues 
+					WHERE plugin_instance_id NOT IN (
+						SELECT id FROM plugin_instances WHERE is_active = true
+					)`)
+				
+				if result.Error != nil {
+					logging.Warn("[MIGRATION] Failed to clean orphaned render queue entries", "error", result.Error)
+				} else {
+					orphanedCount = result.RowsAffected
+					if orphanedCount > 0 {
+						logging.Info("[MIGRATION] Cleaned orphaned render queue entries", "count", orphanedCount)
+					}
+				}
+
+				// Clean up any orphaned rendered content
+				result = tx.Exec(`DELETE FROM rendered_contents 
+					WHERE plugin_instance_id NOT IN (
+						SELECT id FROM plugin_instances WHERE is_active = true
+					)`)
+				
+				if result.Error != nil {
+					logging.Warn("[MIGRATION] Failed to clean orphaned rendered content", "error", result.Error)
+				} else {
+					orphanedCount = result.RowsAffected
+					if orphanedCount > 0 {
+						logging.Info("[MIGRATION] Cleaned orphaned rendered content", "count", orphanedCount)
+					}
+				}
+
+				// Clean up any orphaned playlist items
+				result = tx.Exec(`DELETE FROM playlist_items 
+					WHERE plugin_instance_id NOT IN (
+						SELECT id FROM plugin_instances WHERE is_active = true
+					)`)
+				
+				if result.Error != nil {
+					logging.Warn("[MIGRATION] Failed to clean orphaned playlist items", "error", result.Error)
+				} else {
+					orphanedCount = result.RowsAffected
+					if orphanedCount > 0 {
+						logging.Info("[MIGRATION] Cleaned orphaned playlist items", "count", orphanedCount)
+					}
+				}
+
+				logging.Info("[MIGRATION] Legacy plugin system cleanup completed")
+				return nil
+			},
+			Rollback: func(tx *gorm.DB) error {
+				logging.Warn("[MIGRATION] Cannot rollback legacy plugin system cleanup - data was permanently deleted")
+				return nil
+			},
+		},
+		{
+			ID: "20250823_add_foreign_key_constraints",
+			Migrate: func(tx *gorm.DB) error {
+				logging.Info("[MIGRATION] Adding foreign key constraints to prevent orphaned data")
+
+				// Add NOT NULL constraint to plugin_instance_id where it should be required
+				constraints := []struct {
+					table  string
+					column string
+				}{
+					{"render_queues", "plugin_instance_id"},
+					{"rendered_contents", "plugin_instance_id"},
+				}
+
+				for _, constraint := range constraints {
+					// Check if column allows NULL values
+					var columnInfo struct {
+						IsNullable string `gorm:"column:is_nullable"`
+					}
+					err := tx.Raw(`
+						SELECT is_nullable 
+						FROM information_schema.columns 
+						WHERE table_name = ? AND column_name = ? AND table_schema = 'public'
+					`, constraint.table, constraint.column).Scan(&columnInfo).Error
+					
+					if err != nil {
+						logging.Warn("[MIGRATION] Failed to check column nullability", "table", constraint.table, "column", constraint.column, "error", err)
+						continue
+					}
+
+					if columnInfo.IsNullable == "YES" {
+						logging.Info("[MIGRATION] Adding NOT NULL constraint", "table", constraint.table, "column", constraint.column)
+						err = tx.Exec(fmt.Sprintf(`
+							ALTER TABLE %s 
+							ALTER COLUMN %s SET NOT NULL
+						`, constraint.table, constraint.column)).Error
+						
+						if err != nil {
+							logging.Warn("[MIGRATION] Failed to add NOT NULL constraint", "table", constraint.table, "column", constraint.column, "error", err)
+							// Don't fail the migration, just log the warning
+						}
+					}
+				}
+
+				logging.Info("[MIGRATION] Foreign key constraints migration completed")
+				return nil
+			},
+			Rollback: func(tx *gorm.DB) error {
+				logging.Info("[MIGRATION] Removing NOT NULL constraints")
+				
+				constraints := []struct {
+					table  string
+					column string
+				}{
+					{"render_queues", "plugin_instance_id"},
+					{"rendered_contents", "plugin_instance_id"},
+				}
+
+				for _, constraint := range constraints {
+					err := tx.Exec(fmt.Sprintf(`
+						ALTER TABLE %s 
+						ALTER COLUMN %s DROP NOT NULL
+					`, constraint.table, constraint.column)).Error
+					
+					if err != nil {
+						logging.Warn("[MIGRATION] Failed to drop NOT NULL constraint", "table", constraint.table, "column", constraint.column, "error", err)
+					}
+				}
+				
+				return nil
+			},
+		},
 	}
 
 	// Create migrator with our migrations

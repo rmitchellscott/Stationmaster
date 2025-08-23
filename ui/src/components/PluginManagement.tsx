@@ -295,9 +295,14 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
       originalSettings = {};
     }
     
+    // Check for refresh rate changes (only for plugins that require processing)
+    const hasRefreshRateChanged = editPluginInstance.plugin?.requires_processing && 
+      editInstanceRefreshRate !== editPluginInstance.refresh_interval;
+    
     return (
       editInstanceName.trim() !== editPluginInstance.name ||
-      JSON.stringify(editInstanceSettings) !== JSON.stringify(originalSettings)
+      JSON.stringify(editInstanceSettings) !== JSON.stringify(originalSettings) ||
+      hasRefreshRateChanged
     );
   };
 

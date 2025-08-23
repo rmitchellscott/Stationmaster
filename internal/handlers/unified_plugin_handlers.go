@@ -403,7 +403,7 @@ func CreatePluginInstanceFromDefinitionHandler(c *gin.Context) {
 
 // GetRefreshRateOptionsHandler returns available refresh rate options
 func GetRefreshRateOptionsHandler(c *gin.Context) {
-	options := []int{300, 600, 1800, 3600, 7200, 10800, 21600, 43200, 86400}
+	options := database.GetRefreshRateOptions()
 	c.JSON(http.StatusOK, gin.H{"refresh_rate_options": options})
 }
 

@@ -2,8 +2,8 @@ package private
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/rmitchellscott/stationmaster/internal/database"
@@ -85,97 +85,109 @@ func (p *PrivatePlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespon
 			fmt.Errorf("markup_full is empty for private plugin %s", p.definition.ID)
 	}
 	
-	userTemplate := *p.definition.MarkupFull
-	
-	// Basic template variable substitution
-	processedTemplate := userTemplate
-	processedTemplate = strings.ReplaceAll(processedTemplate, "{{ timestamp }}", time.Now().Format("2006-01-02 15:04:05"))
-	processedTemplate = strings.ReplaceAll(processedTemplate, "{{timestamp}}", time.Now().Format("2006-01-02 15:04:05"))
-	
-	// Check if user already has view classes or wants specific view type
-	viewClass := "view--full" // default
-	if strings.Contains(processedTemplate, "{{view_type}}") {
-		// Extract view type from template variable if specified
-		// This could be enhanced to parse actual values, for now use default
-		processedTemplate = strings.ReplaceAll(processedTemplate, "{{view_type}}", "view--full")
-	}
-	if strings.Contains(processedTemplate, "{{ view_type }}") {
-		processedTemplate = strings.ReplaceAll(processedTemplate, "{{ view_type }}", "view--full")
-	}
-	
 	// Get plugin instance ID for the wrapper
 	instanceID := "unknown"
 	if p.instance != nil {
 		instanceID = p.instance.ID.String()
 	}
 	
-	// Check if template already contains view classes
-	hasViewClass := strings.Contains(processedTemplate, "class=\"view") || 
-		strings.Contains(processedTemplate, "class='view") ||
-		strings.Contains(processedTemplate, "class=\"view--") ||
-		strings.Contains(processedTemplate, "class='view--")
-	
-	// Wrap user template in TRMNL framework structure
-	if hasViewClass {
-		// User already has view structure, just wrap with environment
-		processedTemplate = fmt.Sprintf(`<div id="plugin-%s" class="environment trmnl">
-    <div class="screen">
-        %s
-    </div>
-</div>`, instanceID, processedTemplate)
-	} else {
-		// Auto-inject view wrapper
-		processedTemplate = fmt.Sprintf(`<div id="plugin-%s" class="environment trmnl">
-    <div class="screen">
-        <div class="view %s">
-            %s
-        </div>
-    </div>
-</div>`, instanceID, viewClass, processedTemplate)
+	// Get shared markup if available
+	sharedMarkup := ""
+	if p.definition.SharedMarkup != nil {
+		sharedMarkup = *p.definition.SharedMarkup
+	}
+
+	// Prepare template data with form fields and external data
+	templateData := make(map[string]interface{})
+
+	// Add form field values from instance settings
+	if p.instance != nil && p.instance.Settings != nil {
+		var settings map[string]interface{}
+		if err := json.Unmarshal(p.instance.Settings, &settings); err == nil {
+			for key, value := range settings {
+				templateData[key] = value
+			}
+		}
+	}
+
+	// Fetch external data based on data strategy
+	switch dataStrategy := p.definition.DataStrategy; {
+	case dataStrategy != nil && *dataStrategy == "polling":
+		// Use enhanced data poller for robust polling with retries and error handling
+		poller := NewEnhancedDataPoller()
+		pollingCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if polledResult, err := poller.PollData(pollingCtx, p.definition, templateData); err == nil && polledResult.Success {
+			// Merge polling data into template data
+			for key, value := range polledResult.Data {
+				templateData[key] = value
+			}
+		} else {
+			// Log error but don't fail - allow template to render with form data only
+			if err != nil {
+				fmt.Printf("Warning: Failed to fetch polling data for plugin %s: %v\n", p.definition.ID, err)
+			} else if len(polledResult.Errors) > 0 {
+				fmt.Printf("Warning: Polling errors for plugin %s: %v\n", p.definition.ID, polledResult.Errors)
+			}
+		}
+	case dataStrategy != nil && *dataStrategy == "webhook":
+		// Webhook data is handled separately via webhook endpoints
+		// No additional data fetching needed here
+	case dataStrategy != nil && *dataStrategy == "merge":
+		// TODO: Implement plugin merge functionality
+		fmt.Printf("Plugin merge data strategy not yet implemented for plugin %s\n", p.definition.ID)
+	}
+
+	// Add TRMNL global variables
+	templateData["trmnl"] = map[string]interface{}{
+		"timestamp": time.Now().Format("2006-01-02 15:04:05"),
+		"date":      time.Now().Format("2006-01-02"),
+		"time":      time.Now().Format("15:04:05"),
+		"device_id": ctx.Device.ID.String(),
 	}
 	
-	// Create complete HTML document with TRMNL framework
-	html := fmt.Sprintf(`<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>%s</title>
-    <link rel="stylesheet" href="https://usetrmnl.com/css/latest/plugins.css">
-    <style>
-        body { 
-            width: %dpx; 
-            height: %dpx; 
-            margin: 0; 
-            padding: 0;
-        }
-    </style>
-</head>
-<body>
-    %s
-    <script src="https://usetrmnl.com/js/latest/plugins.js"></script>
-</body>
-</html>`,
-		p.Name(),
-		ctx.Device.DeviceModel.ScreenWidth,
-		ctx.Device.DeviceModel.ScreenHeight,
-		processedTemplate)
+	// Use the private plugin renderer service
+	htmlRenderer := NewPrivatePluginRenderer()
+	html, err := htmlRenderer.RenderToHTML(RenderOptions{
+		SharedMarkup:   sharedMarkup,
+		LayoutTemplate: *p.definition.MarkupFull,
+		Data:           templateData,
+		Width:          ctx.Device.DeviceModel.ScreenWidth,
+		Height:         ctx.Device.DeviceModel.ScreenHeight,
+		PluginName:     p.Name(),
+		InstanceID:     instanceID,
+	})
+	if err != nil {
+		return plugins.CreateErrorResponse(fmt.Sprintf("Failed to render template: %v", err)),
+			fmt.Errorf("failed to render HTML template: %w", err)
+	}
 	
-	// Debug logging removed - TRMNL CSS issue resolved
+	// Check if HTML content has changed to avoid unnecessary browserless rendering
+	if p.instance != nil {
+		comparator := NewPluginContentComparator()
+		comparison := comparator.CompareHTML(html, p.instance.LastHTMLHash)
+		
+		if comparator.ShouldSkipRender(comparison) {
+			return plugins.CreateNoChangeResponse("HTML content unchanged, skipping render"), nil
+		}
+		
+		// HTML has changed - update the hash (this will be persisted by the render worker)
+		p.instance.LastHTMLHash = &comparison.NewHash
+	}
 	
 	// Create browserless renderer
-	renderer, err := rendering.NewBrowserlessRenderer()
+	browserRenderer, err := rendering.NewBrowserlessRenderer()
 	if err != nil {
 		return plugins.CreateErrorResponse(fmt.Sprintf("Failed to create renderer: %v", err)),
 			fmt.Errorf("failed to create browserless renderer: %w", err)
 	}
-	defer renderer.Close()
+	defer browserRenderer.Close()
 	
 	// Render HTML to image using browserless
 	renderCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	
-	imageData, err := renderer.RenderHTML(
+	imageData, err := browserRenderer.RenderHTML(
 		renderCtx,
 		html,
 		ctx.Device.DeviceModel.ScreenWidth,
@@ -201,6 +213,12 @@ func (p *PrivatePlugin) Validate(settings map[string]interface{}) error {
 	// TODO: Implement JSON schema validation against FormFields
 	return nil
 }
+
+// GetInstance returns the plugin instance (used for accessing updated fields like LastHTMLHash)
+func (p *PrivatePlugin) GetInstance() *database.PluginInstance {
+	return p.instance
+}
+
 
 // Register the private plugin factory when this package is imported
 func init() {

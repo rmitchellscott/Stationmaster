@@ -42,6 +42,7 @@ import {
 import { LiquidEditor } from "./LiquidEditor";
 import { PluginPreview } from "./PluginPreview";
 import { PrivatePluginHelp } from "./PrivatePluginHelp";
+import { FormFieldBuilder } from "./FormFieldBuilder";
 
 interface PrivatePlugin {
   id?: string;
@@ -56,7 +57,7 @@ interface PrivatePlugin {
   polling_config?: PollingConfig;
   form_fields?: FormFieldConfig;
   version: string;
-  webhook_url?: string;
+  webhook_token?: string;
 }
 
 interface PollingConfig {
@@ -70,15 +71,13 @@ interface PollingConfig {
 
 interface URLConfig {
   url: string;
-  headers: Record<string, string>;
   method: string;
-  body: string;
-  key: string;
+  headers: Record<string, string>; // Header key-value pairs
+  body: string;    // JSON body for POST requests
 }
 
 interface FormFieldConfig {
-  type: string;
-  properties: Record<string, any>;
+  yaml?: string; // YAML string for form field definitions
 }
 
 interface LayoutTab {
@@ -92,15 +91,10 @@ interface PrivatePluginCreatorProps {
   plugin?: PrivatePlugin;
   onSave: (plugin: PrivatePlugin) => void;
   onCancel: () => void;
+  saving?: boolean;
 }
 
 const layoutTabs: LayoutTab[] = [
-  {
-    id: 'shared',
-    label: 'Shared Markup',
-    icon: <LayersIcon className="h-4 w-4" />,
-    description: 'Markup prepended to all layouts'
-  },
   {
     id: 'full',
     label: 'Full Screen',
@@ -124,13 +118,20 @@ const layoutTabs: LayoutTab[] = [
     label: 'Quadrant',
     icon: <Grid2x2Icon className="h-4 w-4" />,
     description: 'Quarter screen (400x240)'
+  },
+  {
+    id: 'shared',
+    label: 'Shared Markup',
+    icon: <LayersIcon className="h-4 w-4" />,
+    description: 'Markup prepended to all layouts'
   }
 ];
 
 export function PrivatePluginCreator({ 
   plugin, 
   onSave, 
-  onCancel
+  onCancel,
+  saving = false
 }: PrivatePluginCreatorProps) {
   const { t } = useTranslation();
   
@@ -148,8 +149,7 @@ export function PrivatePluginCreator({
   });
 
   // UI state
-  const [activeLayoutTab, setActiveLayoutTab] = useState<string>('shared');
-  const [loading, setLoading] = useState(false);
+  const [activeLayoutTab, setActiveLayoutTab] = useState<string>('full');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [validating, setValidating] = useState(false);
@@ -165,12 +165,43 @@ export function PrivatePluginCreator({
   // Polling configuration state
   const [pollingUrls, setPollingUrls] = useState<URLConfig[]>([]);
 
+  // Form field state
+  const [formFieldsYAML, setFormFieldsYAML] = useState<string>('');
+  const [formFieldsValid, setFormFieldsValid] = useState<boolean>(true);
+  const [formFieldsErrors, setFormFieldsErrors] = useState<string[]>([]);
+
+  // Helper function to convert legacy string headers to map format
+  const convertLegacyHeaders = (headers: any): Record<string, string> => {
+    if (typeof headers === 'string') {
+      const headerMap: Record<string, string> = {};
+      if (headers.trim()) {
+        const pairs = headers.split('&');
+        for (const pair of pairs) {
+          const [key, value] = pair.split('=', 2);
+          if (key && value) {
+            headerMap[key.trim()] = value.trim();
+          }
+        }
+      }
+      return headerMap;
+    }
+    return headers || {};
+  };
+
   // Initialize form with existing plugin data
   useEffect(() => {
     if (plugin) {
       setFormData(plugin);
       if (plugin.polling_config?.urls) {
-        setPollingUrls(plugin.polling_config.urls);
+        // Convert any legacy string headers to map format
+        const convertedUrls = plugin.polling_config.urls.map(url => ({
+          ...url,
+          headers: convertLegacyHeaders(url.headers)
+        }));
+        setPollingUrls(convertedUrls);
+      }
+      if (plugin.form_fields?.yaml) {
+        setFormFieldsYAML(plugin.form_fields.yaml);
       }
     } else {
       // Reset form for new plugin
@@ -217,11 +248,18 @@ export function PrivatePluginCreator({
   const addPollingURL = () => {
     setPollingUrls(prev => [...prev, {
       url: '',
-      headers: {},
       method: 'GET',
-      body: '',
-      key: ''
+      headers: {},
+      body: ''
     }]);
+  };
+
+  // Generate webhook URL from token using frontend location
+  const generateWebhookURL = (token?: string): string => {
+    if (!token) {
+      return "Will be generated after saving";
+    }
+    return `${window.location.origin}/api/webhooks/plugin/${token}`;
   };
 
   const removePollingURL = (index: number) => {
@@ -281,7 +319,6 @@ export function PrivatePluginCreator({
 
   const handleSave = async () => {
     try {
-      setLoading(true);
       setError(null);
 
       // Validate required fields
@@ -293,7 +330,12 @@ export function PrivatePluginCreator({
         throw new Error("At least the full screen layout template is required");
       }
 
-      // Prepare form data with polling config if needed
+      // Validate form fields if provided
+      if (!formFieldsValid && formFieldsYAML.trim()) {
+        throw new Error(`Form fields validation failed: ${formFieldsErrors.join(', ')}`);
+      }
+
+      // Prepare form data with polling config and form fields
       const submitData = { ...formData };
       
       if (formData.data_strategy === 'polling' && pollingUrls.length > 0) {
@@ -307,13 +349,17 @@ export function PrivatePluginCreator({
         };
       }
 
+      // Include form fields YAML if provided
+      if (formFieldsYAML.trim()) {
+        submitData.form_fields = {
+          yaml: formFieldsYAML
+        };
+      }
+
       onSave(submitData);
-      setSuccess("Private plugin saved successfully!");
       
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save plugin");
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -339,11 +385,20 @@ export function PrivatePluginCreator({
                   <Label>Webhook URL</Label>
                   <div className="flex gap-2 mt-2">
                     <Input 
-                      value={formData.webhook_url || "Will be generated after saving"}
+                      value={generateWebhookURL(formData.webhook_token)}
                       readOnly
                       className="bg-muted"
                     />
-                    <Button variant="outline" size="sm">
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => {
+                        const webhookURL = generateWebhookURL(formData.webhook_token);
+                        if (webhookURL !== "Will be generated after saving") {
+                          navigator.clipboard.writeText(webhookURL);
+                        }
+                      }}
+                    >
                       <Copy className="h-4 w-4" />
                     </Button>
                   </div>
@@ -367,55 +422,138 @@ export function PrivatePluginCreator({
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {pollingUrls.map((urlConfig, index) => (
-                  <div key={index} className="border rounded-lg p-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <Label>URL {index + 1}</Label>
-                      <Button 
-                        variant="ghost" 
-                        size="sm"
-                        onClick={() => removePollingURL(index)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <Label>URL</Label>
-                        <Input
-                          value={urlConfig.url}
-                          onChange={(e) => updatePollingURL(index, 'url', e.target.value)}
-                          placeholder="https://api.example.com/data"
-                          className="mt-1"
-                        />
-                      </div>
-                      <div>
-                        <Label>Data Key</Label>
-                        <Input
-                          value={urlConfig.key}
-                          onChange={(e) => updatePollingURL(index, 'key', e.target.value)}
-                          placeholder="api_data"
-                          className="mt-1"
-                        />
-                      </div>
-                      <div>
-                        <Label>Method</Label>
-                        <Select
-                          value={urlConfig.method}
-                          onValueChange={(value) => updatePollingURL(index, 'method', value)}
-                        >
-                          <SelectTrigger className="mt-1">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="GET">GET</SelectItem>
-                            <SelectItem value="POST">POST</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+                {pollingUrls.map((urlConfig, index) => {
+                  const isValidUrl = !urlConfig.url || /^https?:\/\//.test(urlConfig.url);
+                  
+                  return (
+                    <Card key={index}>
+                      <CardHeader className="pb-4">
+                        <div className="flex items-center justify-between">
+                          <CardTitle className="text-base">URL {index + 1}</CardTitle>
+                          <Button 
+                            variant="ghost" 
+                            size="sm"
+                            onClick={() => removePollingURL(index)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="space-y-6">
+                        <div className="space-y-4">
+                          <div>
+                            <Label htmlFor={`url-${index}`}>URL *</Label>
+                            <Input
+                              id={`url-${index}`}
+                              value={urlConfig.url}
+                              onChange={(e) => updatePollingURL(index, 'url', e.target.value)}
+                              placeholder="https://api.example.com/data"
+                              className={`mt-2 ${!isValidUrl ? 'border-destructive' : ''}`}
+                            />
+                            {!isValidUrl && (
+                              <p className="text-xs text-destructive mt-1">
+                                URL must start with http:// or https://
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                              <Label htmlFor={`method-${index}`}>Method</Label>
+                              <Select
+                                value={urlConfig.method}
+                                onValueChange={(value) => updatePollingURL(index, 'method', value)}
+                              >
+                                <SelectTrigger id={`method-${index}`} className="mt-2">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="GET">GET</SelectItem>
+                                  <SelectItem value="POST">POST</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div>
+                              <Label>Headers</Label>
+                              <div className="mt-2 space-y-2">
+                                {Object.entries(urlConfig.headers).map(([key, value], headerIndex) => (
+                                  <div key={headerIndex} className="flex gap-2 items-center">
+                                    <Input
+                                      placeholder="Header name"
+                                      value={key}
+                                      onChange={(e) => {
+                                        const newHeaders = { ...urlConfig.headers };
+                                        delete newHeaders[key];
+                                        newHeaders[e.target.value] = value;
+                                        updatePollingURL(index, 'headers', newHeaders);
+                                      }}
+                                      className="flex-1"
+                                    />
+                                    <Input
+                                      placeholder="Header value"
+                                      value={value}
+                                      onChange={(e) => {
+                                        const newHeaders = { ...urlConfig.headers };
+                                        newHeaders[key] = e.target.value;
+                                        updatePollingURL(index, 'headers', newHeaders);
+                                      }}
+                                      className="flex-1"
+                                    />
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => {
+                                        const newHeaders = { ...urlConfig.headers };
+                                        delete newHeaders[key];
+                                        updatePollingURL(index, 'headers', newHeaders);
+                                      }}
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </Button>
+                                  </div>
+                                ))}
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    const newHeaders = { ...urlConfig.headers, '': '' };
+                                    updatePollingURL(index, 'headers', newHeaders);
+                                  }}
+                                  className="w-full"
+                                >
+                                  <Plus className="w-4 h-4 mr-2" />
+                                  Add Header
+                                </Button>
+                              </div>
+                              <p className="text-xs text-muted-foreground mt-1">
+                                Use {`{{ form_field_name }}`} in header values for form field substitution.
+                              </p>
+                            </div>
+                          </div>
+
+                          {urlConfig.method === 'POST' && (
+                            <div>
+                              <Label htmlFor={`body-${index}`}>Request Body</Label>
+                              <Textarea
+                                id={`body-${index}`}
+                                value={urlConfig.body}
+                                onChange={(e) => updatePollingURL(index, 'body', e.target.value)}
+                                placeholder='{"api_key": "{{ api_key }}", "query": "{{ search_term }}"}'
+                                className="mt-2"
+                                rows={3}
+                              />
+                              <p className="text-xs text-muted-foreground mt-1">
+                                JSON body. Use {`{{ form_field_name }}`} to include form field values.
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
                 <Button variant="outline" onClick={addPollingURL}>
                   <Plus className="h-4 w-4 mr-2" />
                   Add URL
@@ -579,6 +717,42 @@ export function PrivatePluginCreator({
         {/* Data Strategy Configuration */}
         {renderDataStrategyConfig()}
 
+        {/* Form Fields Configuration */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Shield className="h-4 w-4" />
+              Plugin Settings Form
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Define form fields that users will fill out when configuring instances of your plugin. 
+                These values will be available in your templates as merge variables.
+              </p>
+              
+              {formFieldsErrors.length > 0 && (
+                <Alert variant="destructive">
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertDescription>
+                    Form fields validation failed. Please fix the errors before saving.
+                  </AlertDescription>
+                </Alert>
+              )}
+              
+              <FormFieldBuilder
+                value={formFieldsYAML}
+                onChange={setFormFieldsYAML}
+                onValidationChange={(isValid: boolean, errors: string[]) => {
+                  setFormFieldsValid(isValid);
+                  setFormFieldsErrors(errors);
+                }}
+              />
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Layout Templates */}
         <Card>
           <CardHeader>
@@ -651,13 +825,13 @@ export function PrivatePluginCreator({
       {/* Action buttons */}
       <Separator className="my-6" />
       <div className="flex justify-end gap-2">
-        <Button variant="outline" onClick={onCancel} disabled={loading || validating}>
+        <Button variant="outline" onClick={onCancel} disabled={saving || validating}>
           Cancel
         </Button>
         <Button 
           variant="outline" 
           onClick={validateTemplates} 
-          disabled={loading || validating}
+          disabled={saving || validating}
           className="text-blue-600 border-blue-600 hover:bg-blue-50"
         >
           {validating ? (
@@ -672,8 +846,15 @@ export function PrivatePluginCreator({
             </>
           )}
         </Button>
-        <Button onClick={handleSave} disabled={loading || validating}>
-          {loading ? "Saving..." : (plugin ? "Update Plugin" : "Create Plugin")}
+        <Button onClick={handleSave} disabled={saving || validating}>
+          {saving ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              {plugin ? "Updating..." : "Creating..."}
+            </>
+          ) : (
+            plugin ? "Update Plugin" : "Create Plugin"
+          )}
         </Button>
       </div>
     </>

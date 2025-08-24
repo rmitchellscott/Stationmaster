@@ -516,8 +516,28 @@ func DeviceEventsHandler(c *gin.Context) {
 	playlistService := database.NewPlaylistService(db)
 	activeItems, err := playlistService.GetActivePlaylistItemsForTime(deviceID, time.Now())
 	if err == nil && len(activeItems) > 0 {
-		currentIndex := device.LastPlaylistIndex
-		if currentIndex >= 0 && currentIndex < len(activeItems) {
+		// Find current item by UUID
+		var currentItem *database.PlaylistItem
+		currentIndex := -1
+		
+		if device.LastPlaylistItemID != nil {
+			// Look for the item by UUID
+			for i, item := range activeItems {
+				if item.ID == *device.LastPlaylistItemID {
+					currentItem = &item
+					currentIndex = i
+					break
+				}
+			}
+		}
+		
+		// If current item not found or not set, use first active item
+		if currentItem == nil && len(activeItems) > 0 {
+			currentItem = &activeItems[0]
+			currentIndex = 0
+		}
+		
+		if currentItem != nil {
 			// Get user timezone for sleep calculation
 			userTimezone := "UTC"
 			if user.Timezone != "" {
@@ -532,7 +552,7 @@ func DeviceEventsHandler(c *gin.Context) {
 				Data: map[string]interface{}{
 					"device_id":     deviceID.String(),
 					"current_index": currentIndex,
-					"current_item":  activeItems[currentIndex],
+					"current_item":  *currentItem,
 					"active_items":  activeItems,
 					"timestamp":     time.Now().UTC(),
 					"sleep_config": map[string]interface{}{
@@ -635,11 +655,14 @@ func DeviceActiveItemsHandler(c *gin.Context) {
 	var currentIndex int = -1
 	var currentlyShowing *database.PlaylistItem = nil
 
-	if len(activeItems) > 0 {
-		// Use the device's last playlist index to determine currently showing
-		if device.LastPlaylistIndex >= 0 && device.LastPlaylistIndex < len(activeItems) {
-			currentIndex = device.LastPlaylistIndex
-			currentlyShowing = &activeItems[currentIndex]
+	if len(activeItems) > 0 && device.LastPlaylistItemID != nil {
+		// Find the current item by UUID
+		for i, item := range activeItems {
+			if item.ID == *device.LastPlaylistItemID {
+				currentIndex = i
+				currentlyShowing = &activeItems[i]
+				break
+			}
 		}
 	}
 

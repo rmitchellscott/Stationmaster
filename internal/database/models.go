@@ -213,7 +213,7 @@ type Device struct {
 	RefreshRate             int        `gorm:"default:1800" json:"refresh_rate"` // seconds
 	AllowFirmwareUpdates    bool       `gorm:"default:true" json:"allow_firmware_updates"`
 	LastSeen                *time.Time `json:"last_seen,omitempty"`
-	LastPlaylistIndex       int        `gorm:"default:0" json:"last_playlist_index"` // Track last shown playlist item
+	LastPlaylistItemID      *uuid.UUID `gorm:"type:uuid;references:playlist_items(id)" json:"last_playlist_item_id,omitempty"` // Track last shown playlist item by UUID
 	IsActive                bool       `gorm:"default:true" json:"is_active"`
 	IsShareable             bool       `gorm:"default:false" json:"is_shareable"`                        // Whether this device can be mirrored by others
 	MirrorSourceID          *uuid.UUID `gorm:"type:uuid;index" json:"mirror_source_id,omitempty"`        // ID of device being mirrored (nullable)
@@ -261,8 +261,8 @@ type PrivatePlugin struct {
 	// Data configuration
 	DataStrategy    string         `gorm:"size:50;not null;default:'webhook'" json:"data_strategy"` // webhook, merge, polling
 	WebhookToken    string         `gorm:"size:255;uniqueIndex" json:"webhook_token"`              // Unique token for webhook URL
-	PollingConfig   datatypes.JSON `json:"polling_config"`                                         // URLs, headers, intervals for polling strategy
-	FormFields      datatypes.JSON `json:"form_fields"`                                            // Custom form field definitions
+	PollingConfig   datatypes.JSON `json:"polling_config"`                                         // URLs, headers, body, intervals, etc.
+	FormFields      datatypes.JSON `json:"form_fields"`                                            // YAML form field definitions converted to JSON schema
 	
 	// Publishing
 	IsPublished     bool           `gorm:"default:false" json:"is_published"` // Available as recipe
@@ -380,8 +380,8 @@ type PluginDefinition struct {
 	SharedMarkup    *string        `gorm:"type:text" json:"shared_markup,omitempty"`
 	DataStrategy    *string        `gorm:"size:50" json:"data_strategy,omitempty"`      // webhook, polling, merge
 	WebhookToken    *string        `gorm:"size:255;uniqueIndex" json:"webhook_token,omitempty"`
-	PollingConfig   datatypes.JSON `json:"polling_config,omitempty"`
-	FormFields      datatypes.JSON `json:"form_fields,omitempty"` // Custom form field definitions
+	PollingConfig   datatypes.JSON `json:"polling_config,omitempty"`   // URLs, headers, body, intervals, etc.
+	FormFields      datatypes.JSON `json:"form_fields,omitempty"`      // YAML form field definitions converted to JSON schema
 	
 	// Publishing (for future public plugins)
 	IsPublished bool       `gorm:"default:false" json:"is_published"`
@@ -413,6 +413,7 @@ type PluginInstance struct {
 	Name            string         `gorm:"size:255;not null" json:"name"`        // User-defined name for this instance
 	Settings        datatypes.JSON `gorm:"type:text" json:"settings"`           // JSON settings specific to this instance
 	RefreshInterval int           `gorm:"default:3600" json:"refresh_interval"` // Refresh interval in seconds
+	LastHTMLHash    *string       `gorm:"size:64" json:"last_html_hash,omitempty"` // SHA256 hash of last rendered HTML content
 	IsActive        bool          `gorm:"default:true" json:"is_active"`
 	CreatedAt       time.Time     `gorm:"autoCreateTime" json:"created_at"`
 	UpdatedAt       time.Time     `gorm:"autoUpdateTime" json:"updated_at"`

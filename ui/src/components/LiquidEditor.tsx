@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from "react";
+import React, { useRef, useEffect, useState } from "react";
 import Editor, { BeforeMount, OnMount } from "@monaco-editor/react";
 import { useTheme } from "next-themes";
 
@@ -19,8 +19,9 @@ export function LiquidEditor({
   readOnly = false,
   language = "liquid"
 }: LiquidEditorProps) {
-  const { theme } = useTheme();
+  const { resolvedTheme } = useTheme();
   const editorRef = useRef<any>(null);
+  const [mounted, setMounted] = useState(false);
 
   // Register Liquid language with Monaco
   const handleEditorWillMount: BeforeMount = (monaco) => {
@@ -133,7 +134,7 @@ export function LiquidEditor({
         ]
       });
 
-      // Define color theme for Liquid
+      // Define color theme for Liquid (kept for future use)
       monaco.editor.defineTheme('liquid-dark', {
         base: 'vs-dark',
         inherit: true,
@@ -146,8 +147,7 @@ export function LiquidEditor({
           { token: 'tag', foreground: '78dce8' },
           { token: 'attribute.name', foreground: 'a9dc76' },
           { token: 'attribute.value', foreground: 'ffd866' },
-        ],
-        colors: {}
+        ]
       });
 
       monaco.editor.defineTheme('liquid-light', {
@@ -162,8 +162,7 @@ export function LiquidEditor({
           { token: 'tag', foreground: '005cc5' },
           { token: 'attribute.name', foreground: '22863a' },
           { token: 'attribute.value', foreground: 'b08800' },
-        ],
-        colors: {}
+        ]
       });
     }
 
@@ -257,8 +256,13 @@ export function LiquidEditor({
     editorRef.current = editor;
 
     // Set theme based on current theme
-    const currentTheme = theme === 'dark' ? 'liquid-dark' : 'liquid-light';
-    monaco.editor.setTheme(currentTheme);
+    const currentTheme = resolvedTheme === 'dark' ? 'vs-dark' : 'vs';
+    
+    try {
+      monaco.editor.setTheme(currentTheme);
+    } catch (error) {
+      console.error('[LiquidEditor] Error setting initial theme:', error);
+    }
 
     // Configure editor options
     editor.updateOptions({
@@ -275,6 +279,9 @@ export function LiquidEditor({
         indentation: true
       }
     });
+
+    // Mark as mounted so theme changes can be applied
+    setMounted(true);
   };
 
   // Set initial value and handle value changes
@@ -300,14 +307,19 @@ export function LiquidEditor({
 
   // Update theme when it changes
   useEffect(() => {
-    if (editorRef.current) {
+    if (mounted && editorRef.current) {
       const monaco = (window as any).monaco;
       if (monaco) {
-        const currentTheme = theme === 'dark' ? 'liquid-dark' : 'liquid-light';
-        monaco.editor.setTheme(currentTheme);
+        const currentTheme = resolvedTheme === 'dark' ? 'vs-dark' : 'vs';
+        
+        try {
+          monaco.editor.setTheme(currentTheme);
+        } catch (error) {
+          console.error('[LiquidEditor] Error applying theme:', error);
+        }
       }
     }
-  }, [theme]);
+  }, [resolvedTheme, mounted]);
 
   const hasRealValue = value && value.trim();
   const displayValue = hasRealValue ? value : (placeholder ? `<!-- ${placeholder} -->\n` : '');
@@ -323,7 +335,7 @@ export function LiquidEditor({
         onMount={handleEditorDidMount}
         options={{
           readOnly,
-          theme: theme === 'dark' ? 'liquid-dark' : 'liquid-light',
+          theme: resolvedTheme === 'dark' ? 'liquid-dark' : 'liquid-light',
         }}
       />
     </div>

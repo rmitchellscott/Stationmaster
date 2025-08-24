@@ -41,6 +41,52 @@ func generateRandomString(length int) string {
 	return hex.EncodeToString(bytes)[:length]
 }
 
+// findItemByID finds a playlist item by UUID in the active items array
+func findItemByID(activeItems []database.PlaylistItem, itemID *uuid.UUID) *database.PlaylistItem {
+	if itemID == nil {
+		return nil
+	}
+	for i := range activeItems {
+		if activeItems[i].ID == *itemID {
+			return &activeItems[i]
+		}
+	}
+	return nil
+}
+
+// findNextActiveItem finds the next active item after the given item by order_index
+func findNextActiveItem(activeItems []database.PlaylistItem, currentItem *database.PlaylistItem) *database.PlaylistItem {
+	if len(activeItems) == 0 {
+		return nil
+	}
+	
+	if len(activeItems) == 1 {
+		return &activeItems[0] // Only one item, return it
+	}
+	
+	if currentItem == nil {
+		// No current item, return first by order_index
+		return &activeItems[0]
+	}
+	
+	// Sort items by order_index to ensure consistent ordering
+	sortedItems := make([]database.PlaylistItem, len(activeItems))
+	copy(sortedItems, activeItems)
+	
+	// Items are already sorted by order_index from GetActivePlaylistItemsForTime
+	// Find current item and return next one
+	for i, item := range sortedItems {
+		if item.ID == currentItem.ID {
+			// Return next item (wrap around if at end)
+			nextIndex := (i + 1) % len(sortedItems)
+			return &sortedItems[nextIndex]
+		}
+	}
+	
+	// Current item not found in active items, return first one
+	return &sortedItems[0]
+}
+
 // NewPluginProcessor creates a new plugin processor with unified architecture
 func NewPluginProcessor(db *gorm.DB) (*PluginProcessor, error) {
 	imageStorage := storage.GetDefaultImageStorage()
@@ -126,20 +172,29 @@ func (pp *PluginProcessor) processUnifiedPluginInstance(device *database.Device,
 			"plugin_type", plugin.Type(), 
 			"plugin_name", pluginInstance.Name)
 	} else {
-		// No pre-rendered content available, fall back to on-demand processing
+		// No pre-rendered content available - skip this playlist item instead of blocking
 		if plugin.RequiresProcessing() {
-			logging.Debug("[PLUGIN] No pre-rendered content, falling back to on-demand", "plugin_type", plugin.Type())
-			// Schedule a render job for next time
-			pp.scheduleRenderIfNeededForInstance(pluginInstance.ID)
+			logging.Info("[PLUGIN] No pre-rendered content available, skipping playlist item", "plugin_type", plugin.Type(), "plugin_name", pluginInstance.Name)
+			// Schedule an immediate render job so it's ready next time
+			pp.scheduleImmediateRenderForInstance(pluginInstance.ID)
+			
+			// Return a special response indicating this item should be skipped
+			return gin.H{
+				"skip_item": true,
+				"reason":    "no_pre_rendered_content",
+				"plugin_type": plugin.Type(),
+				"plugin_name": pluginInstance.Name,
+			}, nil
 		}
 		
+		// For plugins that don't require processing, we can still process them on-demand
 		// Create unified plugin context
 		ctx, err := pp.createUnifiedPluginContext(device, pluginInstance)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create plugin context: %w", err)
 		}
 		
-		// Process the plugin
+		// Process the plugin (only for non-processing plugins)
 		response, pluginErr = plugin.Process(ctx)
 		if pluginErr != nil {
 			logging.Error("[PLUGIN] Plugin processing failed", "plugin_type", plugin.Type(), "error", pluginErr)
@@ -149,95 +204,8 @@ func (pp *PluginProcessor) processUnifiedPluginInstance(device *database.Device,
 				"filename":  fmt.Sprintf("error_%s", time.Now().Format("20060102150405")),
 			}
 		} else {
-			// Handle plugins that require processing
-			if plugin.RequiresProcessing() {
-				if plugins.IsDataResponse(response) {
-					// Data plugin - needs HTML template rendering
-					response, err = pp.renderDataPlugin(response, device, plugin.Type())
-					if err != nil {
-						logging.Error("[PLUGIN] Failed to render data plugin", "plugin_type", plugin.Type(), "error", err)
-						response = gin.H{
-							"image_url": getImageURLForDevice(device),
-							"filename":  fmt.Sprintf("render_error_%s", time.Now().Format("20060102150405")),
-						}
-					}
-				} else if plugins.IsHTMLResponse(response) {
-					// HTML response from private plugin - convert to image using browserless
-					if htmlContent, ok := plugins.GetHTMLContent(response); ok {
-						imageData, err := pp.renderHTMLToImage(htmlContent, device)
-						if err != nil {
-							logging.Error("[PLUGIN] Failed to render HTML to image", "plugin_type", plugin.Type(), "error", err)
-							response = gin.H{
-								"image_url": getImageURLForDevice(device),
-								"filename":  fmt.Sprintf("html_render_error_%s", time.Now().Format("20060102150405")),
-							}
-						} else {
-							// Store the generated image
-							randomString := generateRandomString(10)
-							filename := fmt.Sprintf("%s_%s_%s.png", plugin.Type(), time.Now().Format("20060102_150405"), randomString)
-							
-							imageURL, err := pp.imageStorage.StoreImage(imageData, device.ID, plugin.Type())
-							if err != nil {
-								logging.Error("[PLUGIN] Failed to store HTML rendered image", "plugin_type", plugin.Type(), "error", err)
-								response = gin.H{
-									"image_url": getImageURLForDevice(device),
-									"filename":  fmt.Sprintf("store_error_%s", time.Now().Format("20060102150405")),
-								}
-							} else {
-								response = gin.H{
-									"image_url": imageURL,
-									"filename":  filename,
-								}
-								logging.Debug("[PLUGIN] Rendered HTML to image", "plugin_type", plugin.Type(), "url", imageURL)
-							}
-						}
-					} else {
-						logging.Error("[PLUGIN] HTML response missing content", "plugin_type", plugin.Type())
-						response = gin.H{
-							"image_url": getImageURLForDevice(device),
-							"filename":  fmt.Sprintf("html_content_error_%s", time.Now().Format("20060102150405")),
-						}
-					}
-				} else if plugins.IsImageResponse(response) {
-					// Image plugin - check if it has image data that needs to be stored
-					if imageData, ok := plugins.GetImageData(response); ok {
-						// Store the image data and replace with URL
-						randomString := generateRandomString(10)
-						filename := fmt.Sprintf("%s_%s_%s.png", plugin.Type(), time.Now().Format("20060102_150405"), randomString)
-						
-						imageURL, err := pp.imageStorage.StoreImage(imageData, device.ID, plugin.Type())
-						if err != nil {
-							logging.Error("[PLUGIN] Failed to store image data", "plugin_type", plugin.Type(), "error", err)
-							response = gin.H{
-								"image_url": getImageURLForDevice(device),
-								"filename":  fmt.Sprintf("store_error_%s", time.Now().Format("20060102150405")),
-							}
-						} else {
-							// Replace image_data with image_url
-							newResponse := gin.H{
-								"image_url": imageURL,
-								"filename":  filename,
-							}
-							// Only include refresh_rate if plugin provided one
-							if refreshRate := response["refresh_rate"]; refreshRate != nil {
-								newResponse["refresh_rate"] = refreshRate
-							}
-							response = newResponse
-							logging.Debug("[PLUGIN] Stored image data", "plugin_type", plugin.Type(), "url", imageURL)
-						}
-					} else {
-						// Already has URL, ready to serve
-						logging.Debug("[PLUGIN] Image plugin processed successfully", "plugin_type", plugin.Type())
-					}
-				} else {
-					// Unknown plugin response type
-					logging.Warn("[PLUGIN] Unknown plugin response type", "plugin_type", plugin.Type())
-					response = gin.H{
-						"image_url": getImageURLForDevice(device),
-						"filename":  fmt.Sprintf("unknown_type_%s", time.Now().Format("20060102150405")),
-					}
-				}
-			}
+			// Since plugin doesn't require processing, we can use the response directly
+			logging.Debug("[PLUGIN] Plugin processed successfully (no processing required)", "plugin_type", plugin.Type())
 		}
 	}
 	
@@ -329,6 +297,23 @@ func (pp *PluginProcessor) scheduleRenderIfNeededForInstance(pluginInstanceID uu
 	logging.Debug("[PLUGIN_PROCESSOR] Skipping render scheduling for unified plugin instance", "instance_id", pluginInstanceID)
 }
 
+// scheduleImmediateRenderForInstance schedules an immediate high-priority render job for a plugin instance
+func (pp *PluginProcessor) scheduleImmediateRenderForInstance(pluginInstanceID uuid.UUID) {
+	if pp.queueManager != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		
+		err := pp.queueManager.ScheduleImmediateRender(ctx, pluginInstanceID)
+		if err != nil {
+			logging.Error("[PLUGIN_PROCESSOR] Failed to schedule immediate render", "plugin_id", pluginInstanceID, "error", err)
+		} else {
+			logging.Info("[PLUGIN_PROCESSOR] Scheduled immediate render", "plugin_id", pluginInstanceID)
+		}
+	} else {
+		logging.Warn("[PLUGIN_PROCESSOR] Queue manager not available for immediate render", "plugin_id", pluginInstanceID)
+	}
+}
+
 // createUnifiedPluginContext creates a plugin context for unified plugin instances
 func (pp *PluginProcessor) createUnifiedPluginContext(device *database.Device, pluginInstance *database.PluginInstance) (plugins.PluginContext, error) {
 	// Parse instance settings
@@ -383,19 +368,21 @@ func (pp *PluginProcessor) scheduleRenderIfNeeded(userPluginID uuid.UUID) {
 }
 
 // processActivePlugins processes plugins using the unified plugin architecture only
-func (pp *PluginProcessor) processActivePlugins(device *database.Device, activeItems []database.PlaylistItem) (gin.H, *database.PlaylistItem, int, error) {
+func (pp *PluginProcessor) processActivePlugins(device *database.Device, activeItems []database.PlaylistItem) (gin.H, *database.PlaylistItem, error) {
 	if len(activeItems) == 0 {
-		return nil, nil, 0, fmt.Errorf("no active playlist items")
+		return nil, nil, fmt.Errorf("no active playlist items")
 	}
 
-	// Calculate next item index for rotation
-	nextIndex := 0
-	if len(activeItems) > 1 {
-		nextIndex = (device.LastPlaylistIndex + 1) % len(activeItems)
+	// Find the currently showing item by UUID
+	currentItem := findItemByID(activeItems, device.LastPlaylistItemID)
+	
+	// Get the next item in rotation using UUID-based logic
+	nextItem := findNextActiveItem(activeItems, currentItem)
+	if nextItem == nil {
+		return nil, nil, fmt.Errorf("no valid next item found")
 	}
-
-	// Get the next item in rotation
-	item := activeItems[nextIndex]
+	
+	item := *nextItem
 
 	// Check if plugin instance ID is valid
 	if item.PluginInstanceID == uuid.Nil {
@@ -405,13 +392,13 @@ func (pp *PluginProcessor) processActivePlugins(device *database.Device, activeI
 		return gin.H{
 			"image_url": getImageURLForDevice(device),
 			"filename":  fmt.Sprintf("no_plugin_%s", time.Now().Format("20060102150405")),
-		}, &item, 0, fmt.Errorf(errorMsg)
+		}, &item, fmt.Errorf(errorMsg)
 	}
 
 	// Get the plugin instance
 	pluginInstance, err := pp.pluginService.GetPluginInstanceByID(item.PluginInstanceID)
 	if err != nil {
-		return nil, nil, 0, fmt.Errorf("failed to get plugin instance: %w", err)
+		return nil, nil, fmt.Errorf("failed to get plugin instance: %w", err)
 	}
 
 	// Process using unified system
@@ -423,7 +410,36 @@ func (pp *PluginProcessor) processActivePlugins(device *database.Device, activeI
 			"image_url": getImageURLForDevice(device),
 			"filename":  fmt.Sprintf("error_%s", time.Now().Format("20060102150405")),
 		}
-		return response, &item, 0, err
+		return response, &item, err
+	}
+
+	// Check if the plugin requested to skip this item
+	if skipItem, ok := response["skip_item"].(bool); ok && skipItem {
+		logging.Info("[PLUGIN] Skipping playlist item due to missing pre-rendered content", "plugin_type", response["plugin_type"], "plugin_name", response["plugin_name"])
+		
+		// Update device's last item to current (skipped) item to track progression
+		deviceService := database.NewDeviceService(pp.db)
+		if err := deviceService.UpdateLastPlaylistItemID(device.ID, item.ID); err != nil {
+			logging.Warn("[PLUGIN] Failed to update last playlist item ID for skipped item", "error", err)
+		}
+		
+		// Find next item after the one we're skipping
+		nextItemAfterSkip := findNextActiveItem(activeItems, &item)
+		
+		// Prevent infinite loop if all items are skipped (only one item available and it's the skipped one)
+		if nextItemAfterSkip != nil && nextItemAfterSkip.ID == item.ID && len(activeItems) == 1 {
+			logging.Warn("[PLUGIN] All playlist items require skipping, returning error image")
+			return gin.H{
+				"image_url": getImageURLForDevice(device),
+				"filename":  fmt.Sprintf("all_skipped_%s", time.Now().Format("20060102150405")),
+			}, &item, fmt.Errorf("all playlist items require skipping")
+		}
+		
+		// Update device to track next item and recursively try it
+		if nextItemAfterSkip != nil {
+			device.LastPlaylistItemID = &nextItemAfterSkip.ID
+		}
+		return pp.processActivePlugins(device, activeItems)
 	}
 
 	// Apply duration override (takes priority over plugin refresh_rate)
@@ -431,8 +447,8 @@ func (pp *PluginProcessor) processActivePlugins(device *database.Device, activeI
 		response["refresh_rate"] = fmt.Sprintf("%d", *item.DurationOverride)
 	}
 	
-	// Return the nextIndex for background processing
-	return response, &item, nextIndex, nil
+	// Return the successful result
+	return response, &item, nil
 }
 
 // renderDataPlugin renders a data plugin response to an image
@@ -446,13 +462,18 @@ func (pp *PluginProcessor) processCurrentPlugin(device *database.Device, activeI
 		return nil, fmt.Errorf("no active playlist items")
 	}
 
-	// Get the current item based on existing LastPlaylistIndex
-	currentIndex := device.LastPlaylistIndex
-	if currentIndex < 0 || currentIndex >= len(activeItems) {
-		currentIndex = 0
+	// Get the current item based on UUID
+	currentItem := findItemByID(activeItems, device.LastPlaylistItemID)
+	if currentItem == nil {
+		// No current item set or item not found, use first available
+		if len(activeItems) > 0 {
+			currentItem = &activeItems[0]
+		} else {
+			return nil, fmt.Errorf("no active playlist items available")
+		}
 	}
 
-	item := activeItems[currentIndex]
+	item := *currentItem
 
 	// Check if plugin instance ID is valid
 	if item.PluginInstanceID == uuid.Nil {
@@ -483,6 +504,18 @@ func (pp *PluginProcessor) processCurrentPlugin(device *database.Device, activeI
 		return response, err
 	}
 
+	// Check if the plugin requested to skip this item
+	if skipItem, ok := response["skip_item"].(bool); ok && skipItem {
+		logging.Info("[PLUGIN] Current playlist item needs to be skipped, returning error image", "plugin_type", response["plugin_type"], "plugin_name", response["plugin_name"])
+		
+		// For the current item request, we can't easily skip to the next item since this function
+		// doesn't manage playlist state. Return an error image instead.
+		return gin.H{
+			"image_url": getImageURLForDevice(device),
+			"filename":  fmt.Sprintf("skipped_current_%s", time.Now().Format("20060102150405")),
+		}, fmt.Errorf("current playlist item requires skipping due to missing pre-rendered content")
+	}
+
 	// Apply duration override (takes priority over plugin refresh_rate)
 	if item.DurationOverride != nil {
 		response["refresh_rate"] = fmt.Sprintf("%d", *item.DurationOverride)
@@ -491,8 +524,8 @@ func (pp *PluginProcessor) processCurrentPlugin(device *database.Device, activeI
 	return response, nil
 }
 
-// broadcastPlaylistChange broadcasts playlist index changes via SSE
-func (pp *PluginProcessor) broadcastPlaylistChange(device *database.Device, nextIndex int, item database.PlaylistItem, activeItems []database.PlaylistItem) {
+// broadcastPlaylistChange broadcasts playlist changes via SSE
+func (pp *PluginProcessor) broadcastPlaylistChange(device *database.Device, currentItem database.PlaylistItem, activeItems []database.PlaylistItem) {
 	// Get user timezone for sleep calculations
 	userTimezone := "UTC" // Default fallback
 	if device.UserID != nil {
@@ -507,14 +540,23 @@ func (pp *PluginProcessor) broadcastPlaylistChange(device *database.Device, next
 	// Check if device is currently in sleep period for SSE event
 	currentlySleeping := isInSleepPeriod(device, userTimezone)
 
-	// Broadcast playlist index change to connected SSE clients
+	// Calculate current index for compatibility (frontend still expects it)
+	currentIndex := -1
+	for i, activeItem := range activeItems {
+		if activeItem.ID == currentItem.ID {
+			currentIndex = i
+			break
+		}
+	}
+
+	// Broadcast playlist change to connected SSE clients
 	sseService := sse.GetSSEService()
 	sseService.BroadcastToDevice(device.ID, sse.Event{
 		Type: "playlist_index_changed",
 		Data: map[string]interface{}{
 			"device_id":     device.ID.String(),
-			"current_index": nextIndex,
-			"current_item":  item,
+			"current_index": currentIndex,
+			"current_item":  currentItem,
 			"active_items":  activeItems,
 			"timestamp":     time.Now().UTC(),
 			"sleep_config": map[string]interface{}{

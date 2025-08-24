@@ -17,6 +17,7 @@ import (
 	// third-party
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 
 	// internal
@@ -47,6 +48,33 @@ import (
 //go:embed ui/dist
 //go:embed ui/dist/assets
 var embeddedUI embed.FS
+
+// Global render poller for handlers to schedule renders
+var globalRenderPoller *pollers.RenderPoller
+
+// ScheduleRender schedules an immediate render for plugin instances using the global render poller
+func ScheduleRender(pluginInstanceIDs []uuid.UUID) {
+	if globalRenderPoller == nil {
+		logging.Warn("[RENDER] Global render poller not available")
+		return
+	}
+	
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	
+	for _, instanceID := range pluginInstanceIDs {
+		if err := globalRenderPoller.ScheduleImmediateRender(ctx, instanceID.String()); err != nil {
+			logging.Error("[RENDER] Failed to schedule immediate render", "instance_id", instanceID, "error", err)
+		} else {
+			logging.Info("[RENDER] Scheduled immediate render", "instance_id", instanceID)
+		}
+	}
+}
+
+// Initialize the global render scheduler function for handlers
+func init() {
+	handlers.SetRenderScheduler(ScheduleRender)
+}
 
 func main() {
 	_ = godotenv.Load()
@@ -119,6 +147,9 @@ func main() {
 		logging.Error("[STARTUP] Failed to create render poller", "error", err)
 		os.Exit(1)
 	}
+	
+	// Set global reference for handlers to use
+	globalRenderPoller = renderPoller
 
 	pollerManager.Register(firmwarePoller)
 	pollerManager.Register(modelPoller)

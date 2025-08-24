@@ -526,26 +526,154 @@ export function PrivatePluginHelp({ isOpen, onClose }: PrivatePluginHelpProps) {
 
               <Card>
                 <CardHeader>
-                  <CardTitle>Polling Configuration</CardTitle>
+                  <CardTitle className="flex items-center gap-2">
+                    <Globe className="h-4 w-4" />
+                    Polling Configuration
+                  </CardTitle>
                 </CardHeader>
-                <CardContent>
-                  <CodeSnippet
-                    snippetId="polling-config"
-                    language="json"
-                    title="Polling setup"
-                    code={`{
-  "urls": [
-    {
-      "url": "https://api.weather.com/current",
-      "method": "GET",
-      "headers": {
-        "Authorization": "Bearer your-api-key"
-      },
-      "interval": 1800
-    }
-  ]
-}`}
-                  />
+                <CardContent className="space-y-4">
+                  <div>
+                    <h4 className="font-medium mb-2">Basic GET Request</h4>
+                    <CodeSnippet
+                      snippetId="polling-basic"
+                      title="Simple polling setup"
+                      code={`URL: https://api.weather.com/current?q=New York
+Method: GET
+Headers: authorization=bearer {{ api_key }}`}
+                    />
+                    <CodeSnippet
+                      snippetId="polling-basic-template"
+                      title="Use in template (single URL - direct access)"
+                      code={`<div class="weather">
+  <h2>{{ location }}</h2>
+  <div class="temp">{{ temperature }}°</div>
+  <div class="condition">{{ condition }}</div>
+</div>`}
+                    />
+                  </div>
+
+                  <div>
+                    <h4 className="font-medium mb-2">POST Request with Body</h4>
+                    <CodeSnippet
+                      snippetId="polling-post"
+                      title="POST request with JSON body"
+                      code={`URL: https://api.example.com/search
+Method: POST
+Headers: content-type=application/json&authorization=bearer {{ api_key }}
+Body: {"query": "{{ search_term }}", "limit": 5}`}
+                    />
+                  </div>
+
+                  <div>
+                    <h4 className="font-medium mb-2">Multiple URLs</h4>
+                    <CodeSnippet
+                      snippetId="polling-multiple"
+                      title="Fetch from multiple sources"
+                      code={`URL 1: https://api.weather.com/current
+
+URL 2: https://api.news.com/headlines
+
+Template access (multiple URLs - indexed access):
+{{ IDX_0.temperature }}
+{{ IDX_1[0].title }}`}
+                    />
+                  </div>
+
+                  <div>
+                    <h4 className="font-medium mb-2">Using Form Field Variables</h4>
+                    <p className="text-sm text-muted-foreground mb-2">
+                      Form field values are automatically available as merge variables in polling URLs, headers, and body.
+                    </p>
+                    <CodeSnippet
+                      snippetId="polling-form-vars"
+                      title="Form fields in polling config"
+                      code={`URL: https://api.weather.com/current?q={{ location }}
+Headers: authorization=bearer {{ api_key }}&units={{ temperature_unit }}
+Body: {"city": "{{ location }}", "lang": "{{ language }}"}`}
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Shield className="h-4 w-4" />
+                    Form Fields (Plugin Settings)
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <h4 className="font-medium mb-2">YAML Form Field Definition</h4>
+                    <CodeSnippet
+                      snippetId="form-fields-yaml"
+                      language="yaml"
+                      title="Example form fields configuration"
+                      code={`- keyname: api_key
+  field_type: password
+  name: API Key
+  description: Your weather API key
+  optional: false
+  help_text: Get your API key from weather.com
+
+- keyname: location
+  field_type: string
+  name: Location
+  description: City name
+  default: New York
+  placeholder: Enter city name
+
+- keyname: temperature_unit
+  field_type: select
+  name: Temperature Unit
+  options:
+    - label: Celsius
+      value: metric
+    - label: Fahrenheit
+      value: imperial`}
+                    />
+                  </div>
+
+                  <div>
+                    <h4 className="font-medium mb-2">Supported Field Types</h4>
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <div className="font-medium mb-2">Basic Types</div>
+                        <ul className="space-y-1 font-mono text-xs">
+                          <li>string - Text input</li>
+                          <li>text - Multi-line textarea</li>
+                          <li>number - Numeric input</li>
+                          <li>password - Password field</li>
+                          <li>url - URL input</li>
+                          <li>code - Code editor</li>
+                        </ul>
+                      </div>
+                      <div>
+                        <div className="font-medium mb-2">Advanced Types</div>
+                        <ul className="space-y-1 font-mono text-xs">
+                          <li>date - Date picker</li>
+                          <li>time - Time picker</li>
+                          <li>time_zone - Timezone selector</li>
+                          <li>select - Dropdown selection</li>
+                          <li>copyable - Read-only copyable</li>
+                          <li>author_bio - Author info</li>
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <h4 className="font-medium mb-2">Accessing Form Fields in Templates</h4>
+                    <CodeSnippet
+                      snippetId="form-fields-template"
+                      title="Using form field values"
+                      code={`<div class="weather-widget">
+  <h2>Weather for {{ location }}</h2>
+  <div class="temp">{{ weather.temperature }}°{{ temperature_unit }}</div>
+  <div class="updated">API Key: {{ api_key | truncate: 8 }}...</div>
+</div>`}
+                    />
+                  </div>
                 </CardContent>
               </Card>
             </div>

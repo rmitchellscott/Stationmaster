@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -11,6 +10,9 @@ import (
 	"github.com/rmitchellscott/stationmaster/internal/database"
 	"github.com/rmitchellscott/stationmaster/internal/validation"
 )
+
+
+
 
 // CreatePrivatePluginRequest represents the request to create a private plugin
 type CreatePrivatePluginRequest struct {
@@ -43,10 +45,10 @@ type UpdatePrivatePluginRequest struct {
 	IsPublished     bool                   `json:"is_published"`
 }
 
-// PrivatePluginResponse represents the response format for private plugins
+// PrivatePluginResponse represents the response format for private plugins  
 type PrivatePluginResponse struct {
 	database.PrivatePlugin
-	WebhookURL string `json:"webhook_url"`
+	WebhookToken string `json:"webhook_token"`
 }
 
 // CreatePrivatePluginHandler creates a new private plugin
@@ -59,6 +61,18 @@ func CreatePrivatePluginHandler(c *gin.Context) {
 	var req CreatePrivatePluginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request", "details": err.Error()})
+		return
+	}
+
+	// Validate and process polling configuration
+	if err := ValidatePollingConfig(req.PollingConfig); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Polling config validation failed", "details": err.Error()})
+		return
+	}
+
+	// Validate and process form fields configuration
+	if _, err := ValidateFormFields(req.FormFields); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Form fields validation failed", "details": err.Error()})
 		return
 	}
 
@@ -131,10 +145,10 @@ func CreatePrivatePluginHandler(c *gin.Context) {
 		return
 	}
 
-	// Return the created plugin with webhook URL
+	// Return the created plugin with webhook token
 	response := PrivatePluginResponse{
 		PrivatePlugin: *plugin,
-		WebhookURL:    generateWebhookURL(c, plugin.WebhookToken),
+		WebhookToken:  plugin.WebhookToken,
 	}
 
 	c.JSON(http.StatusCreated, gin.H{"private_plugin": response})
@@ -156,12 +170,12 @@ func GetPrivatePluginsHandler(c *gin.Context) {
 		return
 	}
 
-	// Convert to response format with webhook URLs
+	// Convert to response format with webhook tokens
 	var responses []PrivatePluginResponse
 	for _, plugin := range plugins {
 		responses = append(responses, PrivatePluginResponse{
 			PrivatePlugin: plugin,
-			WebhookURL:    generateWebhookURL(c, plugin.WebhookToken),
+			WebhookToken:  plugin.WebhookToken,
 		})
 	}
 
@@ -193,7 +207,7 @@ func GetPrivatePluginHandler(c *gin.Context) {
 
 	response := PrivatePluginResponse{
 		PrivatePlugin: *plugin,
-		WebhookURL:    generateWebhookURL(c, plugin.WebhookToken),
+		WebhookToken:  plugin.WebhookToken,
 	}
 
 	c.JSON(http.StatusOK, gin.H{"private_plugin": response})
@@ -216,6 +230,18 @@ func UpdatePrivatePluginHandler(c *gin.Context) {
 	var req UpdatePrivatePluginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request", "details": err.Error()})
+		return
+	}
+
+	// Validate and process polling configuration
+	if err := ValidatePollingConfig(req.PollingConfig); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Polling config validation failed", "details": err.Error()})
+		return
+	}
+
+	// Validate and process form fields configuration
+	if _, err := ValidateFormFields(req.FormFields); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Form fields validation failed", "details": err.Error()})
 		return
 	}
 
@@ -290,7 +316,7 @@ func UpdatePrivatePluginHandler(c *gin.Context) {
 
 	response := PrivatePluginResponse{
 		PrivatePlugin: *plugin,
-		WebhookURL:    generateWebhookURL(c, plugin.WebhookToken),
+		WebhookToken:  plugin.WebhookToken,
 	}
 
 	c.JSON(http.StatusOK, gin.H{"private_plugin": response})
@@ -346,7 +372,6 @@ func RegenerateWebhookTokenHandler(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"webhook_token": token,
-		"webhook_url":   generateWebhookURL(c, token),
 	})
 }
 
@@ -409,11 +434,3 @@ func GetPrivatePluginStatsHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"stats": stats})
 }
 
-// generateWebhookURL generates the full webhook URL for a given token
-func generateWebhookURL(c *gin.Context, token string) string {
-	scheme := "http"
-	if c.Request.TLS != nil {
-		scheme = "https"
-	}
-	return fmt.Sprintf("%s://%s/api/webhooks/plugin/%s", scheme, c.Request.Host, token)
-}

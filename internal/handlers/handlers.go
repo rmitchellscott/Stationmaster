@@ -4,10 +4,29 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/rmitchellscott/stationmaster/internal/auth"
 	"github.com/rmitchellscott/stationmaster/internal/config"
 	"github.com/rmitchellscott/stationmaster/internal/database"
 )
+
+// RenderSchedulerFunc is a function type for scheduling renders
+type RenderSchedulerFunc func([]uuid.UUID)
+
+// Global render scheduler function - set by main package
+var renderScheduler RenderSchedulerFunc
+
+// SetRenderScheduler sets the global render scheduler function
+func SetRenderScheduler(scheduler RenderSchedulerFunc) {
+	renderScheduler = scheduler
+}
+
+// ScheduleRenderForInstances schedules renders for plugin instances if scheduler is available
+func ScheduleRenderForInstances(instanceIDs []uuid.UUID) {
+	if renderScheduler != nil {
+		renderScheduler(instanceIDs)
+	}
+}
 
 // ConfigHandler returns application configuration for the frontend
 func ConfigHandler(c *gin.Context) {

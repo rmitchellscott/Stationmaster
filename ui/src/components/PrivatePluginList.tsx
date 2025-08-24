@@ -26,6 +26,11 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   SquareIcon,
   ColumnsIcon,
   RowsIcon,
@@ -60,7 +65,7 @@ interface PrivatePlugin {
   is_published: boolean;
   created_at: string;
   updated_at: string;
-  webhook_url?: string;
+  webhook_token?: string;
 }
 
 interface PrivatePluginListProps {
@@ -126,6 +131,13 @@ export function PrivatePluginList({
     }
   };
 
+  const generateWebhookURL = (token?: string): string => {
+    if (!token) {
+      return "Will be generated after saving";
+    }
+    return `${window.location.origin}/api/webhooks/plugin/${token}`;
+  };
+
   const copyWebhookUrl = async (webhookUrl: string) => {
     try {
       await navigator.clipboard.writeText(webhookUrl);
@@ -149,17 +161,11 @@ export function PrivatePluginList({
   };
 
   const getDataStrategyBadge = (strategy: string) => {
-    const variants = {
-      webhook: 'default',
-      polling: 'secondary',
-      merge: 'outline'
-    } as const;
-    
     // Handle null/undefined strategy
     const safeStrategy = strategy || 'webhook';
     
     return (
-      <Badge variant={variants[safeStrategy as keyof typeof variants] || 'default'}>
+      <Badge variant="outline">
         <div className="flex items-center gap-1">
           {getDataStrategyIcon(safeStrategy)}
           {safeStrategy.charAt(0).toUpperCase() + safeStrategy.slice(1)}
@@ -287,47 +293,63 @@ export function PrivatePluginList({
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Badge variant="outline">v{plugin.version}</Badge>
+                      v{plugin.version}
                     </TableCell>
                     <TableCell>
                       {new Date(plugin.created_at).toLocaleDateString()}
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center gap-2 justify-end">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => onPreviewPlugin(plugin)}
-                          title="Preview Plugin"
-                        >
-                          <Eye className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => onEditPlugin(plugin)}
-                          title="Edit Plugin"
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        {plugin.data_strategy === 'webhook' && plugin.webhook_url && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => copyWebhookUrl(plugin.webhook_url!)}
-                            title="Copy Webhook URL"
-                          >
-                            <Copy className="h-4 w-4" />
-                          </Button>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => onPreviewPlugin(plugin)}
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Preview Plugin</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => onEditPlugin(plugin)}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Edit Plugin</TooltipContent>
+                        </Tooltip>
+                        {plugin.data_strategy === 'webhook' && plugin.webhook_token && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => copyWebhookUrl(generateWebhookURL(plugin.webhook_token))}
+                              >
+                                <Copy className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Copy Webhook URL</TooltipContent>
+                          </Tooltip>
                         )}
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => setDeleteDialog({ isOpen: true, plugin })}
-                          title="Delete Plugin"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => setDeleteDialog({ isOpen: true, plugin })}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Delete Plugin</TooltipContent>
+                        </Tooltip>
                       </div>
                     </TableCell>
                   </TableRow>

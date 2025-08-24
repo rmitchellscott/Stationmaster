@@ -69,25 +69,74 @@ func (s *UnifiedPluginService) UpdatePluginDefinition(definition *PluginDefiniti
 	return s.db.Save(definition).Error
 }
 
-// DeletePluginDefinition soft deletes a plugin definition
+// DeletePluginDefinition soft deletes a plugin definition and cascades to all instances
 func (s *UnifiedPluginService) DeletePluginDefinition(id uuid.UUID, ownerID *uuid.UUID) error {
-	query := s.db.Model(&PluginDefinition{}).Where("id = ?", id)
-	
-	// If ownerID is provided, ensure ownership (for private plugins)
-	if ownerID != nil {
-		query = query.Where("owner_id = ?", *ownerID)
-	}
-	
-	result := query.Update("is_active", false)
-	if result.Error != nil {
-		return result.Error
-	}
-	
-	if result.RowsAffected == 0 {
-		return fmt.Errorf("plugin definition not found or access denied")
-	}
-	
-	return nil
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		// First verify the plugin definition exists and check ownership
+		var definition PluginDefinition
+		query := tx.Where("id = ? AND is_active = ?", id, true)
+		
+		// If ownerID is provided, ensure ownership (for private plugins)
+		if ownerID != nil {
+			query = query.Where("owner_id = ?", *ownerID)
+		}
+		
+		result := query.First(&definition)
+		if result.Error != nil {
+			return fmt.Errorf("plugin definition not found or access denied: %w", result.Error)
+		}
+		
+		// Find all active plugin instances for this definition
+		var instances []PluginInstance
+		if err := tx.Where("plugin_definition_id = ? AND is_active = ?", id, true).Find(&instances).Error; err != nil {
+			return fmt.Errorf("failed to find plugin instances: %w", err)
+		}
+		
+		// Delete each plugin instance (which handles cascading to render_queues, etc.)
+		for _, instance := range instances {
+			// Cancel any active render jobs for this plugin instance
+			var activeJobs []RenderQueue
+			if err := tx.Where("plugin_instance_id = ? AND status IN (?)", instance.ID, []string{"pending", "processing"}).Find(&activeJobs).Error; err != nil {
+				return fmt.Errorf("failed to find active render jobs for instance %s: %w", instance.ID, err)
+			}
+			
+			if len(activeJobs) > 0 {
+				// Cancel active jobs
+				if err := tx.Model(&RenderQueue{}).
+					Where("plugin_instance_id = ? AND status IN (?)", instance.ID, []string{"pending", "processing"}).
+					Update("status", "cancelled").Error; err != nil {
+					return fmt.Errorf("failed to cancel active render jobs for instance %s: %w", instance.ID, err)
+				}
+			}
+			
+			// Delete playlist items that reference this plugin instance
+			if err := tx.Where("plugin_instance_id = ?", instance.ID).Delete(&PlaylistItem{}).Error; err != nil {
+				return fmt.Errorf("failed to delete playlist items for instance %s: %w", instance.ID, err)
+			}
+			
+			// Delete all render queue entries (including cancelled ones)
+			if err := tx.Where("plugin_instance_id = ?", instance.ID).Delete(&RenderQueue{}).Error; err != nil {
+				return fmt.Errorf("failed to delete render queue entries for instance %s: %w", instance.ID, err)
+			}
+			
+			// Delete rendered content records
+			if err := tx.Where("plugin_instance_id = ?", instance.ID).Delete(&RenderedContent{}).Error; err != nil {
+				return fmt.Errorf("failed to delete rendered content for instance %s: %w", instance.ID, err)
+			}
+			
+			// Finally hard delete the plugin instance
+			if err := tx.Delete(&instance).Error; err != nil {
+				return fmt.Errorf("failed to delete plugin instance %s: %w", instance.ID, err)
+			}
+		}
+		
+		// Finally, hard delete the plugin definition
+		if err := tx.Delete(&definition).Error; err != nil {
+			return fmt.Errorf("failed to delete plugin definition: %w", err)
+		}
+		
+		return nil
+	})
 }
 
 // PluginInstance Operations

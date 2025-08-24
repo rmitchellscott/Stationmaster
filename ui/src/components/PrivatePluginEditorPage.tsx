@@ -28,7 +28,7 @@ interface PrivatePlugin {
   polling_config?: any;
   form_fields?: any;
   version: string;
-  webhook_url?: string;
+  webhook_token?: string;
 }
 
 export function PrivatePluginEditorPage() {
@@ -38,6 +38,7 @@ export function PrivatePluginEditorPage() {
   
   const [plugin, setPlugin] = useState<PrivatePlugin | null>(null);
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -76,6 +77,10 @@ export function PrivatePluginEditorPage() {
 
   const handleSavePlugin = async (pluginData: PrivatePlugin) => {
     try {
+      setSaving(true);
+      setError(null);
+      setSuccess(null);
+      
       const url = isEditing ? `/api/plugin-definitions/${pluginId}` : '/api/plugin-definitions';
       const method = isEditing ? 'PUT' : 'POST';
 
@@ -93,17 +98,15 @@ export function PrivatePluginEditorPage() {
 
       if (response.ok) {
         setSuccess(`Private plugin ${isEditing ? 'updated' : 'created'} successfully!`);
-        
-        // Navigate back to plugin management after a brief delay
-        setTimeout(() => {
-          navigateBackToPlugins();
-        }, 1500);
+        navigateBackToPlugins();
       } else {
         const errorData = await response.json();
         setError(errorData.error || `Failed to ${isEditing ? 'update' : 'create'} private plugin`);
       }
     } catch (error) {
       setError('Network error occurred');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -169,6 +172,7 @@ export function PrivatePluginEditorPage() {
               plugin={plugin}
               onSave={handleSavePlugin}
               onCancel={handleCancel}
+              saving={saving}
             />
           </CardContent>
         </Card>

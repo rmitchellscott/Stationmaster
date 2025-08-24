@@ -115,23 +115,39 @@ func (qm *QueueManager) ScheduleInitialRenders(ctx context.Context) error {
 		}
 
 		// Check if there's already a pending job for this plugin
-		var existingCount int64
+		var existingPendingCount int64
 		err := qm.db.WithContext(ctx).Model(&database.RenderQueue{}).
 			Where("plugin_instance_id = ? AND status = ?", pluginInstance.ID, "pending").
-			Count(&existingCount).Error
+			Count(&existingPendingCount).Error
 		if err != nil {
 			logging.Error("[QUEUE_MANAGER] Failed to check existing jobs", "plugin_id", pluginInstance.ID, "error", err)
 			continue
 		}
 
-		if existingCount > 0 {
+		if existingPendingCount > 0 {
 			logging.Debug("[QUEUE_MANAGER] Skipping plugin - already has pending job", "plugin_id", pluginInstance.ID)
 			continue
 		}
 
-		// Schedule immediate render for plugin activation
-		if err := qm.ScheduleImmediateRender(ctx, pluginInstance.ID); err != nil {
-			logging.Error("[QUEUE_MANAGER] Failed to schedule render", "plugin_id", pluginInstance.ID, "error", err)
+		// Check if there's existing rendered content
+		var existingContentCount int64
+		err = qm.db.WithContext(ctx).Model(&database.RenderedContent{}).
+			Where("plugin_instance_id = ?", pluginInstance.ID).
+			Count(&existingContentCount).Error
+		if err != nil {
+			logging.Error("[QUEUE_MANAGER] Failed to check existing rendered content", "plugin_id", pluginInstance.ID, "error", err)
+			continue
+		}
+
+		if existingContentCount > 0 {
+			logging.Debug("[QUEUE_MANAGER] Skipping plugin - already has rendered content", "plugin_id", pluginInstance.ID)
+			continue
+		}
+
+		// No existing rendered content - schedule low-priority render
+		logging.Info("[QUEUE_MANAGER] Scheduling low-priority initial render for plugin without content", "plugin_id", pluginInstance.ID)
+		if err := qm.ScheduleRender(ctx, pluginInstance.ID, 10, time.Now()); err != nil {
+			logging.Error("[QUEUE_MANAGER] Failed to schedule low-priority render", "plugin_id", pluginInstance.ID, "error", err)
 		}
 	}
 

@@ -259,6 +259,124 @@ func RunMigrations(logPrefix string) error {
 				return nil
 			},
 		},
+		{
+			ID: "20250824_add_playlist_items_composite_index",
+			Migrate: func(tx *gorm.DB) error {
+				logging.Info("[MIGRATION] Adding composite index to playlist_items for better ORDER BY performance")
+				
+				// Create composite index for playlist_id and order_index
+				indexSQL := "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_playlist_items_playlist_id_order_index ON playlist_items(playlist_id, order_index)"
+				if err := tx.Exec(indexSQL).Error; err != nil {
+					return fmt.Errorf("failed to create composite index: %w", err)
+				}
+				
+				logging.Info("[MIGRATION] Composite index idx_playlist_items_playlist_id_order_index created successfully")
+				return nil
+			},
+			Rollback: func(tx *gorm.DB) error {
+				logging.Info("[MIGRATION] Dropping composite index from playlist_items")
+				dropSQL := "DROP INDEX CONCURRENTLY IF EXISTS idx_playlist_items_playlist_id_order_index"
+				return tx.Exec(dropSQL).Error
+			},
+		},
+		{
+			ID: "20250824_replace_playlist_index_with_item_id",
+			Migrate: func(tx *gorm.DB) error {
+				logging.Info("[MIGRATION] Replacing last_playlist_index with last_playlist_item_id for stable playlist tracking")
+				
+				// Add new UUID column
+				if err := tx.Exec("ALTER TABLE devices ADD COLUMN last_playlist_item_id UUID REFERENCES playlist_items(id)").Error; err != nil {
+					return fmt.Errorf("failed to add last_playlist_item_id column: %w", err)
+				}
+				
+				// Convert existing indices to item UUIDs for devices that have playlists
+				convertSQL := `
+					UPDATE devices 
+					SET last_playlist_item_id = (
+						SELECT pi.id
+						FROM playlist_items pi
+						JOIN playlists p ON pi.playlist_id = p.id
+						WHERE p.device_id = devices.id 
+						  AND p.is_default = true 
+						  AND pi.is_visible = true
+						ORDER BY pi.order_index
+						LIMIT 1 OFFSET devices.last_playlist_index
+					)
+					WHERE devices.last_playlist_index >= 0
+					  AND EXISTS (
+						  SELECT 1 FROM playlists 
+						  WHERE device_id = devices.id AND is_default = true
+					  )
+				`
+				
+				if err := tx.Exec(convertSQL).Error; err != nil {
+					logging.Warn("[MIGRATION] Failed to convert some playlist indices to UUIDs", "error", err)
+					// Don't fail migration - some devices might not have playlists yet
+				}
+				
+				// For devices without valid conversion, set to first available playlist item
+				fallbackSQL := `
+					UPDATE devices 
+					SET last_playlist_item_id = (
+						SELECT pi.id
+						FROM playlist_items pi
+						JOIN playlists p ON pi.playlist_id = p.id
+						WHERE p.device_id = devices.id 
+						  AND p.is_default = true 
+						  AND pi.is_visible = true
+						ORDER BY pi.order_index
+						LIMIT 1
+					)
+					WHERE devices.last_playlist_item_id IS NULL
+					  AND EXISTS (
+						  SELECT 1 FROM playlists 
+						  WHERE device_id = devices.id AND is_default = true
+					  )
+				`
+				
+				if err := tx.Exec(fallbackSQL).Error; err != nil {
+					logging.Warn("[MIGRATION] Failed to set fallback playlist item IDs", "error", err)
+				}
+				
+				// Drop the old index column
+				if err := tx.Exec("ALTER TABLE devices DROP COLUMN last_playlist_index").Error; err != nil {
+					return fmt.Errorf("failed to drop last_playlist_index column: %w", err)
+				}
+				
+				logging.Info("[MIGRATION] Successfully replaced last_playlist_index with last_playlist_item_id")
+				return nil
+			},
+			Rollback: func(tx *gorm.DB) error {
+				logging.Info("[MIGRATION] Rolling back playlist index change")
+				
+				// Add back the old column
+				if err := tx.Exec("ALTER TABLE devices ADD COLUMN last_playlist_index INT DEFAULT 0").Error; err != nil {
+					return fmt.Errorf("failed to add back last_playlist_index column: %w", err)
+				}
+				
+				// Convert UUIDs back to indices (best effort)
+				convertBackSQL := `
+					UPDATE devices 
+					SET last_playlist_index = COALESCE((
+						SELECT pi.order_index - 1
+						FROM playlist_items pi
+						WHERE pi.id = devices.last_playlist_item_id
+					), 0)
+					WHERE devices.last_playlist_item_id IS NOT NULL
+				`
+				
+				if err := tx.Exec(convertBackSQL).Error; err != nil {
+					logging.Warn("[MIGRATION] Failed to convert UUIDs back to indices", "error", err)
+				}
+				
+				// Drop the UUID column
+				if err := tx.Exec("ALTER TABLE devices DROP COLUMN last_playlist_item_id").Error; err != nil {
+					return fmt.Errorf("failed to drop last_playlist_item_id column: %w", err)
+				}
+				
+				return nil
+			},
+		},
 	}
 
 	// Create migrator with our migrations

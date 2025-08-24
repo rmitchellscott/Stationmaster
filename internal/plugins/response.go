@@ -149,3 +149,18 @@ func GetHTMLContent(response PluginResponse) (string, bool) {
 	}
 	return "", false
 }
+
+// CreateNoChangeResponse creates a response indicating no data change occurred
+func CreateNoChangeResponse(message string) PluginResponse {
+	return gin.H{
+		"no_change": true,
+		"message":   message,
+		"timestamp": time.Now().UTC(),
+	}
+}
+
+// IsNoChangeResponse checks if a response indicates no change
+func IsNoChangeResponse(response PluginResponse) bool {
+	noChange, ok := response["no_change"].(bool)
+	return ok && noChange
+}

@@ -189,6 +189,7 @@ func (w *RenderWorker) processRenderJob(ctx context.Context, job database.Render
 		return nil
 	}
 
+
 	// Process plugin and render for each device resolution
 	for _, deviceModel := range deviceModels {
 		if ctx.Err() != nil {
@@ -207,6 +208,15 @@ func (w *RenderWorker) processRenderJob(ctx context.Context, job database.Render
 	if err != nil {
 		logging.Error("[RENDER_WORKER] Failed to mark job as completed", "error", err)
 	}
+	
+	// For private plugins, persist any instance field updates (like LastHTMLHash)
+	if pluginInstance.PluginDefinition.PluginType == "private" {
+		err = w.db.WithContext(ctx).Save(&pluginInstance).Error
+		if err != nil {
+			logging.Warn("[RENDER_WORKER] Failed to save plugin instance updates", 
+				"plugin", pluginInstance.Name, "error", err)
+		}
+	}
 
 	// Clean up any other pending jobs for this plugin instance to prevent duplicates
 	err = w.db.WithContext(ctx).Model(&database.RenderQueue{}).
@@ -216,8 +226,9 @@ func (w *RenderWorker) processRenderJob(ctx context.Context, job database.Render
 		logging.Error("[RENDER_WORKER] Failed to clean up duplicate pending jobs", "error", err)
 	}
 
-	// Schedule next render
-	w.scheduleNextRender(ctx, pluginInstance)
+	// Schedule next render with selective force refresh logic
+	shouldSkipReschedule := w.isForceRefreshWithDailyRate(job, pluginInstance.RefreshInterval)
+	w.scheduleNextRenderWithOptions(ctx, pluginInstance, shouldSkipReschedule)
 
 	return nil
 }
@@ -268,6 +279,13 @@ func (w *RenderWorker) renderForDeviceModel(ctx context.Context, pluginInstance 
 	response, err := plugin.Process(pluginCtx)
 	if err != nil {
 		return fmt.Errorf("plugin processing failed: %w", err)
+	}
+	
+	// Handle no-change responses - skip rendering
+	if plugins.IsNoChangeResponse(response) {
+		logging.Info("[RENDER_WORKER] Skipping render - no data changes", 
+			"plugin", pluginInstance.Name, "device_model", fmt.Sprintf("%dx%d", deviceModel.ScreenWidth, deviceModel.ScreenHeight))
+		return nil
 	}
 
 	// Clean up old rendered content and files for this resolution BEFORE creating new ones
@@ -419,8 +437,13 @@ func (w *RenderWorker) renderForDeviceModel(ctx context.Context, pluginInstance 
 	return nil
 }
 
-// scheduleNextRender schedules the next render for a plugin based on its refresh interval
+// scheduleNextRender schedules the next render for a plugin based on its refresh interval with timezone support
 func (w *RenderWorker) scheduleNextRender(ctx context.Context, pluginInstance database.PluginInstance) {
+	w.scheduleNextRenderWithOptions(ctx, pluginInstance, false)
+}
+
+// scheduleNextRenderWithOptions schedules the next render with options for force refresh handling
+func (w *RenderWorker) scheduleNextRenderWithOptions(ctx context.Context, pluginInstance database.PluginInstance, skipReschedule bool) {
 	if !pluginInstance.IsActive {
 		return
 	}
@@ -450,6 +473,12 @@ func (w *RenderWorker) scheduleNextRender(ctx context.Context, pluginInstance da
 		return
 	}
 
+	// Skip rescheduling if requested (for force refresh on "x times daily" rates)
+	if skipReschedule {
+		logging.Info("[RENDER_WORKER] Skipping reschedule per request", "plugin", pluginInstance.Name, "instance_id", pluginInstance.ID)
+		return
+	}
+
 	// Check if there's already a pending job for this plugin instance
 	var existingCount int64
 	err := w.db.WithContext(ctx).Model(&database.RenderQueue{}).
@@ -465,11 +494,17 @@ func (w *RenderWorker) scheduleNextRender(ctx context.Context, pluginInstance da
 		return
 	}
 
-	nextRender := time.Now().Add(time.Duration(pluginInstance.RefreshInterval) * time.Second)
+	// Calculate next render time based on refresh interval and user timezone
+	nextRender, err := w.calculateNextRenderTime(ctx, pluginInstance)
+	if err != nil {
+		logging.Error("[RENDER_WORKER] Failed to calculate next render time", "error", err, "plugin", pluginInstance.Name)
+		// Fallback to simple interval scheduling
+		nextRender = time.Now().Add(time.Duration(pluginInstance.RefreshInterval) * time.Second)
+	}
 
 	renderJob := database.RenderQueue{
 		ID:           uuid.New(),
-		PluginInstanceID: pluginInstance.ID,  // Now nullable
+		PluginInstanceID: pluginInstance.ID,
 		Priority:     0,
 		ScheduledFor: nextRender,
 		Status:       "pending",
@@ -486,6 +521,96 @@ func (w *RenderWorker) scheduleNextRender(ctx context.Context, pluginInstance da
 			"scheduled_for", nextRender.Format(time.RFC3339))
 	}
 }
+
+// calculateNextRenderTime calculates the next render time based on refresh interval and user timezone
+func (w *RenderWorker) calculateNextRenderTime(ctx context.Context, pluginInstance database.PluginInstance) (time.Time, error) {
+	// Get user timezone
+	userTimezone := "UTC" // Default fallback
+	if pluginInstance.User.Timezone != "" {
+		userTimezone = pluginInstance.User.Timezone
+	}
+	
+	location, err := time.LoadLocation(userTimezone)
+	if err != nil {
+		logging.Warn("[RENDER_WORKER] Invalid timezone, using UTC", "timezone", userTimezone, "error", err)
+		location = time.UTC
+	}
+	
+	now := time.Now().In(location)
+	refreshInterval := pluginInstance.RefreshInterval
+	
+	// Handle different refresh intervals with smart scheduling
+	switch refreshInterval {
+	case database.RefreshRateDaily: // Daily - 00:15 local time
+		nextRender := time.Date(now.Year(), now.Month(), now.Day(), 0, 15, 0, 0, location)
+		if nextRender.Before(now) {
+			nextRender = nextRender.Add(24 * time.Hour) // Next day
+		}
+		return nextRender.UTC(), nil
+		
+	case database.RefreshRate2xDay: // Twice daily - 12:00, 00:00 local time
+		schedules := []int{0, 12} // Hours: midnight, noon
+		return w.findNextScheduledTime(now, location, schedules), nil
+		
+	case database.RefreshRate3xDay: // 3 times daily - 08:00, 16:00, 00:00 local time
+		schedules := []int{0, 8, 16} // Hours: midnight, 8am, 4pm
+		return w.findNextScheduledTime(now, location, schedules), nil
+		
+	case database.RefreshRate4xDay: // 4 times daily - 06:00, 12:00, 18:00, 00:00 local time
+		schedules := []int{0, 6, 12, 18} // Hours: midnight, 6am, noon, 6pm
+		return w.findNextScheduledTime(now, location, schedules), nil
+		
+	default:
+		// For interval-based rates (15min, 30min, hourly, etc.), use simple addition
+		return time.Now().Add(time.Duration(refreshInterval) * time.Second), nil
+	}
+}
+
+// findNextScheduledTime finds the next scheduled time from a list of hours
+func (w *RenderWorker) findNextScheduledTime(now time.Time, location *time.Location, scheduleHours []int) time.Time {
+	currentHour := now.Hour()
+	currentMinute := now.Minute()
+	
+	// Find the next scheduled hour today
+	for _, hour := range scheduleHours {
+		if hour > currentHour || (hour == currentHour && currentMinute < 15) {
+			// Schedule at :15 minutes past the hour (like TRMNL's 00:15)
+			nextRender := time.Date(now.Year(), now.Month(), now.Day(), hour, 15, 0, 0, location)
+			return nextRender.UTC()
+		}
+	}
+	
+	// No more scheduled times today, use first schedule tomorrow
+	nextRender := time.Date(now.Year(), now.Month(), now.Day()+1, scheduleHours[0], 15, 0, 0, location)
+	return nextRender.UTC()
+}
+
+// isForceRefreshWithDailyRate determines if this is a force refresh job with a daily-type rate
+// Returns true if we should skip rescheduling (preserve original schedule)
+func (w *RenderWorker) isForceRefreshWithDailyRate(job database.RenderQueue, refreshInterval int) bool {
+	// Check if this is a force refresh job (priority 999)
+	if job.Priority != 999 {
+		return false
+	}
+	
+	// Check if this is a "x times daily" rate that should preserve schedule
+	dailyRates := []int{
+		database.RefreshRateDaily,   // Daily
+		database.RefreshRate2xDay,   // Twice daily 
+		database.RefreshRate3xDay,   // 3 times daily
+		database.RefreshRate4xDay,   // 4 times daily
+	}
+	
+	for _, dailyRate := range dailyRates {
+		if refreshInterval == dailyRate {
+			return true
+		}
+	}
+	
+	// For interval-based rates (15min, 30min, hourly, etc.), allow normal rescheduling
+	return false
+}
+
 
 // markJobFailed marks a render job as failed with an error message
 func (w *RenderWorker) markJobFailed(ctx context.Context, job database.RenderQueue, errorMsg string) {

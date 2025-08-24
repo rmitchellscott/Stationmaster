@@ -246,7 +246,10 @@ export function PluginPreview({ plugin, isOpen, onClose }: PluginPreviewProps) {
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
+      <DialogContent 
+        className="sm:max-w-lg md:max-w-2xl lg:max-w-4xl xl:max-w-5xl max-h-[85vh] mobile-dialog-content overflow-y-auto !top-[0vh] !translate-y-0 sm:!top-[6vh] flex flex-col"
+        onOpenAutoFocus={(e) => e.preventDefault()}
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Eye className="h-5 w-5" />

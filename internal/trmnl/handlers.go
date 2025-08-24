@@ -100,14 +100,13 @@ func DisplayHandler(c *gin.Context) {
 	
 	// Variables to capture for background operations (must be declared early for defer)
 	var backgroundData struct {
-		deviceID         uuid.UUID
-		accessToken      string
-		statusValues     interface{}
-		nextPlaylistIndex int
+		deviceID             uuid.UUID
+		accessToken          string
+		statusValues         interface{}
 		shouldUpdatePlaylist bool
-		currentItem      *database.PlaylistItem
-		activeItems      []database.PlaylistItem
-		device           *database.Device
+		currentItem          *database.PlaylistItem
+		activeItems          []database.PlaylistItem
+		device               *database.Device
 	}
 	
 	// Defer background operations to ensure they run even if API fails
@@ -130,15 +129,15 @@ func DisplayHandler(c *gin.Context) {
 					}
 				}
 				
-				// Update playlist index if needed
-				if backgroundData.shouldUpdatePlaylist {
-					if err := deviceService.UpdateLastPlaylistIndex(backgroundData.deviceID, backgroundData.nextPlaylistIndex); err != nil {
-						logging.Error("[BACKGROUND] Failed to update last playlist index", "device_id", backgroundData.deviceID, "error", err)
+				// Update playlist item ID if needed
+				if backgroundData.shouldUpdatePlaylist && backgroundData.currentItem != nil {
+					if err := deviceService.UpdateLastPlaylistItemID(backgroundData.deviceID, backgroundData.currentItem.ID); err != nil {
+						logging.Error("[BACKGROUND] Failed to update last playlist item ID", "device_id", backgroundData.deviceID, "item_id", backgroundData.currentItem.ID, "error", err)
 					} else {
-						// Broadcast playlist index change via SSE
+						// Broadcast playlist change via SSE
 						processor := GetPluginProcessor()
-						if processor != nil && backgroundData.currentItem != nil {
-							processor.broadcastPlaylistChange(backgroundData.device, backgroundData.nextPlaylistIndex, *backgroundData.currentItem, backgroundData.activeItems)
+						if processor != nil {
+							processor.broadcastPlaylistChange(backgroundData.device, *backgroundData.currentItem, backgroundData.activeItems)
 						}
 					}
 				}
@@ -351,7 +350,6 @@ func DisplayHandler(c *gin.Context) {
 	processor := GetPluginProcessor()
 	var response gin.H
 	var currentItem *database.PlaylistItem
-	var nextPlaylistIndex int
 	var pluginErr error
 	var timedOut bool
 	
@@ -361,10 +359,9 @@ func DisplayHandler(c *gin.Context) {
 	
 	// Channel to receive plugin processing results
 	type pluginResult struct {
-		response          gin.H
-		currentItem       *database.PlaylistItem
-		nextPlaylistIndex int
-		pluginErr         error
+		response    gin.H
+		currentItem *database.PlaylistItem
+		pluginErr   error
 	}
 	resultChan := make(chan pluginResult, 1)
 	
@@ -372,7 +369,7 @@ func DisplayHandler(c *gin.Context) {
 	go func() {
 		var res pluginResult
 		if processor != nil {
-			res.response, res.currentItem, res.nextPlaylistIndex, res.pluginErr = processor.processActivePlugins(device, activeItems)
+			res.response, res.currentItem, res.pluginErr = processor.processActivePlugins(device, activeItems)
 		} else {
 			// No processor available - return error
 			res.pluginErr = fmt.Errorf("unified plugin processor not available")
@@ -385,7 +382,6 @@ func DisplayHandler(c *gin.Context) {
 	case result := <-resultChan:
 		response = result.response
 		currentItem = result.currentItem
-		nextPlaylistIndex = result.nextPlaylistIndex
 		pluginErr = result.pluginErr
 	case <-ctx.Done():
 		// Timeout occurred
@@ -397,12 +393,21 @@ func DisplayHandler(c *gin.Context) {
 		
 		// Try to get current item for duration override if we have active items
 		if len(activeItems) > 0 {
-			currentIndex := device.LastPlaylistIndex
-			if currentIndex < 0 || currentIndex >= len(activeItems) {
-				currentIndex = 0
+			// Find current item by UUID or use first item
+			var currentItem *database.PlaylistItem
+			if device.LastPlaylistItemID != nil {
+				for _, item := range activeItems {
+					if item.ID == *device.LastPlaylistItemID {
+						currentItem = &item
+						break
+					}
+				}
 			}
-			if activeItems[currentIndex].DurationOverride != nil {
-				timeoutRefreshRate = *activeItems[currentIndex].DurationOverride
+			if currentItem == nil {
+				currentItem = &activeItems[0]
+			}
+			if currentItem.DurationOverride != nil {
+				timeoutRefreshRate = *currentItem.DurationOverride
 			}
 		}
 		
@@ -417,7 +422,6 @@ func DisplayHandler(c *gin.Context) {
 	// Set background data for playlist update if plugin processing was successful and not timed out
 	if pluginErr == nil && !timedOut && len(activeItems) > 0 {
 		backgroundData.shouldUpdatePlaylist = true
-		backgroundData.nextPlaylistIndex = nextPlaylistIndex
 		backgroundData.currentItem = currentItem
 		backgroundData.activeItems = activeItems
 		backgroundData.device = device
@@ -428,12 +432,21 @@ func DisplayHandler(c *gin.Context) {
 		
 		errorRefreshRate := device.RefreshRate
 		if len(activeItems) > 0 {
-			currentIndex := device.LastPlaylistIndex
-			if currentIndex < 0 || currentIndex >= len(activeItems) {
-				currentIndex = 0
+			// Find current item by UUID or use first item
+			var currentItem *database.PlaylistItem
+			if device.LastPlaylistItemID != nil {
+				for _, item := range activeItems {
+					if item.ID == *device.LastPlaylistItemID {
+						currentItem = &item
+						break
+					}
+				}
 			}
-			if activeItems[currentIndex].DurationOverride != nil {
-				errorRefreshRate = *activeItems[currentIndex].DurationOverride
+			if currentItem == nil {
+				currentItem = &activeItems[0]
+			}
+			if currentItem.DurationOverride != nil {
+				errorRefreshRate = *currentItem.DurationOverride
 			}
 		}
 		

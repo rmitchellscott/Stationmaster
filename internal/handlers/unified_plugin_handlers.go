@@ -1,9 +1,12 @@
 package handlers
 
 import (
+	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"sort"
 	"time"
@@ -14,6 +17,8 @@ import (
 	"github.com/rmitchellscott/stationmaster/internal/database"
 	"github.com/rmitchellscott/stationmaster/internal/logging"
 	"github.com/rmitchellscott/stationmaster/internal/plugins"
+	"github.com/rmitchellscott/stationmaster/internal/plugins/private"
+	"github.com/rmitchellscott/stationmaster/internal/rendering"
 )
 
 // UnifiedPluginDefinition represents a plugin definition that can be system or private
@@ -133,9 +138,9 @@ func GetAvailablePluginDefinitionsHandler(c *gin.Context) {
 						"is_published":      pluginDef.IsPublished,
 						"created_at":        pluginDef.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 						"updated_at":        pluginDef.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
-						"webhook_url":       func() string {
+						"webhook_token":     func() string {
 						if pluginDef.WebhookToken != nil {
-							return "/api/webhooks/plugin/" + *pluginDef.WebhookToken
+							return *pluginDef.WebhookToken
 						}
 						return ""
 					}(),
@@ -454,6 +459,11 @@ func CreatePluginInstanceFromDefinitionHandler(c *gin.Context) {
 		return
 	}
 
+	// Schedule immediate render for new plugin instance if it requires processing
+	if pluginDefinition.RequiresProcessing {
+		ScheduleRenderForInstances([]uuid.UUID{pluginInstance.ID})
+	}
+
 	c.JSON(http.StatusCreated, gin.H{"instance": pluginInstance})
 }
 
@@ -550,20 +560,20 @@ func CreatePluginDefinitionHandler(c *gin.Context) {
 	userID := user.ID
 
 	type CreatePluginRequest struct {
-		PluginType       string `json:"plugin_type" binding:"required"`
-		Name             string `json:"name" binding:"required"`
-		Description      string `json:"description"`
-		Version          string `json:"version"`
-		Author           string `json:"author"`
-		MarkupFull       string `json:"markup_full"`
-		MarkupHalfVert   string `json:"markup_half_vert"`
-		MarkupHalfHoriz  string `json:"markup_half_horiz"`
-		MarkupQuadrant   string `json:"markup_quadrant"`
-		SharedMarkup     string `json:"shared_markup"`
-		DataStrategy     string `json:"data_strategy"`
-		WebhookToken     string `json:"webhook_token"`
-		PollingConfig    string `json:"polling_config"`
-		FormFields       string `json:"form_fields"`
+		PluginType       string      `json:"plugin_type" binding:"required"`
+		Name             string      `json:"name" binding:"required"`
+		Description      string      `json:"description"`
+		Version          string      `json:"version"`
+		Author           string      `json:"author"`
+		MarkupFull       string      `json:"markup_full"`
+		MarkupHalfVert   string      `json:"markup_half_vert"`
+		MarkupHalfHoriz  string      `json:"markup_half_horiz"`
+		MarkupQuadrant   string      `json:"markup_quadrant"`
+		SharedMarkup     string      `json:"shared_markup"`
+		DataStrategy     string      `json:"data_strategy"`
+		WebhookToken     string      `json:"webhook_token"`
+		PollingConfig    interface{} `json:"polling_config"`
+		FormFields       interface{} `json:"form_fields"`
 	}
 
 	var req CreatePluginRequest
@@ -576,6 +586,38 @@ func CreatePluginDefinitionHandler(c *gin.Context) {
 	if req.PluginType != "private" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Only private plugins can be created via this endpoint"})
 		return
+	}
+
+	// Validate polling configuration
+	if err := ValidatePollingConfig(req.PollingConfig); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Polling config validation failed", "details": err.Error()})
+		return
+	}
+
+	// Validate and convert form fields to JSON schema
+	configSchema, err := ValidateFormFields(req.FormFields)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Form fields validation failed", "details": err.Error()})
+		return
+	}
+
+	// Convert configs to JSON for storage
+	var pollingConfigJSON, formFieldsJSON []byte
+
+	if req.PollingConfig != nil {
+		pollingConfigJSON, err = json.Marshal(req.PollingConfig)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid polling config"})
+			return
+		}
+	}
+
+	if req.FormFields != nil {
+		formFieldsJSON, err = json.Marshal(req.FormFields)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid form fields config"})
+			return
+		}
 	}
 
 	db := database.GetDB()
@@ -597,7 +639,7 @@ func CreatePluginDefinitionHandler(c *gin.Context) {
 		Description:        req.Description,
 		Version:            req.Version,
 		Author:             req.Author,
-		ConfigSchema:       req.FormFields,
+		ConfigSchema:       configSchema, // Use converted JSON schema
 		RequiresProcessing: true, // Private plugins always require processing
 		MarkupFull:         &req.MarkupFull,
 		MarkupHalfVert:     &req.MarkupHalfVert,
@@ -606,8 +648,8 @@ func CreatePluginDefinitionHandler(c *gin.Context) {
 		SharedMarkup:       &req.SharedMarkup,
 		DataStrategy:       &req.DataStrategy,
 		WebhookToken:       &webhookToken,
-		PollingConfig:      []byte(req.PollingConfig),
-		FormFields:         []byte(req.FormFields),
+		PollingConfig:      pollingConfigJSON,
+		FormFields:         formFieldsJSON,
 		IsPublished:        false,
 		IsActive:           true,
 		CreatedAt:          time.Now(),
@@ -637,18 +679,18 @@ func UpdatePluginDefinitionHandler(c *gin.Context) {
 	}
 
 	type UpdatePluginRequest struct {
-		Name             string `json:"name"`
-		Description      string `json:"description"`
-		Version          string `json:"version"`
-		Author           string `json:"author"`
-		MarkupFull       string `json:"markup_full"`
-		MarkupHalfVert   string `json:"markup_half_vert"`
-		MarkupHalfHoriz  string `json:"markup_half_horiz"`
-		MarkupQuadrant   string `json:"markup_quadrant"`
-		SharedMarkup     string `json:"shared_markup"`
-		DataStrategy     string `json:"data_strategy"`
-		PollingConfig    string `json:"polling_config"`
-		FormFields       string `json:"form_fields"`
+		Name             string      `json:"name"`
+		Description      string      `json:"description"`
+		Version          string      `json:"version"`
+		Author           string      `json:"author"`
+		MarkupFull       string      `json:"markup_full"`
+		MarkupHalfVert   string      `json:"markup_half_vert"`
+		MarkupHalfHoriz  string      `json:"markup_half_horiz"`
+		MarkupQuadrant   string      `json:"markup_quadrant"`
+		SharedMarkup     string      `json:"shared_markup"`
+		DataStrategy     string      `json:"data_strategy"`
+		PollingConfig    interface{} `json:"polling_config"`
+		FormFields       interface{} `json:"form_fields"`
 	}
 
 	var req UpdatePluginRequest
@@ -657,11 +699,43 @@ func UpdatePluginDefinitionHandler(c *gin.Context) {
 		return
 	}
 
+	// Validate polling configuration
+	if err := ValidatePollingConfig(req.PollingConfig); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Polling config validation failed", "details": err.Error()})
+		return
+	}
+
+	// Validate and convert form fields to JSON schema
+	configSchema, err := ValidateFormFields(req.FormFields)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Form fields validation failed", "details": err.Error()})
+		return
+	}
+
+	// Convert configs to JSON for storage
+	var pollingConfigJSON, formFieldsJSON []byte
+
+	if req.PollingConfig != nil {
+		pollingConfigJSON, err = json.Marshal(req.PollingConfig)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid polling config"})
+			return
+		}
+	}
+
+	if req.FormFields != nil {
+		formFieldsJSON, err = json.Marshal(req.FormFields)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid form fields config"})
+			return
+		}
+	}
+
 	db := database.GetDB()
 	var pluginDefinition database.PluginDefinition
 	
 	// Only allow users to update their own private plugins
-	err := db.Where("id = ? AND owner_id = ? AND plugin_type = 'private'", definitionID, userID).First(&pluginDefinition).Error
+	err = db.Where("id = ? AND owner_id = ? AND plugin_type = 'private'", definitionID, userID).First(&pluginDefinition).Error
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Plugin definition not found or access denied"})
 		return
@@ -674,19 +748,34 @@ func UpdatePluginDefinitionHandler(c *gin.Context) {
 	pluginDefinition.Description = req.Description
 	pluginDefinition.Version = req.Version
 	pluginDefinition.Author = req.Author
+	pluginDefinition.ConfigSchema = configSchema // Use converted JSON schema
 	pluginDefinition.MarkupFull = &req.MarkupFull
 	pluginDefinition.MarkupHalfVert = &req.MarkupHalfVert
 	pluginDefinition.MarkupHalfHoriz = &req.MarkupHalfHoriz
 	pluginDefinition.MarkupQuadrant = &req.MarkupQuadrant
 	pluginDefinition.SharedMarkup = &req.SharedMarkup
 	pluginDefinition.DataStrategy = &req.DataStrategy
-	pluginDefinition.PollingConfig = []byte(req.PollingConfig)
-	pluginDefinition.FormFields = []byte(req.FormFields)
+	pluginDefinition.PollingConfig = pollingConfigJSON
+	pluginDefinition.FormFields = formFieldsJSON
 	pluginDefinition.UpdatedAt = time.Now()
 
 	if err := db.Save(&pluginDefinition).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update plugin definition: " + err.Error()})
 		return
+	}
+
+	// Schedule renders for all instances of this updated plugin definition
+	unifiedPluginService := database.NewUnifiedPluginService(db)
+	instances, err := unifiedPluginService.GetPluginInstancesByDefinition(pluginDefinition.ID)
+	if err != nil {
+		logging.Error("[PLUGIN_UPDATE] Failed to get plugin instances for render scheduling", "plugin_id", pluginDefinition.ID, "error", err)
+	} else if len(instances) > 0 {
+		instanceIDs := make([]uuid.UUID, len(instances))
+		for i, instance := range instances {
+			instanceIDs[i] = instance.ID
+		}
+		ScheduleRenderForInstances(instanceIDs)
+		logging.Info("[PLUGIN_UPDATE] Scheduled renders for plugin instances", "plugin_id", pluginDefinition.ID, "instance_count", len(instances))
 	}
 
 	c.JSON(http.StatusOK, gin.H{"plugin_definition": pluginDefinition})
@@ -700,22 +789,25 @@ func DeletePluginDefinitionHandler(c *gin.Context) {
 	}
 	userID := user.ID
 
-	definitionID := c.Param("id")
-	if definitionID == "" {
+	definitionIDStr := c.Param("id")
+	if definitionIDStr == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Definition ID is required"})
 		return
 	}
 
-	db := database.GetDB()
-	
-	// Only allow users to delete their own private plugins
-	result := db.Where("id = ? AND owner_id = ? AND plugin_type = 'private'", definitionID, userID).Delete(&database.PluginDefinition{})
-	if result.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete plugin definition: " + result.Error.Error()})
+	definitionID, err := uuid.Parse(definitionIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid definition ID format"})
 		return
 	}
-	if result.RowsAffected == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Plugin definition not found or access denied"})
+
+	db := database.GetDB()
+	service := database.NewUnifiedPluginService(db)
+	
+	// Use the service method which properly handles cascading deletions
+	err = service.DeletePluginDefinition(definitionID, &userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete plugin definition: " + err.Error()})
 		return
 	}
 
@@ -767,19 +859,27 @@ func TestPluginDefinitionHandler(c *gin.Context) {
 		return
 	}
 
-	type TestRequest struct {
-		Name             string `json:"name"`
-		Description      string `json:"description"`
-		MarkupFull       string `json:"markup_full"`
-		MarkupHalfVert   string `json:"markup_half_vert"`
-		MarkupHalfHoriz  string `json:"markup_half_horiz"`
-		MarkupQuadrant   string `json:"markup_quadrant"`
-		SharedMarkup     string `json:"shared_markup"`
-		DataStrategy     string `json:"data_strategy"`
+	type Plugin struct {
+		Name             string      `json:"name"`
+		Description      string      `json:"description"`
+		MarkupFull       string      `json:"markup_full"`
+		MarkupHalfVert   string      `json:"markup_half_vert"`
+		MarkupHalfHoriz  string      `json:"markup_half_horiz"`
+		MarkupQuadrant   string      `json:"markup_quadrant"`
+		SharedMarkup     string      `json:"shared_markup"`
+		DataStrategy     string      `json:"data_strategy"`
 		PollingConfig    interface{} `json:"polling_config"`
 		FormFields       interface{} `json:"form_fields"`
-		Version          string `json:"version"`
-		PluginType       string `json:"plugin_type"`
+		Version          string      `json:"version"`
+		PluginType       string      `json:"plugin_type"`
+	}
+
+	type TestRequest struct {
+		Plugin       Plugin                 `json:"plugin"`
+		Layout       string                 `json:"layout"`
+		SampleData   map[string]interface{} `json:"sample_data"`
+		DeviceWidth  int                    `json:"device_width"`
+		DeviceHeight int                    `json:"device_height"`
 	}
 
 	var req TestRequest
@@ -788,10 +888,66 @@ func TestPluginDefinitionHandler(c *gin.Context) {
 		return
 	}
 
-	// TODO: Add actual template testing/rendering logic
-	// For now, just return success
+	// Select template based on layout
+	var layoutTemplate string
+	switch req.Layout {
+	case "full":
+		layoutTemplate = req.Plugin.MarkupFull
+	case "half_vertical":
+		layoutTemplate = req.Plugin.MarkupHalfVert
+	case "half_horizontal":
+		layoutTemplate = req.Plugin.MarkupHalfHoriz
+	case "quadrant":
+		layoutTemplate = req.Plugin.MarkupQuadrant
+	default:
+		layoutTemplate = req.Plugin.MarkupFull
+	}
+
+	if layoutTemplate == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("No template defined for layout: %s", req.Layout)})
+		return
+	}
+
+	// Generate instance ID for preview
+	instanceID := fmt.Sprintf("preview_%d", time.Now().Unix())
+
+	// Use the private plugin renderer service
+	htmlRenderer := private.NewPrivatePluginRenderer()
+	renderedHTML, err := htmlRenderer.RenderToHTML(private.RenderOptions{
+		SharedMarkup:   req.Plugin.SharedMarkup,
+		LayoutTemplate: layoutTemplate,
+		Data:           req.SampleData, // Use sample data from frontend
+		Width:          req.DeviceWidth,
+		Height:         req.DeviceHeight,
+		PluginName:     req.Plugin.Name,
+		InstanceID:     instanceID,
+	})
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Template render error: %v", err)})
+		return
+	}
+
+	// Convert HTML to image using BrowserlessRenderer
+	browserRenderer, err := rendering.DefaultBrowserlessRenderer()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to create renderer: %v", err)})
+		return
+	}
+	defer browserRenderer.Close()
+
+	ctx := context.Background()
+	imageData, err := browserRenderer.RenderHTML(ctx, renderedHTML, req.DeviceWidth, req.DeviceHeight)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to render image: %v", err)})
+		return
+	}
+
+	// Convert image data to base64 data URL
+	base64Image := base64.StdEncoding.EncodeToString(imageData)
+	previewURL := fmt.Sprintf("data:image/png;base64,%s", base64Image)
+
 	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"rendered_html": "<p>Test rendering would appear here</p>",
+		"success":     true,
+		"preview_url": previewURL,
 	})
 }

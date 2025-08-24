@@ -146,9 +146,9 @@ func (p *PrivatePlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespon
 		"device_id": ctx.Device.ID.String(),
 	}
 	
-	// Use the private plugin renderer service
+	// Use the private plugin renderer service with client-side LiquidJS
 	htmlRenderer := NewPrivatePluginRenderer()
-	html, err := htmlRenderer.RenderToHTML(RenderOptions{
+	html, err := htmlRenderer.RenderToClientSideHTML(RenderOptions{
 		SharedMarkup:   sharedMarkup,
 		LayoutTemplate: *p.definition.MarkupFull,
 		Data:           templateData,
@@ -162,19 +162,6 @@ func (p *PrivatePlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespon
 			fmt.Errorf("failed to render HTML template: %w", err)
 	}
 	
-	// Check if HTML content has changed to avoid unnecessary browserless rendering
-	if p.instance != nil {
-		comparator := NewPluginContentComparator()
-		comparison := comparator.CompareHTML(html, p.instance.LastHTMLHash)
-		
-		if comparator.ShouldSkipRender(comparison) {
-			return plugins.CreateNoChangeResponse("HTML content unchanged, skipping render"), nil
-		}
-		
-		// HTML has changed - update the hash (this will be persisted by the render worker)
-		p.instance.LastHTMLHash = &comparison.NewHash
-	}
-	
 	// Create browserless renderer
 	browserRenderer, err := rendering.NewBrowserlessRenderer()
 	if err != nil {
@@ -183,7 +170,7 @@ func (p *PrivatePlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespon
 	}
 	defer browserRenderer.Close()
 	
-	// Render HTML to image using browserless
+	// Always render HTML to image using browserless
 	renderCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	
@@ -196,6 +183,19 @@ func (p *PrivatePlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespon
 	if err != nil {
 		return plugins.CreateErrorResponse(fmt.Sprintf("Failed to render HTML: %v", err)),
 			fmt.Errorf("failed to render HTML to image: %w", err)
+	}
+	
+	// Check if image content has changed by comparing image hash
+	if p.instance != nil {
+		comparator := NewPluginContentComparator()
+		comparison := comparator.CompareImage(imageData, p.instance.LastImageHash)
+		
+		if comparator.ShouldSkipRender(comparison) {
+			return plugins.CreateNoChangeResponse("Image content unchanged, skipping storage"), nil
+		}
+		
+		// Image has changed - update the hash (this will be persisted by the render worker)
+		p.instance.LastImageHash = &comparison.NewHash
 	}
 	
 	// Generate filename
@@ -214,7 +214,7 @@ func (p *PrivatePlugin) Validate(settings map[string]interface{}) error {
 	return nil
 }
 
-// GetInstance returns the plugin instance (used for accessing updated fields like LastHTMLHash)
+// GetInstance returns the plugin instance (used for accessing updated fields like LastImageHash)
 func (p *PrivatePlugin) GetInstance() *database.PluginInstance {
 	return p.instance
 }

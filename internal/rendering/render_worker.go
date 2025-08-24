@@ -209,7 +209,7 @@ func (w *RenderWorker) processRenderJob(ctx context.Context, job database.Render
 		logging.Error("[RENDER_WORKER] Failed to mark job as completed", "error", err)
 	}
 	
-	// For private plugins, persist any instance field updates (like LastHTMLHash)
+	// For private plugins, persist any instance field updates (like LastImageHash)
 	if pluginInstance.PluginDefinition.PluginType == "private" {
 		err = w.db.WithContext(ctx).Save(&pluginInstance).Error
 		if err != nil {

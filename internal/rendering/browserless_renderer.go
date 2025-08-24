@@ -38,6 +38,13 @@ func NewBrowserlessRenderer() (*BrowserlessRenderer, error) {
 	}, nil
 }
 
+// WaitForSelector represents browserless waitForSelector options
+type WaitForSelector struct {
+	Selector string `json:"selector"`
+	Timeout  int    `json:"timeout"`
+	Visible  bool   `json:"visible"`
+}
+
 // ScreenshotRequest represents the request payload for browserless screenshot API
 type ScreenshotRequest struct {
 	URL      string `json:"url"`
@@ -55,7 +62,8 @@ type ScreenshotRequest struct {
 		WaitUntil string `json:"waitUntil"`
 		Timeout   int    `json:"timeout"`
 	} `json:"gotoOptions"`
-	Headers map[string]string `json:"headers,omitempty"`
+	Headers         map[string]string `json:"headers,omitempty"`
+	WaitForSelector *WaitForSelector  `json:"waitForSelector,omitempty"`
 }
 
 // CaptureScreenshot captures a screenshot of the given URL using browserless
@@ -142,6 +150,7 @@ type HTMLScreenshotRequest struct {
 		WaitUntil string `json:"waitUntil"`
 		Timeout   int    `json:"timeout"`
 	} `json:"gotoOptions"`
+	WaitForSelector *WaitForSelector `json:"waitForSelector,omitempty"`
 }
 
 // RenderHTML renders HTML content to an image using browserless
@@ -162,9 +171,16 @@ func (r *BrowserlessRenderer) RenderHTML(ctx context.Context, html string, width
 	req.Options.FullPage = false
 	req.Options.OmitBackground = false
 	
-	// Set reasonable wait options for HTML content
-	req.GotoOptions.WaitUntil = "networkidle0" // Wait for all network requests to finish
-	req.GotoOptions.Timeout = 30000 // 30 seconds timeout
+	// Set wait options for complete asset loading
+	req.GotoOptions.WaitUntil = "networkidle0" // Wait for all network requests to complete
+	req.GotoOptions.Timeout = 60000 // 60 seconds timeout (increased for complete loading)
+	
+	// Wait for completion signal (more reliable than style-based detection)
+	req.WaitForSelector = &WaitForSelector{
+		Selector: "body[data-render-complete='true']", // Wait for render completion attribute
+		Timeout:  8000,                                // 8 second timeout (reduced from 15)
+		Visible:  false,                               // Don't require visibility, just presence
+	}
 	
 	// Marshal request to JSON
 	requestBody, err := json.Marshal(req)

@@ -377,6 +377,59 @@ func RunMigrations(logPrefix string) error {
 				return nil
 			},
 		},
+		{
+			ID: "20250824_rename_last_html_hash_to_last_image_hash",
+			Migrate: func(tx *gorm.DB) error {
+				logging.Info("[MIGRATION] Renaming last_html_hash to last_image_hash in plugin_instances table")
+				
+				// Check if the old column exists
+				if tx.Migrator().HasColumn(&PluginInstance{}, "last_html_hash") {
+					// Add the new column
+					if err := tx.Exec("ALTER TABLE plugin_instances ADD COLUMN last_image_hash VARCHAR(64)").Error; err != nil {
+						return fmt.Errorf("failed to add last_image_hash column: %w", err)
+					}
+					
+					// Copy data from old column to new column
+					if err := tx.Exec("UPDATE plugin_instances SET last_image_hash = last_html_hash WHERE last_html_hash IS NOT NULL").Error; err != nil {
+						return fmt.Errorf("failed to copy data from last_html_hash to last_image_hash: %w", err)
+					}
+					
+					// Drop the old column
+					if err := tx.Exec("ALTER TABLE plugin_instances DROP COLUMN last_html_hash").Error; err != nil {
+						return fmt.Errorf("failed to drop last_html_hash column: %w", err)
+					}
+					
+					logging.Info("[MIGRATION] Successfully renamed last_html_hash to last_image_hash")
+				} else {
+					logging.Info("[MIGRATION] last_html_hash column not found, assuming already migrated")
+				}
+				
+				return nil
+			},
+			Rollback: func(tx *gorm.DB) error {
+				logging.Info("[MIGRATION] Rolling back last_html_hash to last_image_hash rename")
+				
+				// Check if the new column exists
+				if tx.Migrator().HasColumn(&PluginInstance{}, "last_image_hash") {
+					// Add the old column back
+					if err := tx.Exec("ALTER TABLE plugin_instances ADD COLUMN last_html_hash VARCHAR(64)").Error; err != nil {
+						return fmt.Errorf("failed to add back last_html_hash column: %w", err)
+					}
+					
+					// Copy data back
+					if err := tx.Exec("UPDATE plugin_instances SET last_html_hash = last_image_hash WHERE last_image_hash IS NOT NULL").Error; err != nil {
+						return fmt.Errorf("failed to copy data back from last_image_hash to last_html_hash: %w", err)
+					}
+					
+					// Drop the new column
+					if err := tx.Exec("ALTER TABLE plugin_instances DROP COLUMN last_image_hash").Error; err != nil {
+						return fmt.Errorf("failed to drop last_image_hash column: %w", err)
+					}
+				}
+				
+				return nil
+			},
+		},
 	}
 
 	// Create migrator with our migrations

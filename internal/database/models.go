@@ -413,7 +413,7 @@ type PluginInstance struct {
 	Name            string         `gorm:"size:255;not null" json:"name"`        // User-defined name for this instance
 	Settings        datatypes.JSON `gorm:"type:text" json:"settings"`           // JSON settings specific to this instance
 	RefreshInterval int           `gorm:"default:3600" json:"refresh_interval"` // Refresh interval in seconds
-	LastHTMLHash    *string       `gorm:"size:64" json:"last_html_hash,omitempty"` // SHA256 hash of last rendered HTML content
+	LastImageHash   *string       `gorm:"size:64" json:"last_image_hash,omitempty"` // SHA256 hash of last rendered image content
 	IsActive        bool          `gorm:"default:true" json:"is_active"`
 	CreatedAt       time.Time     `gorm:"autoCreateTime" json:"created_at"`
 	UpdatedAt       time.Time     `gorm:"autoUpdateTime" json:"updated_at"`

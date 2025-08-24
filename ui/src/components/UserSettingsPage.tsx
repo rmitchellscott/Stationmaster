@@ -55,11 +55,14 @@ export function UserSettingsPage() {
   const [email, setEmail] = useState("");
   const [timezone, setTimezone] = useState("");
   const [timezoneOpen, setTimezoneOpen] = useState(false);
+  const [locale, setLocale] = useState("");
+  const [localeOpen, setLocaleOpen] = useState(false);
   
   const [originalValues, setOriginalValues] = useState({
     username: "",
     email: "",
-    timezone: ""
+    timezone: "",
+    locale: ""
   });
 
   const getGroupedTimezones = () => {
@@ -121,6 +124,31 @@ export function UserSettingsPage() {
     };
   };
 
+  const getCommonLocales = () => {
+    return [
+      { value: 'en-US', label: 'English (United States)' },
+      { value: 'en-GB', label: 'English (United Kingdom)' },
+      { value: 'fr-FR', label: 'French (France)' },
+      { value: 'de-DE', label: 'German (Germany)' },
+      { value: 'es-ES', label: 'Spanish (Spain)' },
+      { value: 'it-IT', label: 'Italian (Italy)' },
+      { value: 'pt-BR', label: 'Portuguese (Brazil)' },
+      { value: 'ru-RU', label: 'Russian (Russia)' },
+      { value: 'ja-JP', label: 'Japanese (Japan)' },
+      { value: 'ko-KR', label: 'Korean (South Korea)' },
+      { value: 'zh-CN', label: 'Chinese (Simplified)' },
+      { value: 'zh-TW', label: 'Chinese (Traditional)' },
+      { value: 'ar-SA', label: 'Arabic (Saudi Arabia)' },
+      { value: 'hi-IN', label: 'Hindi (India)' },
+      { value: 'th-TH', label: 'Thai (Thailand)' },
+      { value: 'vi-VN', label: 'Vietnamese (Vietnam)' },
+      { value: 'nl-NL', label: 'Dutch (Netherlands)' },
+      { value: 'sv-SE', label: 'Swedish (Sweden)' },
+      { value: 'no-NO', label: 'Norwegian (Norway)' },
+      { value: 'da-DK', label: 'Danish (Denmark)' },
+    ];
+  };
+
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -137,11 +165,14 @@ export function UserSettingsPage() {
       setEmail(user.email);
       const userTimezone = user.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
       setTimezone(userTimezone);
+      const userLocale = user.locale || navigator.language || 'en-US';
+      setLocale(userLocale);
       
       setOriginalValues({
         username: user.username,
         email: user.email,
-        timezone: userTimezone
+        timezone: userTimezone,
+        locale: userLocale
       });
     }
   }, [user]);
@@ -160,11 +191,13 @@ export function UserSettingsPage() {
       setUsername("");
       setEmail("");
       setTimezone("");
+      setLocale("");
       
       setOriginalValues({
         username: "",
         email: "",
-        timezone: ""
+        timezone: "",
+        locale: ""
       });
     };
 
@@ -180,7 +213,8 @@ export function UserSettingsPage() {
     return (
       (!config?.oidcEnabled && username !== originalValues.username) ||
       (!config?.oidcEnabled && email !== originalValues.email) ||
-      timezone !== originalValues.timezone
+      timezone !== originalValues.timezone ||
+      locale !== originalValues.locale
     );
   };
 
@@ -197,7 +231,8 @@ export function UserSettingsPage() {
         credentials: "include",
         body: JSON.stringify({
           ...(config?.oidcEnabled ? {} : { username, email }),
-          timezone
+          timezone,
+          locale
         }),
       });
 
@@ -205,7 +240,8 @@ export function UserSettingsPage() {
         setOriginalValues({
           username,
           email,
-          timezone
+          timezone,
+          locale
         });
         
         setTimeout(() => {
@@ -508,6 +544,68 @@ export function UserSettingsPage() {
                     </Popover>
                     <p className="text-xs text-muted-foreground mt-1">
                       Used for schedule displays and timezone-aware features.
+                    </p>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="locale">Locale</Label>
+                    <Popover modal={true} open={localeOpen} onOpenChange={setLocaleOpen}>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          role="combobox"
+                          aria-expanded={localeOpen}
+                          className="mt-2 w-full justify-between"
+                        >
+                          {locale ? 
+                            (() => {
+                              const localeOption = getCommonLocales().find(l => l.value === locale);
+                              return localeOption ? localeOption.label : locale;
+                            })() : 
+                            "Select locale..."
+                          }
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent 
+                        className="w-96 p-0 mobile-dialog-content sm:w-96 !top-[0vh] !translate-y-0 sm:!top-auto sm:!translate-y-0"
+                        side="bottom"
+                        align="start"
+                        onOpenAutoFocus={(e) => {
+                          // Prevent auto-focus issues on iOS
+                          if (typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent)) {
+                            e.preventDefault();
+                          }
+                        }}
+                      >
+                        <Command>
+                          <CommandInput placeholder="Search locales..." className="h-8" />
+                          <CommandList>
+                            <CommandEmpty>No locale found.</CommandEmpty>
+                            {getCommonLocales().map((localeOption) => (
+                              <CommandItem
+                                key={localeOption.value}
+                                value={localeOption.label}
+                                onSelect={() => {
+                                  setLocale(localeOption.value);
+                                  setLocaleOpen(false);
+                                }}
+                                className="cursor-pointer"
+                                style={{ pointerEvents: 'auto' }}
+                              >
+                                <div className="flex items-center justify-between w-full">
+                                  <span>{localeOption.label}</span>
+                                  <span className="text-sm text-muted-foreground">
+                                    {localeOption.value}
+                                  </span>
+                                </div>
+                              </CommandItem>
+                            ))}
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Used for date/time formatting and localization.
                     </p>
                   </div>
                 </div>

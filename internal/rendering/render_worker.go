@@ -269,8 +269,14 @@ func (w *RenderWorker) renderForDeviceModel(ctx context.Context, pluginInstance 
 		DeviceModel: &deviceModel,
 	}
 
+	// Fetch user data for plugin context
+	user, err := database.NewUserService(w.db).GetUserByID(pluginInstance.UserID)
+	if err != nil {
+		return fmt.Errorf("failed to get user: %w", err)
+	}
+	
 	// Create plugin context
-	pluginCtx, err := plugins.NewPluginContext(mockDevice, &pluginInstance)
+	pluginCtx, err := plugins.NewPluginContext(mockDevice, &pluginInstance, user)
 	if err != nil {
 		return fmt.Errorf("failed to create plugin context: %w", err)
 	}

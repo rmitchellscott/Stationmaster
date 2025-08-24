@@ -2,6 +2,7 @@ package auth
 
 import (
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -16,6 +17,7 @@ type UpdateUserRequest struct {
 	Username *string `json:"username,omitempty"`
 	Email    *string `json:"email,omitempty" binding:"omitempty,email"`
 	Timezone *string `json:"timezone,omitempty"`
+	Locale   *string `json:"locale,omitempty"`
 	IsAdmin  *bool   `json:"is_admin,omitempty"`
 	IsActive *bool   `json:"is_active,omitempty"`
 }
@@ -106,6 +108,7 @@ func GetUsersHandler(c *gin.Context) {
 			Username:            user.Username,
 			Email:               user.Email,
 			Timezone:            user.Timezone,
+			Locale:              user.Locale,
 			IsAdmin:             user.IsAdmin,
 			IsActive:            user.IsActive,
 			OnboardingCompleted: user.OnboardingCompleted,
@@ -160,6 +163,7 @@ func GetUserHandler(c *gin.Context) {
 		Username:            user.Username,
 		Email:               user.Email,
 		Timezone:            user.Timezone,
+		Locale:              user.Locale,
 		IsAdmin:             user.IsAdmin,
 		IsActive:            user.IsActive,
 		OnboardingCompleted: user.OnboardingCompleted,
@@ -327,6 +331,14 @@ func UpdateCurrentUserHandler(c *gin.Context) {
 			return
 		}
 		updates["timezone"] = *req.Timezone
+	}
+	if req.Locale != nil && *req.Locale != "" {
+		// Basic locale validation - should be in format like "en-US", "fr-FR"
+		if !regexp.MustCompile(`^[a-z]{2}-[A-Z]{2}$`).MatchString(*req.Locale) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid locale format - expected format like 'en-US'"})
+			return
+		}
+		updates["locale"] = *req.Locale
 	}
 
 	if len(updates) == 0 {

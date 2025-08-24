@@ -17,6 +17,7 @@ const (
 type PluginContext struct {
 	Device         *database.Device
 	PluginInstance *database.PluginInstance
+	User           *database.User
 	Settings       map[string]interface{}
 }
 

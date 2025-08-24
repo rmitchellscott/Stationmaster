@@ -42,6 +42,7 @@ type UserResponse struct {
 	Username            string     `json:"username"`
 	Email               string     `json:"email"`
 	Timezone            string     `json:"timezone"`
+	Locale              string     `json:"locale"`
 	IsAdmin             bool       `json:"is_admin"`
 	IsActive            bool       `json:"is_active"`
 	OnboardingCompleted bool       `json:"onboarding_completed"`
@@ -195,6 +196,7 @@ func RegisterHandler(c *gin.Context) {
 		Username:            newUser.Username,
 		Email:               newUser.Email,
 		Timezone:            newUser.Timezone,
+		Locale:              newUser.Locale,
 		IsAdmin:             newUser.IsAdmin,
 		IsActive:            newUser.IsActive,
 		OnboardingCompleted: newUser.OnboardingCompleted,
@@ -295,6 +297,7 @@ func MultiUserLoginHandler(c *gin.Context) {
 			Username:            user.Username,
 			Email:               user.Email,
 			Timezone:            user.Timezone,
+			Locale:              user.Locale,
 			IsAdmin:             user.IsAdmin,
 			IsActive:            user.IsActive,
 			OnboardingCompleted: user.OnboardingCompleted,
@@ -397,6 +400,7 @@ func GetCurrentUserHandler(c *gin.Context) {
 		Username:            user.Username,
 		Email:               user.Email,
 		Timezone:            user.Timezone,
+		Locale:              user.Locale,
 		IsAdmin:             user.IsAdmin,
 		IsActive:            user.IsActive,
 		OnboardingCompleted: user.OnboardingCompleted,
@@ -468,6 +472,7 @@ func MultiUserCheckAuthHandler(c *gin.Context) {
 			Username:            user.Username,
 			Email:               user.Email,
 			Timezone:            user.Timezone,
+			Locale:              user.Locale,
 			IsAdmin:             user.IsAdmin,
 			IsActive:            user.IsActive,
 			OnboardingCompleted: user.OnboardingCompleted,

@@ -322,11 +322,21 @@ func (pp *PluginProcessor) createUnifiedPluginContext(device *database.Device, p
 		return plugins.PluginContext{}, fmt.Errorf("failed to get plugin instance settings: %w", err)
 	}
 	
-	// Use PluginInstance directly with PluginContext
-	// TODO: Update PluginContext to work directly with PluginInstance
+	// Fetch user data if device is claimed
+	var user *database.User
+	if device.UserID != nil {
+		db := database.GetDB()
+		userService := database.NewUserService(db)
+		userObj, err := userService.GetUserByID(*device.UserID)
+		if err == nil {
+			user = userObj
+		}
+	}
+	
 	return plugins.PluginContext{
 		Device:         device,
 		PluginInstance: pluginInstance,
+		User:           user,
 		Settings:       settings,
 	}, nil
 }

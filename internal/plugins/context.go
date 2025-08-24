@@ -8,7 +8,7 @@ import (
 )
 
 // NewPluginContext creates a new plugin context with parsed settings
-func NewPluginContext(device *database.Device, pluginInstance *database.PluginInstance) (PluginContext, error) {
+func NewPluginContext(device *database.Device, pluginInstance *database.PluginInstance, user *database.User) (PluginContext, error) {
 	settings := make(map[string]interface{})
 	
 	if len(pluginInstance.Settings) > 0 {
@@ -20,6 +20,7 @@ func NewPluginContext(device *database.Device, pluginInstance *database.PluginIn
 	return PluginContext{
 		Device:         device,
 		PluginInstance: pluginInstance,
+		User:           user,
 		Settings:       settings,
 	}, nil
 }

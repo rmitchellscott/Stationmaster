@@ -139,12 +139,42 @@ func (p *PrivatePlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespon
 	}
 
 	// Add TRMNL global variables
-	templateData["trmnl"] = map[string]interface{}{
+	trmnlData := map[string]interface{}{
 		"timestamp": time.Now().Format("2006-01-02 15:04:05"),
 		"date":      time.Now().Format("2006-01-02"),
 		"time":      time.Now().Format("15:04:05"),
 		"device_id": ctx.Device.ID.String(),
 	}
+	
+	// Add user-specific properties if user is available
+	if ctx.User != nil {
+		// Calculate UTC offset in seconds
+		utcOffset := int64(0)
+		locale := "en-US" // Default locale
+		timezone := "UTC" // Default timezone
+		
+		if ctx.User.Timezone != "" {
+			timezone = ctx.User.Timezone
+			// Parse timezone and calculate UTC offset
+			loc, err := time.LoadLocation(ctx.User.Timezone)
+			if err == nil {
+				_, offset := time.Now().In(loc).Zone()
+				utcOffset = int64(offset)
+			}
+		}
+		
+		if ctx.User.Locale != "" {
+			locale = ctx.User.Locale
+		}
+		
+		trmnlData["user"] = map[string]interface{}{
+			"utc_offset":      utcOffset,
+			"time_zone_iana":  timezone,
+			"locale":          locale,
+		}
+	}
+	
+	templateData["trmnl"] = trmnlData
 	
 	// Use the private plugin renderer service with client-side LiquidJS
 	htmlRenderer := NewPrivatePluginRenderer()

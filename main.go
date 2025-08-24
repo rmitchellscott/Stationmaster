@@ -383,7 +383,6 @@ func main() {
 		admin.GET("/devices/stats", handlers.GetDeviceStatsHandler)       // GET /api/admin/devices/stats - get device statistics
 		admin.DELETE("/devices/:id/unlink", handlers.UnlinkDeviceHandler) // DELETE /api/admin/devices/:id/unlink - unlink device
 
-		admin.GET("/private-plugins/stats", handlers.GetPrivatePluginStatsHandler) // GET /api/admin/private-plugins/stats - get private plugin statistics
 
 		// Firmware management endpoints
 		admin.GET("/firmware/versions", handlers.GetFirmwareVersionsHandler)              // GET /api/admin/firmware/versions - list firmware versions
@@ -424,6 +423,12 @@ func main() {
 	pluginDefs := protected.Group("/plugin-definitions")
 	{
 		pluginDefs.GET("", handlers.GetAvailablePluginDefinitionsHandler) // GET /api/plugin-definitions - list all available plugin definitions (system + private)
+		pluginDefs.POST("", handlers.CreatePluginDefinitionHandler) // POST /api/plugin-definitions - create new plugin definition (private only)
+		pluginDefs.GET("/:id", handlers.GetPluginDefinitionHandler) // GET /api/plugin-definitions/:id - get single plugin definition
+		pluginDefs.PUT("/:id", handlers.UpdatePluginDefinitionHandler) // PUT /api/plugin-definitions/:id - update plugin definition
+		pluginDefs.DELETE("/:id", handlers.DeletePluginDefinitionHandler) // DELETE /api/plugin-definitions/:id - delete plugin definition
+		pluginDefs.POST("/validate", handlers.ValidatePluginDefinitionHandler) // POST /api/plugin-definitions/validate - validate plugin templates
+		pluginDefs.POST("/test", handlers.TestPluginDefinitionHandler) // POST /api/plugin-definitions/test - test plugin template rendering
 		pluginDefs.GET("/refresh-rate-options", handlers.GetRefreshRateOptionsHandler) // GET /api/plugin-definitions/refresh-rate-options - get available refresh rates
 		pluginDefs.POST("/validate-settings", handlers.ValidatePluginSettingsHandler) // POST /api/plugin-definitions/validate-settings - validate plugin settings
 		pluginDefs.GET("/types", handlers.GetAvailablePluginTypesHandler) // GET /api/plugin-definitions/types - get available plugin types
@@ -435,17 +440,6 @@ func main() {
 	protected.DELETE("/plugin-instances/:id", handlers.DeletePluginInstanceHandler) // DELETE /api/plugin-instances/:id - delete plugin instance
 	protected.POST("/plugin-instances/:id/force-refresh", handlers.ForceRefreshPluginInstanceHandler) // POST /api/plugin-instances/:id/force-refresh - force refresh plugin instance
 
-	// Private plugin management endpoints
-	privatePlugins := protected.Group("/private-plugins")
-	{
-		privatePlugins.GET("", handlers.GetPrivatePluginsHandler)                           // GET /api/private-plugins - list user's private plugins
-		privatePlugins.POST("", handlers.CreatePrivatePluginHandler)                       // POST /api/private-plugins - create private plugin
-		privatePlugins.GET("/:id", handlers.GetPrivatePluginHandler)                       // GET /api/private-plugins/:id - get private plugin
-		privatePlugins.PUT("/:id", handlers.UpdatePrivatePluginHandler)                    // PUT /api/private-plugins/:id - update private plugin
-		privatePlugins.DELETE("/:id", handlers.DeletePrivatePluginHandler)                 // DELETE /api/private-plugins/:id - delete private plugin
-		privatePlugins.POST("/:id/regenerate-token", handlers.RegenerateWebhookTokenHandler) // POST /api/private-plugins/:id/regenerate-token - regenerate webhook token
-		privatePlugins.POST("/validate", handlers.ValidatePrivatePluginHandler)            // POST /api/private-plugins/validate - validate plugin templates
-	}
 
 
 	// Playlist management endpoints

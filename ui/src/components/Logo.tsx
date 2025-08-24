@@ -8,7 +8,7 @@ export function Logo(props) {
       {...props}
       id="logo-svg"  
       xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 1317 407"
+      viewBox="0 0 1339 412"
       role="img"
       aria-label={t("accessibility.logo")}
     >

@@ -281,13 +281,14 @@ export function LiquidEditor({
   useEffect(() => {
     if (editorRef.current) {
       const currentValue = editorRef.current.getValue();
-      const targetValue = value || (placeholder ? `<!-- ${placeholder} -->\n` : '');
+      const hasRealValue = value && value.trim();
+      const targetValue = hasRealValue ? value : (placeholder ? `<!-- ${placeholder} -->\n` : '');
       
       if (currentValue !== targetValue) {
         editorRef.current.setValue(targetValue);
         
         // Set cursor position for placeholder
-        if (!value && placeholder) {
+        if (!hasRealValue && placeholder) {
           const monaco = (window as any).monaco;
           if (monaco) {
             editorRef.current.setSelection(new monaco.Selection(2, 1, 2, 1));
@@ -308,12 +309,15 @@ export function LiquidEditor({
     }
   }, [theme]);
 
+  const hasRealValue = value && value.trim();
+  const displayValue = hasRealValue ? value : (placeholder ? `<!-- ${placeholder} -->\n` : '');
+  
   return (
     <div className="border rounded-md overflow-hidden">
       <Editor
         height={height}
         language="liquid"
-        value={value}
+        value={displayValue}
         onChange={(val) => onChange(val || '')}
         beforeMount={handleEditorWillMount}
         onMount={handleEditorDidMount}

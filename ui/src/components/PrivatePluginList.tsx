@@ -89,13 +89,13 @@ export function PrivatePluginList({
   const fetchPrivatePlugins = async () => {
     try {
       setLoading(true);
-      const response = await fetch("/api/private-plugins", {
+      const response = await fetch("/api/plugin-definitions?plugin_type=private", {
         credentials: "include",
       });
 
       if (response.ok) {
         const data = await response.json();
-        setPlugins(data.private_plugins || []);
+        setPlugins(data.plugins || []);
       } else {
         setError("Failed to fetch private plugins");
       }
@@ -109,7 +109,7 @@ export function PrivatePluginList({
   const deletePrivatePlugin = async (pluginId: string) => {
     try {
       setError(null);
-      const response = await fetch(`/api/private-plugins/${pluginId}`, {
+      const response = await fetch(`/api/plugin-definitions/${pluginId}`, {
         method: "DELETE",
         credentials: "include",
       });
@@ -155,11 +155,14 @@ export function PrivatePluginList({
       merge: 'outline'
     } as const;
     
+    // Handle null/undefined strategy
+    const safeStrategy = strategy || 'webhook';
+    
     return (
-      <Badge variant={variants[strategy as keyof typeof variants] || 'default'}>
+      <Badge variant={variants[safeStrategy as keyof typeof variants] || 'default'}>
         <div className="flex items-center gap-1">
-          {getDataStrategyIcon(strategy)}
-          {strategy.charAt(0).toUpperCase() + strategy.slice(1)}
+          {getDataStrategyIcon(safeStrategy)}
+          {safeStrategy.charAt(0).toUpperCase() + safeStrategy.slice(1)}
         </div>
       </Badge>
     );

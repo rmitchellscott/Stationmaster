@@ -240,7 +240,7 @@ export function PrivatePluginCreator({
       setError(null);
       setValidationResults(null);
 
-      const response = await fetch('/api/private-plugins/validate', {
+      const response = await fetch('/api/plugin-definitions/validate', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -258,6 +258,7 @@ export function PrivatePluginCreator({
           polling_config: formData.polling_config,
           form_fields: formData.form_fields,
           version: formData.version,
+          plugin_type: 'private',
         }),
       });
 

@@ -188,7 +188,7 @@ export function PluginPreview({ plugin, isOpen, onClose }: PluginPreviewProps) {
       };
 
       // Call the test API endpoint
-      const response = await fetch('/api/private-plugins/test', {
+      const response = await fetch('/api/plugin-definitions/test', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

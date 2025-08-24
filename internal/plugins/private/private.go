@@ -92,6 +92,48 @@ func (p *PrivatePlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespon
 	processedTemplate = strings.ReplaceAll(processedTemplate, "{{ timestamp }}", time.Now().Format("2006-01-02 15:04:05"))
 	processedTemplate = strings.ReplaceAll(processedTemplate, "{{timestamp}}", time.Now().Format("2006-01-02 15:04:05"))
 	
+	// Check if user already has view classes or wants specific view type
+	viewClass := "view--full" // default
+	if strings.Contains(processedTemplate, "{{view_type}}") {
+		// Extract view type from template variable if specified
+		// This could be enhanced to parse actual values, for now use default
+		processedTemplate = strings.ReplaceAll(processedTemplate, "{{view_type}}", "view--full")
+	}
+	if strings.Contains(processedTemplate, "{{ view_type }}") {
+		processedTemplate = strings.ReplaceAll(processedTemplate, "{{ view_type }}", "view--full")
+	}
+	
+	// Get plugin instance ID for the wrapper
+	instanceID := "unknown"
+	if p.instance != nil {
+		instanceID = p.instance.ID.String()
+	}
+	
+	// Check if template already contains view classes
+	hasViewClass := strings.Contains(processedTemplate, "class=\"view") || 
+		strings.Contains(processedTemplate, "class='view") ||
+		strings.Contains(processedTemplate, "class=\"view--") ||
+		strings.Contains(processedTemplate, "class='view--")
+	
+	// Wrap user template in TRMNL framework structure
+	if hasViewClass {
+		// User already has view structure, just wrap with environment
+		processedTemplate = fmt.Sprintf(`<div id="plugin-%s" class="environment trmnl">
+    <div class="screen">
+        %s
+    </div>
+</div>`, instanceID, processedTemplate)
+	} else {
+		// Auto-inject view wrapper
+		processedTemplate = fmt.Sprintf(`<div id="plugin-%s" class="environment trmnl">
+    <div class="screen">
+        <div class="view %s">
+            %s
+        </div>
+    </div>
+</div>`, instanceID, viewClass, processedTemplate)
+	}
+	
 	// Create complete HTML document with TRMNL framework
 	html := fmt.Sprintf(`<!DOCTYPE html>
 <html>
@@ -118,6 +160,8 @@ func (p *PrivatePlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespon
 		ctx.Device.DeviceModel.ScreenWidth,
 		ctx.Device.DeviceModel.ScreenHeight,
 		processedTemplate)
+	
+	// Debug logging removed - TRMNL CSS issue resolved
 	
 	// Create browserless renderer
 	renderer, err := rendering.NewBrowserlessRenderer()

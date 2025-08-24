@@ -47,24 +47,19 @@ export function PrivatePluginEditorPage() {
   // Fetch plugin data if editing
   useEffect(() => {
     const fetchPlugin = async () => {
-      console.log('fetchPlugin called, pluginId:', pluginId);
-      if (!pluginId) {
-        console.log('No pluginId, returning early');
-        return;
-      }
+      if (!pluginId) return;
       
       try {
-        console.log('Setting loading to true');
         setLoading(true);
         setError(null);
         
-        const response = await fetch(`/api/private-plugins/${pluginId}`, {
+        const response = await fetch(`/api/plugin-definitions/${pluginId}`, {
           credentials: 'include',
         });
         
         if (response.ok) {
           const data = await response.json();
-          setPlugin(data.private_plugin);
+          setPlugin(data.plugin_definition || data);
         } else {
           const errorData = await response.json();
           setError(errorData.error || 'Failed to fetch plugin');
@@ -72,7 +67,6 @@ export function PrivatePluginEditorPage() {
       } catch (error) {
         setError('Network error occurred');
       } finally {
-        console.log('Setting loading to false');
         setLoading(false);
       }
     };
@@ -82,7 +76,7 @@ export function PrivatePluginEditorPage() {
 
   const handleSavePlugin = async (pluginData: PrivatePlugin) => {
     try {
-      const url = isEditing ? `/api/private-plugins/${pluginId}` : '/api/private-plugins';
+      const url = isEditing ? `/api/plugin-definitions/${pluginId}` : '/api/plugin-definitions';
       const method = isEditing ? 'PUT' : 'POST';
 
       const response = await fetch(url, {
@@ -91,7 +85,10 @@ export function PrivatePluginEditorPage() {
           'Content-Type': 'application/json',
         },
         credentials: 'include',
-        body: JSON.stringify(pluginData),
+        body: JSON.stringify({
+          ...pluginData,
+          plugin_type: 'private'
+        }),
       });
 
       if (response.ok) {
@@ -119,10 +116,7 @@ export function PrivatePluginEditorPage() {
     navigate('/?tab=plugins&subtab=private');
   };
 
-  console.log('Render check - loading:', loading, 'pluginId:', pluginId, 'isEditing:', isEditing);
-  
   if (loading) {
-    console.log('Showing loading state');
     return (
       <div className="bg-background pt-0 pb-8 px-0 sm:px-8">
         <div className="max-w-6xl mx-0 sm:mx-auto space-y-6">
@@ -135,7 +129,7 @@ export function PrivatePluginEditorPage() {
       </div>
     );
   }
-
+  
   return (
     <div className="bg-background pt-0 pb-8 px-0 sm:px-8">
       <div className="max-w-6xl mx-0 sm:mx-auto space-y-6">

@@ -102,16 +102,16 @@ const layoutTabs: LayoutTab[] = [
     description: 'Full 800x480 display'
   },
   {
-    id: 'half_vertical',
-    label: 'Half Vertical',
-    icon: <ColumnsIcon className="h-4 w-4" />,
-    description: 'Left or right half (400x480)'
-  },
-  {
     id: 'half_horizontal',
     label: 'Half Horizontal',
     icon: <RowsIcon className="h-4 w-4" />,
     description: 'Top or bottom half (800x240)'
+  },
+  {
+    id: 'half_vertical',
+    label: 'Half Vertical',
+    icon: <ColumnsIcon className="h-4 w-4" />,
+    description: 'Left or right half (400x480)'
   },
   {
     id: 'quadrant',

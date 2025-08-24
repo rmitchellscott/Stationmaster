@@ -913,7 +913,7 @@ func TestPluginDefinitionHandler(c *gin.Context) {
 
 	// Use the private plugin renderer service
 	htmlRenderer := private.NewPrivatePluginRenderer()
-	renderedHTML, err := htmlRenderer.RenderToHTML(private.RenderOptions{
+	renderedHTML, err := htmlRenderer.RenderToClientSideHTML(private.RenderOptions{
 		SharedMarkup:   req.Plugin.SharedMarkup,
 		LayoutTemplate: layoutTemplate,
 		Data:           req.SampleData, // Use sample data from frontend

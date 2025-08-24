@@ -512,32 +512,25 @@ func DeviceEventsHandler(c *gin.Context) {
 		return
 	}
 
-	// Send initial device status
-	playlistService := database.NewPlaylistService(db)
-	activeItems, err := playlistService.GetActivePlaylistItemsForTime(deviceID, time.Now())
-	if err == nil && len(activeItems) > 0 {
-		// Find current item by UUID
-		var currentItem *database.PlaylistItem
-		currentIndex := -1
+	// Send initial device status - just use what database says is current
+	if device.LastPlaylistItemID != nil {
+		playlistService := database.NewPlaylistService(db)
 		
-		if device.LastPlaylistItemID != nil {
-			// Look for the item by UUID
+		// Get the current item directly by UUID (single source of truth)
+		currentItem, err := playlistService.GetPlaylistItemByID(*device.LastPlaylistItemID)
+		if err == nil && currentItem != nil {
+			// Get active items for context and index calculation
+			activeItems, _ := playlistService.GetActivePlaylistItemsForTime(deviceID, time.Now())
+			
+			// Calculate index in active items for frontend compatibility
+			currentIndex := -1
 			for i, item := range activeItems {
-				if item.ID == *device.LastPlaylistItemID {
-					currentItem = &item
+				if item.ID == currentItem.ID {
 					currentIndex = i
 					break
 				}
 			}
-		}
-		
-		// If current item not found or not set, use first active item
-		if currentItem == nil && len(activeItems) > 0 {
-			currentItem = &activeItems[0]
-			currentIndex = 0
-		}
-		
-		if currentItem != nil {
+			
 			// Get user timezone for sleep calculation
 			userTimezone := "UTC"
 			if user.Timezone != "" {
@@ -551,8 +544,8 @@ func DeviceEventsHandler(c *gin.Context) {
 				Type: "playlist_index_changed",
 				Data: map[string]interface{}{
 					"device_id":     deviceID.String(),
-					"current_index": currentIndex,
-					"current_item":  *currentItem,
+					"current_index": currentIndex, // -1 if not in active items (e.g., hidden)
+					"current_item":  *currentItem,  // Always the actual current item
 					"active_items":  activeItems,
 					"timestamp":     time.Now().UTC(),
 					"sleep_config": map[string]interface{}{

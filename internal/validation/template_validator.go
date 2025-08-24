@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
-
-	"github.com/osteele/liquid"
 )
 
 // ValidationResult represents the result of template validation
@@ -18,22 +16,11 @@ type ValidationResult struct {
 
 // TemplateValidator provides validation for liquid templates
 type TemplateValidator struct {
-	engine *liquid.Engine
 }
 
 // NewTemplateValidator creates a new template validator
 func NewTemplateValidator() *TemplateValidator {
-	engine := liquid.NewEngine()
-	
-	// Add safe filters only - no file system access or external calls
-	engine.RegisterFilter("upcase", strings.ToUpper)
-	engine.RegisterFilter("downcase", strings.ToLower)
-	engine.RegisterFilter("capitalize", strings.Title)
-	engine.RegisterFilter("strip", strings.TrimSpace)
-	
-	return &TemplateValidator{
-		engine: engine,
-	}
+	return &TemplateValidator{}
 }
 
 // ValidateTemplate validates a liquid template for syntax and security
@@ -50,11 +37,13 @@ func (v *TemplateValidator) ValidateTemplate(template string, templateName strin
 		return result
 	}
 
-	// 1. Validate liquid syntax
-	if err := v.validateLiquidSyntax(template); err != nil {
-		result.Valid = false
-		result.Errors = append(result.Errors, fmt.Sprintf("Liquid syntax error in %s: %s", templateName, err.Error()))
-		return result
+	// 1. Basic liquid syntax validation (pattern-based since we use client-side LiquidJS)
+	syntaxWarnings := v.validateBasicLiquidSyntax(template, templateName)
+	result.Warnings = append(result.Warnings, syntaxWarnings...)
+
+	// Check for advanced Liquid syntax
+	if strings.Contains(template, "{%liquid%}") || strings.Contains(template, "{% liquid %}") {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("%s: Template uses {%%liquid%%} blocks - using client-side LiquidJS for full compatibility", templateName))
 	}
 
 	// 2. Check for security issues
@@ -79,26 +68,48 @@ func (v *TemplateValidator) ValidateTemplate(template string, templateName strin
 	return result
 }
 
-// validateLiquidSyntax checks if the template has valid liquid syntax
-func (v *TemplateValidator) validateLiquidSyntax(template string) error {
-	// Parse the template to check for syntax errors
-	tmpl, err := v.engine.ParseTemplate([]byte(template))
-	if err != nil {
-		return err
-	}
-
-	// Try rendering with empty data to catch runtime errors
-	_, err = tmpl.Render(make(map[string]interface{}))
-	if err != nil {
-		// Only return syntax-related errors, not missing data errors
-		if strings.Contains(err.Error(), "undefined variable") || 
-		   strings.Contains(err.Error(), "undefined method") {
-			return nil // These are expected with empty data
+// validateBasicLiquidSyntax performs basic pattern-based liquid syntax validation
+func (v *TemplateValidator) validateBasicLiquidSyntax(template string, templateName string) []string {
+	var warnings []string
+	
+	// Check for unmatched liquid tags (basic balance checking)
+	openTags := regexp.MustCompile(`\{\%\s*(\w+)`)
+	closeTags := regexp.MustCompile(`\{\%\s*end(\w+)\s*\%\}`)
+	
+	openMatches := openTags.FindAllStringSubmatch(template, -1)
+	closeMatches := closeTags.FindAllStringSubmatch(template, -1)
+	
+	// Simple tag balance check for common block tags
+	blockTags := map[string]int{}
+	for _, match := range openMatches {
+		if len(match) > 1 {
+			tag := match[1]
+			// Only track block tags that need closing
+			if tag == "if" || tag == "unless" || tag == "for" || tag == "case" || tag == "capture" || tag == "comment" {
+				blockTags[tag]++
+			}
 		}
-		return err
 	}
-
-	return nil
+	
+	for _, match := range closeMatches {
+		if len(match) > 1 {
+			tag := match[1]
+			if count, exists := blockTags[tag]; exists {
+				if count > 0 {
+					blockTags[tag]--
+				}
+			}
+		}
+	}
+	
+	// Check for unmatched tags
+	for tag, count := range blockTags {
+		if count != 0 {
+			warnings = append(warnings, fmt.Sprintf("%s: Potentially unmatched {%%%% %s %%}} tags detected", templateName, tag))
+		}
+	}
+	
+	return warnings
 }
 
 // checkSecurity looks for potentially dangerous patterns

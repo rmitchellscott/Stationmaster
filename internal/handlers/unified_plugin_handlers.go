@@ -18,6 +18,8 @@ import (
 	"github.com/rmitchellscott/stationmaster/internal/logging"
 	"github.com/rmitchellscott/stationmaster/internal/plugins"
 	"github.com/rmitchellscott/stationmaster/internal/plugins/private"
+	"github.com/rmitchellscott/stationmaster/internal/utils"
+	"gopkg.in/yaml.v3"
 	"github.com/rmitchellscott/stationmaster/internal/rendering"
 )
 
@@ -557,6 +559,7 @@ func GetPluginDefinitionHandler(c *gin.Context) {
 		return
 	}
 
+	logging.Debug("[GetPluginDefinition] Returning plugin definition", "plugin_id", definitionID, "sample_data_length", len(pluginDefinition.SampleData))
 	c.JSON(http.StatusOK, gin.H{"plugin_definition": pluginDefinition})
 }
 
@@ -889,30 +892,132 @@ func ValidatePluginDefinitionHandler(c *gin.Context) {
 	})
 }
 
+// TestPlugin represents a plugin for testing purposes
+type TestPlugin struct {
+	Name             string      `json:"name"`
+	Description      string      `json:"description"`
+	MarkupFull       string      `json:"markup_full"`
+	MarkupHalfVert   string      `json:"markup_half_vert"`
+	MarkupHalfHoriz  string      `json:"markup_half_horiz"`
+	MarkupQuadrant   string      `json:"markup_quadrant"`
+	SharedMarkup     string      `json:"shared_markup"`
+	DataStrategy     string      `json:"data_strategy"`
+	PollingConfig    interface{} `json:"polling_config"`
+	FormFields       interface{} `json:"form_fields"`
+	Version          string      `json:"version"`
+	PluginType       string      `json:"plugin_type"`
+}
+
+// extractFormFieldDefaults extracts default values from form field configuration
+func extractFormFieldDefaults(formFields interface{}) map[string]interface{} {
+	defaults := make(map[string]interface{})
+	
+	if formFields == nil {
+		logging.Debug("[TestPlugin] No form fields provided")
+		return defaults
+	}
+	
+	// Try to parse form fields structure
+	var fieldList []map[string]interface{}
+	
+	// Handle different possible structures
+	if formFieldsMap, ok := formFields.(map[string]interface{}); ok {
+		if yamlField, exists := formFieldsMap["yaml"]; exists {
+			// Form fields are stored in "yaml" key as string - parse as YAML
+			if yamlStr, ok := yamlField.(string); ok && yamlStr != "" {
+				logging.Debug("[TestPlugin] Parsing YAML form fields", "yaml", yamlStr)
+				if err := yaml.Unmarshal([]byte(yamlStr), &fieldList); err != nil {
+					logging.Error("[TestPlugin] Failed to parse form fields YAML", "error", err, "yaml", yamlStr)
+					return defaults
+				}
+			}
+		}
+	} else if list, ok := formFields.([]interface{}); ok {
+		// Direct list format - convert to expected structure
+		for _, item := range list {
+			if itemMap, ok := item.(map[string]interface{}); ok {
+				fieldList = append(fieldList, itemMap)
+			}
+		}
+	}
+	
+	// Extract defaults from field list
+	for _, field := range fieldList {
+		if keyname, exists := field["keyname"]; exists {
+			if keynameStr, ok := keyname.(string); ok {
+				if defaultVal, exists := field["default"]; exists {
+					defaults[keynameStr] = defaultVal
+					logging.Info("[TestPlugin] Found form field default", "key", keynameStr, "value", defaultVal)
+				}
+			}
+		}
+	}
+	
+	logging.Info("[TestPlugin] Extracted form field defaults", "count", len(defaults), "defaults", defaults)
+	return defaults
+}
+
+// getPollingDataForPreview uses the existing poller to fetch real data for preview
+func getPollingDataForPreview(plugin TestPlugin, formDefaults map[string]interface{}) (map[string]interface{}, error) {
+	logging.Info("[TestPlugin] Starting polling data fetch", "plugin", plugin.Name, "form_defaults", formDefaults)
+	
+	// Convert polling config to the expected structure
+	pollingConfigBytes, err := json.Marshal(plugin.PollingConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal polling config: %v", err)
+	}
+	
+	logging.Info("[TestPlugin] Polling config marshaled", "config_bytes", string(pollingConfigBytes))
+	
+	var enhancedConfig private.EnhancedPollingConfig
+	if err := json.Unmarshal(pollingConfigBytes, &enhancedConfig); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal polling config: %v", err)
+	}
+	
+	logging.Info("[TestPlugin] Polling config parsed", "urls_count", len(enhancedConfig.URLs))
+	
+	// Create a minimal plugin definition for the poller
+	dataStrategy := "polling"
+	pluginDefinition := &database.PluginDefinition{
+		ID:            uuid.New(),
+		Name:          plugin.Name,
+		DataStrategy:  &dataStrategy,
+		PollingConfig: pollingConfigBytes,
+	}
+	
+	// Create poller and fetch data
+	poller := private.NewEnhancedDataPoller()
+	
+	// Create context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	
+	// Use the poller to get real data
+	logging.Info("[TestPlugin] Calling poller.PollData")
+	result, err := poller.PollData(ctx, pluginDefinition, formDefaults)
+	if err != nil {
+		logging.Error("[TestPlugin] Poller.PollData failed", "error", err)
+		return nil, fmt.Errorf("polling failed: %v", err)
+	}
+	
+	if !result.Success {
+		logging.Error("[TestPlugin] Polling was not successful", "errors", result.Errors)
+		return nil, fmt.Errorf("polling was not successful: %v", result.Errors)
+	}
+	
+	logging.Info("[TestPlugin] Polling successful", "data_keys", len(result.Data), "duration", result.Duration)
+	return result.Data, nil
+}
+
 // TestPluginDefinitionHandler tests plugin template rendering
 func TestPluginDefinitionHandler(c *gin.Context) {
-	_, ok := auth.RequireUser(c)
+	user, ok := auth.RequireUser(c)
 	if !ok {
 		return
 	}
 
-	type Plugin struct {
-		Name             string      `json:"name"`
-		Description      string      `json:"description"`
-		MarkupFull       string      `json:"markup_full"`
-		MarkupHalfVert   string      `json:"markup_half_vert"`
-		MarkupHalfHoriz  string      `json:"markup_half_horiz"`
-		MarkupQuadrant   string      `json:"markup_quadrant"`
-		SharedMarkup     string      `json:"shared_markup"`
-		DataStrategy     string      `json:"data_strategy"`
-		PollingConfig    interface{} `json:"polling_config"`
-		FormFields       interface{} `json:"form_fields"`
-		Version          string      `json:"version"`
-		PluginType       string      `json:"plugin_type"`
-	}
-
 	type TestRequest struct {
-		Plugin       Plugin                 `json:"plugin"`
+		Plugin       TestPlugin             `json:"plugin"`
 		Layout       string                 `json:"layout"`
 		SampleData   map[string]interface{} `json:"sample_data"`
 		DeviceWidth  int                    `json:"device_width"`
@@ -948,12 +1053,142 @@ func TestPluginDefinitionHandler(c *gin.Context) {
 	// Generate instance ID for preview
 	instanceID := fmt.Sprintf("preview_%d", time.Now().Unix())
 
+	// Determine what data to use for rendering
+	var templateData map[string]interface{}
+	
+	// Try to get real data via polling if configured
+	logging.Info("[TestPlugin] Plugin data strategy", "strategy", req.Plugin.DataStrategy, "has_polling_config", req.Plugin.PollingConfig != nil)
+	
+	if req.Plugin.DataStrategy == "polling" && req.Plugin.PollingConfig != nil {
+		logging.Info("[TestPlugin] Attempting to use real polling data", "plugin_name", req.Plugin.Name)
+		
+		// Log the raw polling config for debugging
+		if configBytes, err := json.Marshal(req.Plugin.PollingConfig); err == nil {
+			logging.Info("[TestPlugin] Raw polling config", "config", string(configBytes))
+		}
+		
+		// Extract form field defaults
+		formDefaults := extractFormFieldDefaults(req.Plugin.FormFields)
+		
+		// Try to get real polling data
+		realData, err := getPollingDataForPreview(req.Plugin, formDefaults)
+		if err != nil {
+			logging.Error("[TestPlugin] Failed to get polling data, falling back to sample data", "error", err)
+			templateData = req.SampleData
+		} else {
+			logging.Info("[TestPlugin] Successfully got real polling data", "data_keys", len(realData))
+			// Log the actual keys in the real data for debugging
+			var dataKeys []string
+			for key := range realData {
+				dataKeys = append(dataKeys, key)
+			}
+			logging.Info("[TestPlugin] Real data keys", "keys", dataKeys)
+			templateData = realData
+		}
+	} else {
+		logging.Info("[TestPlugin] Using sample data (not polling strategy or no polling config)")
+		templateData = req.SampleData
+	}
+
+	// Create TRMNL data structure to match what real plugins receive
+	trmnlData := make(map[string]interface{})
+	
+	// Add system information - Unix timestamp
+	systemData := map[string]interface{}{
+		"timestamp_utc": time.Now().Unix(),
+	}
+	trmnlData["system"] = systemData
+	
+	// Add user information if available
+	if user != nil {
+		// Calculate UTC offset in seconds
+		utcOffset := int64(0)
+		locale := "en" // Default locale
+		timezone := "UTC" // Default timezone IANA
+		timezoneFriendly := "UTC" // Default friendly name
+		
+		if user.Timezone != "" {
+			timezone = user.Timezone
+			timezoneFriendly = utils.GetTimezoneFriendlyName(user.Timezone)
+			// Parse timezone and calculate UTC offset
+			loc, err := time.LoadLocation(user.Timezone)
+			if err == nil {
+				_, offset := time.Now().In(loc).Zone()
+				utcOffset = int64(offset)
+			}
+		}
+		
+		if user.Locale != "" {
+			// Convert "en-US" to "en" format if needed
+			if len(user.Locale) >= 2 {
+				locale = user.Locale[:2]
+			}
+		}
+
+		// Build user full name
+		firstName := user.FirstName
+		lastName := user.LastName
+		fullName := ""
+		if firstName != "" && lastName != "" {
+			fullName = firstName + " " + lastName
+		} else if firstName != "" {
+			fullName = firstName
+		} else if lastName != "" {
+			fullName = lastName
+		} else {
+			// Fallback to username if no names available
+			fullName = user.Username
+		}
+
+		userData := map[string]interface{}{
+			"name":           fullName,
+			"first_name":     firstName,
+			"last_name":      lastName,
+			"locale":         locale,
+			"time_zone":      timezoneFriendly,
+			"time_zone_iana": timezone,
+			"utc_offset":     utcOffset,
+		}
+		
+		trmnlData["user"] = userData
+	}
+
+	// Add mock device information for preview
+	deviceData := map[string]interface{}{
+		"friendly_id":     "TEST1",
+		"width":           req.DeviceWidth,
+		"height":          req.DeviceHeight,
+		"percent_charged": 100,
+		"wifi_strength":   100,
+	}
+	trmnlData["device"] = deviceData
+
+	// Add plugin settings metadata
+	pluginSettings := map[string]interface{}{
+		"instance_name": req.Plugin.Name,
+		"strategy":      req.Plugin.DataStrategy,
+		"dark_mode":     "no",
+		"no_screen_padding": "no",
+	}
+	trmnlData["plugin_settings"] = pluginSettings
+
+	// Merge TRMNL data with template data
+	finalTemplateData := make(map[string]interface{})
+	// First add the external/polling/sample data
+	for key, value := range templateData {
+		finalTemplateData[key] = value
+	}
+	// Then add TRMNL data
+	finalTemplateData["trmnl"] = trmnlData
+
+	logging.Info("[TestPlugin] Created TRMNL context data", "user_available", user != nil, "device_width", req.DeviceWidth, "device_height", req.DeviceHeight)
+
 	// Use the private plugin renderer service
 	htmlRenderer := private.NewPrivatePluginRenderer()
 	renderedHTML, err := htmlRenderer.RenderToClientSideHTML(private.RenderOptions{
 		SharedMarkup:   req.Plugin.SharedMarkup,
 		LayoutTemplate: layoutTemplate,
-		Data:           req.SampleData, // Use sample data from frontend
+		Data:           finalTemplateData,
 		Width:          req.DeviceWidth,
 		Height:         req.DeviceHeight,
 		PluginName:     req.Plugin.Name,

@@ -130,6 +130,9 @@ const sampleData = {
 };
 
 export function PluginPreview({ plugin, isOpen, onClose }: PluginPreviewProps) {
+  console.log('[PluginPreview] Component mounted/updated with plugin:', plugin?.name, 'isOpen:', isOpen);
+  console.log('[PluginPreview] Full plugin object:', plugin);
+
   const [selectedLayout, setSelectedLayout] = useState<string>('full');
   const [customData, setCustomData] = useState(JSON.stringify(sampleData, null, 2));
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -168,6 +171,8 @@ export function PluginPreview({ plugin, isOpen, onClose }: PluginPreviewProps) {
 
   const generatePreview = async () => {
     try {
+      console.log('[PluginPreview] Starting generatePreview');
+      console.log('[PluginPreview] customData:', customData);
       setLoading(true);
       setError(null);
 
@@ -175,6 +180,7 @@ export function PluginPreview({ plugin, isOpen, onClose }: PluginPreviewProps) {
       let parsedData;
       try {
         parsedData = JSON.parse(customData);
+        console.log('[PluginPreview] Parsed customData:', parsedData);
       } catch (e) {
         throw new Error("Invalid JSON in sample data");
       }
@@ -210,19 +216,22 @@ export function PluginPreview({ plugin, isOpen, onClose }: PluginPreviewProps) {
       };
 
       // Call the test API endpoint
+      const requestPayload = {
+        plugin: testPlugin,
+        layout: selectedLayout,
+        sample_data: parsedData,
+        device_width: currentLayout.width,
+        device_height: currentLayout.height,
+      };
+      console.log('[PluginPreview] Sending API request payload:', requestPayload);
+      
       const response = await fetch('/api/plugin-definitions/test', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         credentials: 'include',
-        body: JSON.stringify({
-          plugin: testPlugin,
-          layout: selectedLayout,
-          sample_data: parsedData,
-          device_width: currentLayout.width,
-          device_height: currentLayout.height,
-        }),
+        body: JSON.stringify(requestPayload),
       });
 
       if (!response.ok) {
@@ -231,8 +240,10 @@ export function PluginPreview({ plugin, isOpen, onClose }: PluginPreviewProps) {
       }
 
       const result = await response.json();
+      console.log('[PluginPreview] API response:', result);
       
       if (result.preview_url) {
+        console.log('[PluginPreview] Setting preview URL:', result.preview_url);
         setPreviewUrl(result.preview_url);
       } else {
         throw new Error("No preview URL returned from server");

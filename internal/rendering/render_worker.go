@@ -168,19 +168,18 @@ func (w *RenderWorker) processRenderJob(ctx context.Context, job database.Render
 		return nil
 	}
 
-	// Get all device models for this user's devices
-	var deviceModels []database.DeviceModel
+	// Get all active devices for this user
+	var devices []database.Device
 	err = w.db.WithContext(ctx).
-		Distinct("device_models.id", "device_models.screen_width", "device_models.screen_height", "device_models.bit_depth").
-		Joins("JOIN devices ON devices.device_model_id = device_models.id").
-		Where("devices.user_id = ? AND devices.is_active = ?", pluginInstance.UserID, true).
-		Find(&deviceModels).Error
+		Preload("DeviceModel").
+		Where("user_id = ? AND is_active = ?", pluginInstance.UserID, true).
+		Find(&devices).Error
 	if err != nil {
-		w.markJobFailed(ctx, job, fmt.Sprintf("failed to load user device models: %v", err))
+		w.markJobFailed(ctx, job, fmt.Sprintf("failed to load user devices: %v", err))
 		return err
 	}
 
-	if len(deviceModels) == 0 {
+	if len(devices) == 0 {
 		// No active devices, skip rendering
 		err = w.db.WithContext(ctx).Model(&job).Update("status", "completed").Error
 		if err != nil {
@@ -189,17 +188,22 @@ func (w *RenderWorker) processRenderJob(ctx context.Context, job database.Render
 		return nil
 	}
 
-
-	// Process plugin and render for each device resolution
-	for _, deviceModel := range deviceModels {
+	// Process plugin and render for each individual device
+	for _, device := range devices {
 		if ctx.Err() != nil {
 			break
 		}
 
-		err := w.renderForDeviceModel(ctx, pluginInstance, deviceModel)
+		// Skip devices without a device model
+		if device.DeviceModel == nil {
+			logging.Warn("[RENDER_WORKER] Skipping device without device model", "device_id", device.ID, "friendly_id", device.FriendlyID)
+			continue
+		}
+
+		err := w.renderForDevice(ctx, pluginInstance, device)
 		if err != nil {
-			logging.Error("[RENDER_WORKER] Failed to render for device model", "width", deviceModel.ScreenWidth, "height", deviceModel.ScreenHeight, "error", err)
-			continue // Continue with other resolutions
+			logging.Error("[RENDER_WORKER] Failed to render for device", "device_id", device.ID, "friendly_id", device.FriendlyID, "error", err)
+			continue // Continue with other devices
 		}
 	}
 
@@ -233,8 +237,8 @@ func (w *RenderWorker) processRenderJob(ctx context.Context, job database.Render
 	return nil
 }
 
-// renderForDeviceModel renders a plugin for a specific device model resolution
-func (w *RenderWorker) renderForDeviceModel(ctx context.Context, pluginInstance database.PluginInstance, deviceModel database.DeviceModel) error {
+// renderForDevice renders a plugin for a specific device
+func (w *RenderWorker) renderForDevice(ctx context.Context, pluginInstance database.PluginInstance, device database.Device) error {
 	var plugin plugins.Plugin
 	var err error
 	
@@ -262,21 +266,14 @@ func (w *RenderWorker) renderForDeviceModel(ctx context.Context, pluginInstance 
 		return nil
 	}
 
-	// Create a mock device for plugin context - we need this for compatibility
-	mockDevice := &database.Device{
-		ID:          pluginInstance.UserID, // Use user ID as device ID for context
-		UserID:      &pluginInstance.UserID,
-		DeviceModel: &deviceModel,
-	}
-
 	// Fetch user data for plugin context
 	user, err := database.NewUserService(w.db).GetUserByID(pluginInstance.UserID)
 	if err != nil {
 		return fmt.Errorf("failed to get user: %w", err)
 	}
 	
-	// Create plugin context
-	pluginCtx, err := plugins.NewPluginContext(mockDevice, &pluginInstance, user)
+	// Create plugin context with real device instance
+	pluginCtx, err := plugins.NewPluginContext(&device, &pluginInstance, user)
 	if err != nil {
 		return fmt.Errorf("failed to create plugin context: %w", err)
 	}
@@ -290,15 +287,15 @@ func (w *RenderWorker) renderForDeviceModel(ctx context.Context, pluginInstance 
 	// Handle no-change responses - skip rendering
 	if plugins.IsNoChangeResponse(response) {
 		logging.Info("[RENDER_WORKER] Skipping render - no data changes", 
-			"plugin", pluginInstance.Name, "device_model", fmt.Sprintf("%dx%d", deviceModel.ScreenWidth, deviceModel.ScreenHeight))
+			"plugin", pluginInstance.Name, "device", device.FriendlyID, "device_model", fmt.Sprintf("%dx%d", device.DeviceModel.ScreenWidth, device.DeviceModel.ScreenHeight))
 		return nil
 	}
 
-	// Clean up old rendered content and files for this resolution BEFORE creating new ones
+	// Clean up old rendered content and files for this specific device BEFORE creating new ones
 	var oldContent []database.RenderedContent
 	err = w.db.WithContext(ctx).
-		Where("plugin_instance_id = ? AND width = ? AND height = ? AND bit_depth = ?",
-			pluginInstance.ID, deviceModel.ScreenWidth, deviceModel.ScreenHeight, deviceModel.BitDepth).
+		Where("plugin_instance_id = ? AND device_id = ?",
+			pluginInstance.ID, device.ID).
 		Find(&oldContent).Error
 	if err != nil {
 		logging.Error("[RENDER_WORKER] Failed to find old content", "error", err)
@@ -322,10 +319,10 @@ func (w *RenderWorker) renderForDeviceModel(ctx context.Context, pluginInstance 
 			}
 		}
 		
-		// Delete database records
+		// Delete database records for this device
 		err = w.db.WithContext(ctx).
-			Where("plugin_instance_id = ? AND width = ? AND height = ? AND bit_depth = ?",
-				pluginInstance.ID, deviceModel.ScreenWidth, deviceModel.ScreenHeight, deviceModel.BitDepth).
+			Where("plugin_instance_id = ? AND device_id = ?",
+				pluginInstance.ID, device.ID).
 			Delete(&database.RenderedContent{}).Error
 		if err != nil {
 			logging.Error("[RENDER_WORKER] Failed to clean up old content records", "error", err)
@@ -349,31 +346,31 @@ func (w *RenderWorker) renderForDeviceModel(ctx context.Context, pluginInstance 
 				}
 
 				// Convert to grayscale and quantize to target bit depth (no dithering)
-				quantizedImg := imageprocessing.QuantizeToGrayscalePalette(img, deviceModel.BitDepth)
+				quantizedImg := imageprocessing.QuantizeToGrayscalePalette(img, device.DeviceModel.BitDepth)
 				if quantizedImg == nil {
 					return fmt.Errorf("failed to quantize private plugin image")
 				}
 
 				// Encode as PNG with correct bit depth
-				processedImageData, err = imageprocessing.EncodePalettedPNG(quantizedImg, deviceModel.BitDepth)
+				processedImageData, err = imageprocessing.EncodePalettedPNG(quantizedImg, device.DeviceModel.BitDepth)
 				if err != nil {
 					return fmt.Errorf("failed to encode private plugin image: %w", err)
 				}
 
 				logging.Debug("[RENDER_WORKER] Processed private plugin image", 
+					"device", device.FriendlyID,
 					"original_size", len(imageData), 
 					"processed_size", len(processedImageData),
-					"bit_depth", deviceModel.BitDepth)
+					"bit_depth", device.DeviceModel.BitDepth)
 			} else {
 				// For other image plugins, use raw data (they may already be processed)
 				processedImageData = imageData
 			}
 
-			// Save processed image data to disk
+			// Save processed image data to disk with simplified device-specific naming
 			randomString := generateRandomString(10)
-			filename := fmt.Sprintf("%s_%s_%dx%d_%d_%s.png",
-				pluginInstance.ID, pluginInstance.PluginDefinition.PluginType,
-				deviceModel.ScreenWidth, deviceModel.ScreenHeight, deviceModel.BitDepth, randomString)
+			filename := fmt.Sprintf("%s_%s_%s.png",
+				pluginInstance.ID, device.ID, randomString)
 			imagePath = filepath.Join(w.renderedDir, filename)
 
 			// Write file with better error handling
@@ -414,13 +411,14 @@ func (w *RenderWorker) renderForDeviceModel(ctx context.Context, pluginInstance 
 		return nil // Skip this render, don't error
 	}
 
-	// Store rendered content record
+	// Store rendered content record with device-specific information
 	renderedContent := database.RenderedContent{
 		ID:           uuid.New(),
-		PluginInstanceID: pluginInstance.ID,  // Now nullable
-		Width:        deviceModel.ScreenWidth,
-		Height:       deviceModel.ScreenHeight,
-		BitDepth:     deviceModel.BitDepth,
+		PluginInstanceID: pluginInstance.ID,
+		DeviceID:     &device.ID, // Include specific device ID
+		Width:        device.DeviceModel.ScreenWidth,
+		Height:       device.DeviceModel.ScreenHeight,
+		BitDepth:     device.DeviceModel.BitDepth,
 		ImagePath:    imagePath,
 		FileSize:     fileSize,
 		RenderedAt:   time.Now(),
@@ -435,9 +433,10 @@ func (w *RenderWorker) renderForDeviceModel(ctx context.Context, pluginInstance 
 		"type", pluginInstance.PluginDefinition.PluginType, 
 		"plugin_name", pluginInstance.Name,
 		"username", pluginInstance.User.Username,
-		"width", deviceModel.ScreenWidth, 
-		"height", deviceModel.ScreenHeight, 
-		"bit_depth", deviceModel.BitDepth, 
+		"device", device.FriendlyID,
+		"width", device.DeviceModel.ScreenWidth, 
+		"height", device.DeviceModel.ScreenHeight, 
+		"bit_depth", device.DeviceModel.BitDepth, 
 		"path", imagePath)
 
 	return nil

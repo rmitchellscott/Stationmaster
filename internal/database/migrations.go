@@ -430,6 +430,55 @@ func RunMigrations(logPrefix string) error {
 				return nil
 			},
 		},
+		{
+			ID: "20250825_add_device_id_to_rendered_contents",
+			Migrate: func(tx *gorm.DB) error {
+				logging.Info("[MIGRATION] Adding device_id column to rendered_contents for per-device rendering")
+				
+				// Check if column already exists
+				if tx.Migrator().HasColumn(&RenderedContent{}, "device_id") {
+					logging.Info("[MIGRATION] device_id column already exists in rendered_contents")
+					return nil
+				}
+				
+				// Add the nullable device_id column with foreign key constraint
+				if err := tx.Exec("ALTER TABLE rendered_contents ADD COLUMN device_id UUID REFERENCES devices(id)").Error; err != nil {
+					return fmt.Errorf("failed to add device_id column to rendered_contents: %w", err)
+				}
+				
+				// Add index for device_id lookups
+				if err := tx.Exec("CREATE INDEX idx_rendered_contents_device_id ON rendered_contents(device_id)").Error; err != nil {
+					return fmt.Errorf("failed to create index on device_id: %w", err)
+				}
+				
+				// Add composite index for device_id + plugin_instance_id lookups (most common query)
+				if err := tx.Exec("CREATE INDEX idx_rendered_contents_device_plugin ON rendered_contents(device_id, plugin_instance_id)").Error; err != nil {
+					return fmt.Errorf("failed to create composite index on device_id and plugin_instance_id: %w", err)
+				}
+				
+				logging.Info("[MIGRATION] Successfully added device_id column and indexes to rendered_contents")
+				return nil
+			},
+			Rollback: func(tx *gorm.DB) error {
+				logging.Info("[MIGRATION] Rolling back device_id column addition from rendered_contents")
+				
+				// Drop indexes first
+				if err := tx.Exec("DROP INDEX IF EXISTS idx_rendered_contents_device_plugin").Error; err != nil {
+					logging.Warn("[MIGRATION] Failed to drop composite index", "error", err)
+				}
+				
+				if err := tx.Exec("DROP INDEX IF EXISTS idx_rendered_contents_device_id").Error; err != nil {
+					logging.Warn("[MIGRATION] Failed to drop device_id index", "error", err)
+				}
+				
+				// Drop the column
+				if err := tx.Exec("ALTER TABLE rendered_contents DROP COLUMN device_id").Error; err != nil {
+					return fmt.Errorf("failed to drop device_id column: %w", err)
+				}
+				
+				return nil
+			},
+		},
 	}
 
 	// Create migrator with our migrations

@@ -162,13 +162,13 @@ func (p *PrivatePlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespon
 
 		// Add battery information if available
 		if ctx.Device.BatteryVoltage > 0 {
-			batteryPercentage := utils.CalculateBatteryPercentage(ctx.Device.BatteryVoltage)
-			deviceData["percent_charged"] = float64(batteryPercentage)
+			batteryPercentage := plugins.BatteryVoltageToPercentage(ctx.Device.BatteryVoltage)
+			deviceData["percent_charged"] = batteryPercentage
 		}
 
 		// Add WiFi information if available  
 		if ctx.Device.RSSI != 0 {
-			wifiPercentage := utils.CalculateWiFiPercentage(ctx.Device.RSSI)
+			wifiPercentage := plugins.RSSIToWifiStrengthPercentage(ctx.Device.RSSI)
 			deviceData["wifi_strength"] = wifiPercentage
 		}
 

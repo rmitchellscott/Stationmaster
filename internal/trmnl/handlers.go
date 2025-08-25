@@ -617,7 +617,7 @@ func getImageURLForDevice(device *database.Device) string {
 	return "/api/trmnl/devices/" + device.ID.String() + "/image"
 }
 
-// DeviceImageHandler serves generated images for devices
+// DeviceImageHandler serves generated images for devices with device-specific content support
 func DeviceImageHandler(c *gin.Context) {
 	deviceIDStr := c.Param("deviceId")
 	deviceID, err := uuid.Parse(deviceIDStr)
@@ -637,32 +637,89 @@ func DeviceImageHandler(c *gin.Context) {
 
 	// Get current playlist items
 	playlistService := database.NewPlaylistService(db)
-	_, err = playlistService.GetActivePlaylistItemsForTime(device.ID, time.Now())
+	activeItems, err := playlistService.GetActivePlaylistItemsForTime(device.ID, time.Now())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get playlist items"})
 		return
 	}
 
-	// Generate image based on active plugins
-	// For now, return a placeholder
-	// TODO: Implement actual image generation
-	c.Header("Content-Type", "image/png")
-	c.Header("Cache-Control", "no-cache")
-
-	// Return a simple placeholder image (1x1 transparent PNG)
-	placeholder := []byte{
-		0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
-		0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
-		0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
-		0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
-		0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41,
-		0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00,
-		0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00,
-		0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE,
-		0x42, 0x60, 0x82,
+	if len(activeItems) == 0 {
+		// No active playlist items - return placeholder
+		c.Header("Content-Type", "image/png")
+		c.Header("Cache-Control", "no-cache")
+		
+		placeholder := []byte{
+			0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+			0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+			0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+			0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
+			0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41,
+			0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00,
+			0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00,
+			0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE,
+			0x42, 0x60, 0x82,
+		}
+		c.Data(http.StatusOK, "image/png", placeholder)
+		return
 	}
 
-	c.Data(http.StatusOK, "image/png", placeholder)
+	// Get the current playlist item (typically the first active item)
+	currentItem := activeItems[0]
+
+	// Look for device-specific rendered content first, fallback to device-model content
+	var renderedContent *database.RenderedContent
+	
+	// Try device-specific content first
+	err = db.Where("plugin_instance_id = ? AND device_id = ?", 
+		currentItem.PluginInstanceID, device.ID).
+		Order("rendered_at DESC").
+		First(&renderedContent).Error
+	
+	if err != nil {
+		// Fallback to device-model based content (backward compatibility)
+		if device.DeviceModel != nil {
+			err = db.Where("plugin_instance_id = ? AND device_id IS NULL AND width = ? AND height = ? AND bit_depth = ?",
+				currentItem.PluginInstanceID, 
+				device.DeviceModel.ScreenWidth, 
+				device.DeviceModel.ScreenHeight, 
+				device.DeviceModel.BitDepth).
+				Order("rendered_at DESC").
+				First(&renderedContent).Error
+		}
+		
+		if err != nil {
+			// No rendered content available - return placeholder
+			logging.Warn("[DEVICE_IMAGE] No rendered content found", "device", device.FriendlyID, "plugin_instance", currentItem.PluginInstanceID)
+			c.Header("Content-Type", "image/png")
+			c.Header("Cache-Control", "no-cache")
+			
+			placeholder := []byte{
+				0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+				0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+				0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+				0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
+				0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41,
+				0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00,
+				0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00,
+				0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE,
+				0x42, 0x60, 0x82,
+			}
+			c.Data(http.StatusOK, "image/png", placeholder)
+			return
+		}
+	}
+
+	// Serve the rendered image file
+	c.Header("Content-Type", "image/png")
+	c.Header("Cache-Control", "max-age=300") // Cache for 5 minutes
+	
+	if renderedContent.DeviceID != nil {
+		logging.Debug("[DEVICE_IMAGE] Serving device-specific content", "device", device.FriendlyID, "content_id", renderedContent.ID)
+	} else {
+		logging.Debug("[DEVICE_IMAGE] Serving device-model content", "device", device.FriendlyID, "content_id", renderedContent.ID)
+	}
+	
+	c.File(renderedContent.ImagePath)
 }
 
 

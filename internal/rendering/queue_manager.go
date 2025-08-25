@@ -129,7 +129,7 @@ func (qm *QueueManager) ScheduleInitialRenders(ctx context.Context) error {
 			continue
 		}
 
-		// Check if there's existing rendered content
+		// Check if there's existing rendered content (device-specific or device-model based)
 		var existingContentCount int64
 		err = qm.db.WithContext(ctx).Model(&database.RenderedContent{}).
 			Where("plugin_instance_id = ?", pluginInstance.ID).
@@ -140,7 +140,7 @@ func (qm *QueueManager) ScheduleInitialRenders(ctx context.Context) error {
 		}
 
 		if existingContentCount > 0 {
-			logging.Debug("[QUEUE_MANAGER] Skipping plugin - already has rendered content", "plugin_id", pluginInstance.ID)
+			logging.Debug("[QUEUE_MANAGER] Skipping plugin - already has rendered content", "plugin_id", pluginInstance.ID, "existing_content_count", existingContentCount)
 			continue
 		}
 

@@ -513,8 +513,9 @@ type DeviceModel struct {
 
 // RenderedContent represents a cached rendered image for a plugin
 type RenderedContent struct {
-	ID               uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
-	PluginInstanceID uuid.UUID `gorm:"type:uuid;not null;index" json:"plugin_instance_id"`
+	ID               uuid.UUID  `gorm:"type:uuid;primaryKey" json:"id"`
+	PluginInstanceID uuid.UUID  `gorm:"type:uuid;not null;index" json:"plugin_instance_id"`
+	DeviceID         *uuid.UUID `gorm:"type:uuid;index" json:"device_id,omitempty"` // Nullable for backward compatibility
 	
 	Width        int       `gorm:"not null" json:"width"`
 	Height       int       `gorm:"not null" json:"height"`
@@ -526,6 +527,7 @@ type RenderedContent struct {
 	
 	// Associations  
 	PluginInstance PluginInstance `gorm:"foreignKey:PluginInstanceID" json:"-"`
+	Device         *Device        `gorm:"foreignKey:DeviceID" json:"-"`
 }
 
 func (rc *RenderedContent) BeforeCreate(tx *gorm.DB) error {

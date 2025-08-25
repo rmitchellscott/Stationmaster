@@ -322,6 +322,7 @@ func (w *RenderWorker) renderForDevice(ctx context.Context, pluginInstance datab
 	var imagePath string
 	var fileSize int64
 	var contentHash *string
+	var contentChanged bool = true // Default to true, set to false if content unchanged
 
 	if plugin.PluginType() == plugins.PluginTypeImage {
 		// Check if plugin provided image data (new approach)
@@ -370,14 +371,30 @@ func (w *RenderWorker) renderForDevice(ctx context.Context, pluginInstance datab
 				First(&existingContent).Error
 			
 			if err == nil && existingContent.ContentHash != nil && *existingContent.ContentHash == newHash {
-				// Content unchanged, skip file saving but continue with job completion
-				logging.Info("[RENDER_WORKER] Skipping file save - image content unchanged",
+				// Content unchanged - update last_checked_at and continue with job completion
+				now := time.Now()
+				existingContent.LastCheckedAt = &now
+				existingContent.RenderAttempts = 0 // Reset attempts on successful check
+				
+				updateErr := w.db.WithContext(ctx).Save(&existingContent).Error
+				if updateErr != nil {
+					logging.Warn("[RENDER_WORKER] Failed to update last_checked_at", "error", updateErr)
+				}
+				
+				logging.Info("[RENDER_WORKER] Content unchanged - updated last checked time",
 					"plugin_instance_id", pluginInstance.ID,
 					"plugin_name", pluginInstance.Name,
 					"device", device.FriendlyID,
 					"content_hash", newHash,
-					"existing_path", existingContent.ImagePath)
-				return nil
+					"existing_path", existingContent.ImagePath,
+					"last_checked_at", now)
+				
+				// Set variables for job completion logic (skip file save, use existing path)
+				imagePath = existingContent.ImagePath
+				fileSize = existingContent.FileSize
+				contentChanged = false
+				
+				// Continue to job completion logic instead of returning early
 			} else if err != nil && err != gorm.ErrRecordNotFound {
 				// Log error but continue with render (don't fail the job)
 				logging.Warn("[RENDER_WORKER] Failed to check existing content, continuing with render", 
@@ -435,34 +452,71 @@ func (w *RenderWorker) renderForDevice(ctx context.Context, pluginInstance datab
 		return nil // Skip this render, don't error
 	}
 
-	// Store rendered content record with device-specific information
-	renderedContent := database.RenderedContent{
-		ID:           uuid.New(),
-		PluginInstanceID: pluginInstance.ID,
-		DeviceID:     &device.ID, // Include specific device ID
-		Width:        device.DeviceModel.ScreenWidth,
-		Height:       device.DeviceModel.ScreenHeight,
-		BitDepth:     device.DeviceModel.BitDepth,
-		ImagePath:    imagePath,
-		FileSize:     fileSize,
-		ContentHash:  contentHash,
-		RenderedAt:   time.Now(),
+	// Store rendered content record only if content changed
+	if contentChanged {
+		// Get previous hash for debugging if we have existing content
+		var previousHash *string
+		var existingForPreviousHash database.RenderedContent
+		err = w.db.WithContext(ctx).
+			Where("plugin_instance_id = ? AND device_id = ?", pluginInstance.ID, device.ID).
+			Order("rendered_at DESC").
+			First(&existingForPreviousHash).Error
+		if err == nil && existingForPreviousHash.ContentHash != nil {
+			previousHash = existingForPreviousHash.ContentHash
+		}
+		
+		renderedContent := database.RenderedContent{
+			ID:             uuid.New(),
+			PluginInstanceID: pluginInstance.ID,
+			DeviceID:       &device.ID, // Include specific device ID
+			Width:          device.DeviceModel.ScreenWidth,
+			Height:         device.DeviceModel.ScreenHeight,
+			BitDepth:       device.DeviceModel.BitDepth,
+			ImagePath:      imagePath,
+			FileSize:       fileSize,
+			ContentHash:    contentHash,
+			RenderedAt:     time.Now(),
+			LastCheckedAt:  nil, // Will be set on future hash checks
+			PreviousHash:   previousHash,
+			RenderAttempts: 0, // Reset attempts on successful render
+		}
+
+		err = w.db.WithContext(ctx).Create(&renderedContent).Error
+		if err != nil {
+			return fmt.Errorf("failed to store rendered content: %w", err)
+		}
 	}
 
-	err = w.db.WithContext(ctx).Create(&renderedContent).Error
-	if err != nil {
-		return fmt.Errorf("failed to store rendered content: %w", err)
+	if contentChanged {
+		logging.Info("[RENDER_WORKER] Rendered plugin with new content", 
+			"type", pluginInstance.PluginDefinition.PluginType, 
+			"plugin_name", pluginInstance.Name,
+			"username", pluginInstance.User.Username,
+			"device", device.FriendlyID,
+			"width", device.DeviceModel.ScreenWidth, 
+			"height", device.DeviceModel.ScreenHeight, 
+			"bit_depth", device.DeviceModel.BitDepth, 
+			"path", imagePath)
+	} else {
+		logging.Info("[RENDER_WORKER] Completed plugin render - content unchanged", 
+			"type", pluginInstance.PluginDefinition.PluginType, 
+			"plugin_name", pluginInstance.Name,
+			"username", pluginInstance.User.Username,
+			"device", device.FriendlyID,
+			"existing_path", imagePath)
 	}
 
-	logging.Info("[RENDER_WORKER] Rendered plugin", 
-		"type", pluginInstance.PluginDefinition.PluginType, 
-		"plugin_name", pluginInstance.Name,
-		"username", pluginInstance.User.Username,
-		"device", device.FriendlyID,
-		"width", device.DeviceModel.ScreenWidth, 
-		"height", device.DeviceModel.ScreenHeight, 
-		"bit_depth", device.DeviceModel.BitDepth, 
-		"path", imagePath)
+	// Trigger immediate cleanup for this plugin after successful render
+	// This ensures timely cleanup without race conditions
+	if contentChanged {
+		go func() {
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if err := w.CleanupOldContentForPlugin(cleanupCtx, pluginInstance.ID); err != nil {
+				logging.Warn("[RENDER_WORKER] Failed post-render cleanup", "plugin_instance_id", pluginInstance.ID, "error", err)
+			}
+		}()
+	}
 
 	return nil
 }
@@ -702,36 +756,24 @@ func (w *RenderWorker) CleanupOldContentSmart(ctx context.Context) error {
 			continue
 		}
 
-		// Calculate retention period based on refresh interval (keep 2-3 refresh cycles)
-		// Minimum 1 hour, maximum 24 hours
+		// Use simple "latest + 1 previous" retention policy instead of time-based
+		// This ensures we always keep exactly 2 most recent versions per plugin+device combination
+		// regardless of refresh interval or timing
 		refreshInterval := time.Duration(pluginInstance.RefreshInterval) * time.Second
-		retentionPeriod := refreshInterval * 3 // Keep 3 refresh cycles
 		
-		// Apply bounds
-		minRetention := 1 * time.Hour
-		maxRetention := 24 * time.Hour
-		if retentionPeriod < minRetention {
-			retentionPeriod = minRetention
-		} else if retentionPeriod > maxRetention {
-			retentionPeriod = maxRetention
-		}
-		
-		cutoff := time.Now().Add(-retentionPeriod)
-		
-		// Find old content for this specific user plugin, but preserve the most recent content per device
-		// Use a subquery to ensure we never delete the latest content for each plugin+device combination
+		// Find old content to cleanup: keep latest + 1 previous per device, delete the rest
+		// Use a more sophisticated query to keep exactly 2 most recent records per plugin+device combination
 		var oldContent []database.RenderedContent
 		err = w.db.WithContext(ctx).Raw(`
-			SELECT * FROM rendered_contents rc1 
-			WHERE plugin_instance_id = ? 
-			AND rendered_at < ?
-			AND EXISTS (
-				SELECT 1 FROM rendered_contents rc2 
-				WHERE rc2.plugin_instance_id = rc1.plugin_instance_id 
-				AND rc2.device_id = rc1.device_id 
+			SELECT rc1.* FROM rendered_contents rc1
+			WHERE rc1.plugin_instance_id = ?
+			AND (
+				SELECT COUNT(*) FROM rendered_contents rc2
+				WHERE rc2.plugin_instance_id = rc1.plugin_instance_id
+				AND rc2.device_id = rc1.device_id
 				AND rc2.rendered_at > rc1.rendered_at
-			)
-		`, pluginInstanceID, cutoff).Find(&oldContent).Error
+			) >= 2
+		`, pluginInstanceID).Find(&oldContent).Error
 		if err != nil {
 			logging.Info("[RENDER_WORKER] Failed to find old content for plugin", "plugin_instance_id", pluginInstanceID, "error", err)
 			continue
@@ -761,18 +803,17 @@ func (w *RenderWorker) CleanupOldContentSmart(ctx context.Context) error {
 			}
 		}
 		
-		// Delete database records for this plugin using the same safe logic
+		// Delete database records for this plugin using the same latest + 1 previous logic
 		result := w.db.WithContext(ctx).Exec(`
 			DELETE FROM rendered_contents rc1 
-			WHERE plugin_instance_id = ? 
-			AND rendered_at < ?
-			AND EXISTS (
-				SELECT 1 FROM rendered_contents rc2 
-				WHERE rc2.plugin_instance_id = rc1.plugin_instance_id 
-				AND rc2.device_id = rc1.device_id 
+			WHERE rc1.plugin_instance_id = ?
+			AND (
+				SELECT COUNT(*) FROM rendered_contents rc2
+				WHERE rc2.plugin_instance_id = rc1.plugin_instance_id
+				AND rc2.device_id = rc1.device_id
 				AND rc2.rendered_at > rc1.rendered_at
-			)
-		`, pluginInstanceID, cutoff)
+			) >= 2
+		`, pluginInstanceID)
 		err = result.Error
 		if err != nil {
 			logging.Info("[RENDER_WORKER] Failed to delete old content records for plugin", "plugin_instance_id", pluginInstanceID, "error", err)
@@ -781,7 +822,7 @@ func (w *RenderWorker) CleanupOldContentSmart(ctx context.Context) error {
 		
 		totalCleaned += len(oldContent)
 		if len(oldContent) > 0 {
-			logging.Info("[RENDER_WORKER] Plugin cleanup completed", "plugin_name", pluginInstance.Name, "refresh_interval", refreshInterval, "items_cleaned", len(oldContent), "retention_period", retentionPeriod)
+			logging.Info("[RENDER_WORKER] Plugin cleanup completed", "plugin_name", pluginInstance.Name, "refresh_interval", refreshInterval, "items_cleaned", len(oldContent), "retention_policy", "latest_plus_one_previous")
 		}
 	}
 
@@ -789,6 +830,71 @@ func (w *RenderWorker) CleanupOldContentSmart(ctx context.Context) error {
 		logging.Info("[RENDER_WORKER] Smart cleanup completed", "total_items_removed", totalCleaned)
 	}
 
+	return nil
+}
+
+// CleanupOldContentForPlugin removes old content for a specific plugin using latest + 1 previous retention
+func (w *RenderWorker) CleanupOldContentForPlugin(ctx context.Context, pluginInstanceID uuid.UUID) error {
+	// Find old content to cleanup: keep latest + 1 previous per device, delete the rest
+	var oldContent []database.RenderedContent
+	err := w.db.WithContext(ctx).Raw(`
+		SELECT rc1.* FROM rendered_contents rc1
+		WHERE rc1.plugin_instance_id = ?
+		AND (
+			SELECT COUNT(*) FROM rendered_contents rc2
+			WHERE rc2.plugin_instance_id = rc1.plugin_instance_id
+			AND rc2.device_id = rc1.device_id
+			AND rc2.rendered_at > rc1.rendered_at
+		) >= 2
+	`, pluginInstanceID).Find(&oldContent).Error
+	if err != nil {
+		return fmt.Errorf("failed to find old content for plugin cleanup: %w", err)
+	}
+	
+	if len(oldContent) == 0 {
+		return nil // Nothing to clean up
+	}
+
+	// Delete files first
+	filesDeleted := 0
+	for _, content := range oldContent {
+		var fullPath string
+		if filepath.IsAbs(content.ImagePath) {
+			fullPath = content.ImagePath
+		} else {
+			fullPath = filepath.Join(w.staticDir, content.ImagePath)
+		}
+		
+		if filepath.HasPrefix(fullPath, w.renderedDir) {
+			if err := os.Remove(fullPath); err != nil && !os.IsNotExist(err) {
+				logging.Error("[RENDER_WORKER] Failed to delete old image", "path", fullPath, "error", err)
+			} else if err == nil {
+				filesDeleted++
+			}
+		}
+	}
+	
+	// Delete database records
+	result := w.db.WithContext(ctx).Exec(`
+		DELETE FROM rendered_contents rc1 
+		WHERE rc1.plugin_instance_id = ?
+		AND (
+			SELECT COUNT(*) FROM rendered_contents rc2
+			WHERE rc2.plugin_instance_id = rc1.plugin_instance_id
+			AND rc2.device_id = rc1.device_id
+			AND rc2.rendered_at > rc1.rendered_at
+		) >= 2
+	`, pluginInstanceID)
+	
+	if result.Error != nil {
+		return fmt.Errorf("failed to delete old content records: %w", result.Error)
+	}
+	
+	logging.Debug("[RENDER_WORKER] Post-render cleanup completed", 
+		"plugin_instance_id", pluginInstanceID, 
+		"items_cleaned", len(oldContent), 
+		"files_deleted", filesDeleted)
+	
 	return nil
 }
 

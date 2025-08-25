@@ -534,6 +534,11 @@ type RenderedContent struct {
 	RenderedAt   time.Time `gorm:"not null;index" json:"rendered_at"`
 	CreatedAt    time.Time `json:"created_at"`
 	
+	// Enhanced content lifecycle tracking
+	LastCheckedAt  *time.Time `gorm:"index" json:"last_checked_at,omitempty"` // Track hash comparisons even when not saving
+	PreviousHash   *string    `gorm:"size:64" json:"previous_hash,omitempty"`  // Store previous content hash for debugging
+	RenderAttempts int        `gorm:"default:0" json:"render_attempts"`        // Track render failures
+	
 	// Associations  
 	PluginInstance PluginInstance `gorm:"foreignKey:PluginInstanceID" json:"-"`
 	Device         *Device        `gorm:"foreignKey:DeviceID" json:"-"`

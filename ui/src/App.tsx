@@ -9,12 +9,10 @@ import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { UserSettingsPage } from '@/components/UserSettingsPage';
 import { PrivatePluginEditorPage } from '@/components/PrivatePluginEditorPage';
 import { AdminPage } from '@/components/AdminPage';
-import { AdminPanel } from '@/components/AdminPanel';
 import { PasswordReset } from '@/components/PasswordReset';
 import { RegisterForm } from '@/components/RegisterForm';
 
 function AppContent() {
-  const [showAdminPanel, setShowAdminPanel] = useState(false);
   
   return (
     <>
@@ -47,12 +45,6 @@ function AppContent() {
           } />
         </Route>
       </Routes>
-      
-      {/* Global modals */}
-      <AdminPanel 
-        isOpen={showAdminPanel} 
-        onClose={() => setShowAdminPanel(false)} 
-      />
     </>
   );
 }

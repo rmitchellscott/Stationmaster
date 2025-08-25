@@ -36,6 +36,7 @@ func (qm *QueueManager) ScheduleRender(ctx context.Context, pluginInstanceID uui
 		Priority:         priority,
 		ScheduledFor:     scheduledFor,
 		Status:           "pending",
+		IndependentRender: false, // Normal scheduled jobs should reschedule
 	}
 
 	err := qm.db.WithContext(ctx).Create(&renderJob).Error
@@ -73,6 +74,7 @@ func (qm *QueueManager) ScheduleImmediateRenderWithOptions(ctx context.Context, 
 			Priority:         100,
 			ScheduledFor:     time.Now(),
 			Status:           "pending",
+			IndependentRender: false, // Normal immediate jobs should reschedule
 		}
 		
 		if err := qm.db.WithContext(ctx).Create(&dbJob).Error; err != nil {
@@ -129,25 +131,56 @@ func (qm *QueueManager) ScheduleInitialRenders(ctx context.Context) error {
 			continue
 		}
 
-		// Check if there's existing rendered content (device-specific or device-model based)
-		var existingContentCount int64
+		// Check if plugin is used in any playlists
+		playlistService := database.NewPlaylistService(qm.db)
+		devicesUsingPlugin, err := playlistService.GetDevicesUsingPluginInstance(pluginInstance.ID)
+		if err != nil {
+			logging.Error("[QUEUE_MANAGER] Failed to check devices using plugin", "plugin_id", pluginInstance.ID, "error", err)
+			continue
+		}
+
+		if len(devicesUsingPlugin) == 0 {
+			logging.Debug("[QUEUE_MANAGER] Skipping plugin - not used in any playlists", "plugin_id", pluginInstance.ID)
+			continue
+		}
+
+		// Check existing rendered content and determine scheduling needs
+		var contentResult struct {
+			Count      int64     `json:"count"`
+			LastRender time.Time `json:"last_render"`
+		}
+		
 		err = qm.db.WithContext(ctx).Model(&database.RenderedContent{}).
 			Where("plugin_instance_id = ?", pluginInstance.ID).
-			Count(&existingContentCount).Error
+			Select("COUNT(*) as count, COALESCE(MAX(rendered_at), '1970-01-01'::timestamp) as last_render").
+			Scan(&contentResult).Error
 		if err != nil {
 			logging.Error("[QUEUE_MANAGER] Failed to check existing rendered content", "plugin_id", pluginInstance.ID, "error", err)
 			continue
 		}
 
-		if existingContentCount > 0 {
-			logging.Debug("[QUEUE_MANAGER] Skipping plugin - already has rendered content", "plugin_id", pluginInstance.ID, "existing_content_count", existingContentCount)
-			continue
-		}
-
-		// No existing rendered content - schedule low-priority render
-		logging.Info("[QUEUE_MANAGER] Scheduling low-priority initial render for plugin without content", "plugin_id", pluginInstance.ID)
-		if err := qm.ScheduleRender(ctx, pluginInstance.ID, 10, time.Now()); err != nil {
-			logging.Error("[QUEUE_MANAGER] Failed to schedule low-priority render", "plugin_id", pluginInstance.ID, "error", err)
+		now := time.Now()
+		refreshInterval := time.Duration(pluginInstance.RefreshInterval) * time.Second
+		nextDue := contentResult.LastRender.Add(refreshInterval)
+		
+		if contentResult.Count == 0 {
+			// No content - schedule immediate render
+			logging.Info("[QUEUE_MANAGER] Scheduling immediate render for plugin without content", "plugin_id", pluginInstance.ID, "devices_using", len(devicesUsingPlugin))
+			if err := qm.ScheduleRender(ctx, pluginInstance.ID, 10, now); err != nil {
+				logging.Error("[QUEUE_MANAGER] Failed to schedule immediate render", "plugin_id", pluginInstance.ID, "error", err)
+			}
+		} else if now.After(nextDue) {
+			// Has content but overdue - schedule catch-up render
+			logging.Info("[QUEUE_MANAGER] Scheduling overdue catch-up render", "plugin_id", pluginInstance.ID, "last_render", contentResult.LastRender, "next_due", nextDue, "devices_using", len(devicesUsingPlugin))
+			if err := qm.ScheduleRender(ctx, pluginInstance.ID, 20, now); err != nil {
+				logging.Error("[QUEUE_MANAGER] Failed to schedule catch-up render", "plugin_id", pluginInstance.ID, "error", err)
+			}
+		} else {
+			// Has current content - schedule for natural next time
+			logging.Info("[QUEUE_MANAGER] Scheduling natural next render", "plugin_id", pluginInstance.ID, "scheduled_for", nextDue, "devices_using", len(devicesUsingPlugin))
+			if err := qm.ScheduleRender(ctx, pluginInstance.ID, 0, nextDue); err != nil {
+				logging.Error("[QUEUE_MANAGER] Failed to schedule natural render", "plugin_id", pluginInstance.ID, "error", err)
+			}
 		}
 	}
 

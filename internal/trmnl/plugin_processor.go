@@ -165,7 +165,7 @@ func (pp *PluginProcessor) processUnifiedPluginInstance(device *database.Device,
 		
 		response = gin.H{
 			"image_url": imageURL,
-			"filename":  fmt.Sprintf("pre_rendered_%s", time.Now().Format("20060102150405")),
+			"filename":  filepath.Base(renderedContent.ImagePath),
 		}
 		
 		logging.Info("[PLUGIN] Using pre-rendered content", 

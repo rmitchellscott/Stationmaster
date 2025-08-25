@@ -543,6 +543,29 @@ func RunMigrations(logPrefix string) error {
 				return nil
 			},
 		},
+		{
+			ID: "20250825_add_independent_render_to_render_queue",
+			Migrate: func(tx *gorm.DB) error {
+				logging.Info("[MIGRATION] Adding independent_render field to render_queues table")
+				
+				// Add the new column with default false
+				if err := tx.Exec("ALTER TABLE render_queues ADD COLUMN IF NOT EXISTS independent_render BOOLEAN DEFAULT FALSE").Error; err != nil {
+					return fmt.Errorf("failed to add independent_render column: %w", err)
+				}
+				
+				logging.Info("[MIGRATION] Successfully added independent_render field")
+				return nil
+			},
+			Rollback: func(tx *gorm.DB) error {
+				logging.Info("[MIGRATION] Removing independent_render field from render_queues")
+				
+				if err := tx.Exec("ALTER TABLE render_queues DROP COLUMN IF EXISTS independent_render").Error; err != nil {
+					return fmt.Errorf("failed to drop independent_render column: %w", err)
+				}
+				
+				return nil
+			},
+		},
 	}
 
 	// Create migrator with our migrations

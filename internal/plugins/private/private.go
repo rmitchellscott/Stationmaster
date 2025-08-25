@@ -335,18 +335,6 @@ func (p *PrivatePlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespon
 			fmt.Errorf("failed to render HTML to image: %w", err)
 	}
 	
-	// Check if image content has changed by comparing image hash
-	if p.instance != nil {
-		comparator := NewPluginContentComparator()
-		comparison := comparator.CompareImage(imageData, p.instance.LastImageHash)
-		
-		if comparator.ShouldSkipRender(comparison) {
-			return plugins.CreateNoChangeResponse("Image content unchanged, skipping storage"), nil
-		}
-		
-		// Image has changed - update the hash (this will be persisted by the render worker)
-		p.instance.LastImageHash = &comparison.NewHash
-	}
 	
 	// Generate filename
 	filename := fmt.Sprintf("private_plugin_%s_%dx%d.png",
@@ -364,7 +352,7 @@ func (p *PrivatePlugin) Validate(settings map[string]interface{}) error {
 	return nil
 }
 
-// GetInstance returns the plugin instance (used for accessing updated fields like LastImageHash)
+// GetInstance returns the plugin instance
 func (p *PrivatePlugin) GetInstance() *database.PluginInstance {
 	return p.instance
 }

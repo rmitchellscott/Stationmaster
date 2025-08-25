@@ -425,7 +425,6 @@ type PluginInstance struct {
 	Name            string         `gorm:"size:255;not null" json:"name"`        // User-defined name for this instance
 	Settings        datatypes.JSON `gorm:"type:text" json:"settings"`           // JSON settings specific to this instance
 	RefreshInterval int           `gorm:"default:3600" json:"refresh_interval"` // Refresh interval in seconds
-	LastImageHash   *string       `gorm:"size:64" json:"last_image_hash,omitempty"` // SHA256 hash of last rendered image content
 	IsActive        bool          `gorm:"default:true" json:"is_active"`
 	CreatedAt       time.Time     `gorm:"autoCreateTime" json:"created_at"`
 	UpdatedAt       time.Time     `gorm:"autoUpdateTime" json:"updated_at"`
@@ -531,6 +530,7 @@ type RenderedContent struct {
 	BitDepth     int       `gorm:"not null" json:"bit_depth"`
 	ImagePath    string    `gorm:"size:1000;not null" json:"image_path"`
 	FileSize     int64     `json:"file_size"`
+	ContentHash  *string   `gorm:"size:64" json:"content_hash,omitempty"`
 	RenderedAt   time.Time `gorm:"not null;index" json:"rendered_at"`
 	CreatedAt    time.Time `json:"created_at"`
 	
@@ -552,14 +552,15 @@ type RenderQueue struct {
 	
 	PluginInstanceID uuid.UUID `gorm:"type:uuid;not null;index" json:"plugin_instance_id"`
 	
-	Priority     int        `gorm:"default:0;index" json:"priority"` // Higher number = higher priority
-	ScheduledFor time.Time  `gorm:"not null;index" json:"scheduled_for"`
-	Status       string     `gorm:"size:50;default:pending;index" json:"status"` // pending, processing, completed, failed
-	Attempts     int        `gorm:"default:0" json:"attempts"`
-	LastAttempt  *time.Time `json:"last_attempt,omitempty"`
-	ErrorMessage string     `gorm:"type:text" json:"error_message,omitempty"`
-	CreatedAt    time.Time  `json:"created_at"`
-	UpdatedAt    time.Time  `json:"updated_at"`
+	Priority         int        `gorm:"default:0;index" json:"priority"` // Higher number = higher priority
+	ScheduledFor     time.Time  `gorm:"not null;index" json:"scheduled_for"`
+	Status           string     `gorm:"size:50;default:pending;index" json:"status"` // pending, processing, completed, failed
+	IndependentRender bool       `gorm:"default:false" json:"independent_render"` // true = don't reschedule after completion
+	Attempts         int        `gorm:"default:0" json:"attempts"`
+	LastAttempt      *time.Time `json:"last_attempt,omitempty"`
+	ErrorMessage     string     `gorm:"type:text" json:"error_message,omitempty"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
 
 	// Associations
 	PluginInstance PluginInstance `gorm:"foreignKey:PluginInstanceID" json:"-"`

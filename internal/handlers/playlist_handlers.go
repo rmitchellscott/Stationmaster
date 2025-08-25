@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/rmitchellscott/stationmaster/internal/auth"
 	"github.com/rmitchellscott/stationmaster/internal/database"
+	"github.com/rmitchellscott/stationmaster/internal/logging"
 	"github.com/rmitchellscott/stationmaster/internal/sse"
 	"github.com/rmitchellscott/stationmaster/internal/utils"
 	"gorm.io/gorm"
@@ -310,6 +311,24 @@ func AddPlaylistItemHandler(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add item to playlist"})
 		return
+	}
+
+	// Schedule immediate independent render for the plugin instance
+	renderJob := database.RenderQueue{
+		ID:               uuid.New(),
+		PluginInstanceID: req.PluginInstanceID,
+		Priority:         999, // High priority for immediate render on playlist addition
+		ScheduledFor:     time.Now(),
+		Status:           "pending",
+		IndependentRender: true, // Playlist additions are independent renders
+	}
+	
+	err = db.Create(&renderJob).Error
+	if err != nil {
+		logging.Error("[PLAYLIST] Failed to schedule immediate render job for playlist addition", "plugin_instance_id", req.PluginInstanceID, "error", err)
+		// Don't fail the playlist addition if render scheduling fails
+	} else {
+		logging.Info("[PLAYLIST] Scheduled immediate render for playlist addition", "plugin_instance_id", req.PluginInstanceID, "job_id", renderJob.ID)
 	}
 
 	// Broadcast playlist item added event

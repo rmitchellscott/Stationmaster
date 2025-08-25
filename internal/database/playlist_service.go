@@ -648,3 +648,18 @@ func (pls *PlaylistService) ClearMirroredPlaylists(deviceID uuid.UUID) error {
 		return nil
 	})
 }
+
+// GetDevicesUsingPluginInstance returns all devices that have the given plugin instance in their playlists
+func (pls *PlaylistService) GetDevicesUsingPluginInstance(pluginInstanceID uuid.UUID) ([]Device, error) {
+	var devices []Device
+	
+	// Find all playlists that have items with this plugin instance
+	err := pls.db.Distinct().
+		Preload("DeviceModel").
+		Joins("JOIN playlists ON devices.id = playlists.device_id").
+		Joins("JOIN playlist_items ON playlists.id = playlist_items.playlist_id").
+		Where("playlist_items.plugin_instance_id = ? AND devices.is_active = ?", pluginInstanceID, true).
+		Find(&devices).Error
+	
+	return devices, err
+}

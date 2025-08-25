@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"image"
@@ -168,19 +169,17 @@ func (w *RenderWorker) processRenderJob(ctx context.Context, job database.Render
 		return nil
 	}
 
-	// Get all active devices for this user
-	var devices []database.Device
-	err = w.db.WithContext(ctx).
-		Preload("DeviceModel").
-		Where("user_id = ? AND is_active = ?", pluginInstance.UserID, true).
-		Find(&devices).Error
+	// Get only devices that have this plugin instance in their playlists
+	playlistService := database.NewPlaylistService(w.db)
+	devices, err := playlistService.GetDevicesUsingPluginInstance(pluginInstance.ID)
 	if err != nil {
-		w.markJobFailed(ctx, job, fmt.Sprintf("failed to load user devices: %v", err))
+		w.markJobFailed(ctx, job, fmt.Sprintf("failed to load devices using plugin instance: %v", err))
 		return err
 	}
 
 	if len(devices) == 0 {
-		// No active devices, skip rendering
+		// No devices using this plugin instance, skip rendering
+		logging.Info("[RENDER_WORKER] No devices using plugin instance, marking job as completed", "plugin_instance_id", pluginInstance.ID)
 		err = w.db.WithContext(ctx).Model(&job).Update("status", "completed").Error
 		if err != nil {
 			logging.Error("[RENDER_WORKER] Failed to mark job as completed", "error", err)
@@ -213,14 +212,6 @@ func (w *RenderWorker) processRenderJob(ctx context.Context, job database.Render
 		logging.Error("[RENDER_WORKER] Failed to mark job as completed", "error", err)
 	}
 	
-	// For private plugins, persist any instance field updates (like LastImageHash)
-	if pluginInstance.PluginDefinition.PluginType == "private" {
-		err = w.db.WithContext(ctx).Save(&pluginInstance).Error
-		if err != nil {
-			logging.Warn("[RENDER_WORKER] Failed to save plugin instance updates", 
-				"plugin", pluginInstance.Name, "error", err)
-		}
-	}
 
 	// Clean up any other pending jobs for this plugin instance to prevent duplicates
 	err = w.db.WithContext(ctx).Model(&database.RenderQueue{}).
@@ -230,9 +221,8 @@ func (w *RenderWorker) processRenderJob(ctx context.Context, job database.Render
 		logging.Error("[RENDER_WORKER] Failed to clean up duplicate pending jobs", "error", err)
 	}
 
-	// Schedule next render with selective force refresh logic
-	shouldSkipReschedule := w.isForceRefreshWithDailyRate(job, pluginInstance.RefreshInterval)
-	w.scheduleNextRenderWithOptions(ctx, pluginInstance, shouldSkipReschedule)
+	// Schedule next render based on explicit flag
+	w.scheduleNextRenderWithOptions(ctx, pluginInstance, job.IndependentRender)
 
 	return nil
 }
@@ -331,6 +321,7 @@ func (w *RenderWorker) renderForDevice(ctx context.Context, pluginInstance datab
 
 	var imagePath string
 	var fileSize int64
+	var contentHash *string
 
 	if plugin.PluginType() == plugins.PluginTypeImage {
 		// Check if plugin provided image data (new approach)
@@ -366,6 +357,39 @@ func (w *RenderWorker) renderForDevice(ctx context.Context, pluginInstance datab
 				// For other image plugins, use raw data (they may already be processed)
 				processedImageData = imageData
 			}
+
+			// Check if processed image content has changed by comparing with existing rendered content
+			newHash := w.calculateImageHash(processedImageData)
+			contentHash = &newHash
+			
+			// Query for existing RenderedContent with same plugin_instance_id and device_id
+			var existingContent database.RenderedContent
+			err = w.db.WithContext(ctx).
+				Where("plugin_instance_id = ? AND device_id = ?", pluginInstance.ID, device.ID).
+				Order("rendered_at DESC").
+				First(&existingContent).Error
+			
+			if err == nil && existingContent.ContentHash != nil && *existingContent.ContentHash == newHash {
+				// Content unchanged, skip file saving but continue with job completion
+				logging.Info("[RENDER_WORKER] Skipping file save - image content unchanged",
+					"plugin_instance_id", pluginInstance.ID,
+					"plugin_name", pluginInstance.Name,
+					"device", device.FriendlyID,
+					"content_hash", newHash,
+					"existing_path", existingContent.ImagePath)
+				return nil
+			} else if err != nil && err != gorm.ErrRecordNotFound {
+				// Log error but continue with render (don't fail the job)
+				logging.Warn("[RENDER_WORKER] Failed to check existing content, continuing with render", 
+					"error", err, "plugin_instance_id", pluginInstance.ID)
+			}
+			
+			logging.Debug("[RENDER_WORKER] Proceeding with render - content changed or first render",
+				"plugin_instance_id", pluginInstance.ID,
+				"plugin_name", pluginInstance.Name, 
+				"device", device.FriendlyID,
+				"new_hash", newHash,
+				"had_existing", err == nil)
 
 			// Save processed image data to disk with simplified device-specific naming
 			randomString := generateRandomString(10)
@@ -421,6 +445,7 @@ func (w *RenderWorker) renderForDevice(ctx context.Context, pluginInstance datab
 		BitDepth:     device.DeviceModel.BitDepth,
 		ImagePath:    imagePath,
 		FileSize:     fileSize,
+		ContentHash:  contentHash,
 		RenderedAt:   time.Now(),
 	}
 
@@ -478,9 +503,9 @@ func (w *RenderWorker) scheduleNextRenderWithOptions(ctx context.Context, plugin
 		return
 	}
 
-	// Skip rescheduling if requested (for force refresh on "x times daily" rates)
+	// Skip rescheduling for independent renders (plugin updates, playlist additions, etc.)
 	if skipReschedule {
-		logging.Info("[RENDER_WORKER] Skipping reschedule per request", "plugin", pluginInstance.Name, "instance_id", pluginInstance.ID)
+		logging.Info("[RENDER_WORKER] Skipping reschedule - independent render", "plugin", pluginInstance.Name, "instance_id", pluginInstance.ID)
 		return
 	}
 
@@ -508,11 +533,12 @@ func (w *RenderWorker) scheduleNextRenderWithOptions(ctx context.Context, plugin
 	}
 
 	renderJob := database.RenderQueue{
-		ID:           uuid.New(),
+		ID:               uuid.New(),
 		PluginInstanceID: pluginInstance.ID,
-		Priority:     0,
-		ScheduledFor: nextRender,
-		Status:       "pending",
+		Priority:         0,
+		ScheduledFor:     nextRender,
+		Status:           "pending",
+		IndependentRender: false, // Regular recurring jobs should continue rescheduling
 	}
 
 	err = w.db.WithContext(ctx).Create(&renderJob).Error
@@ -590,31 +616,6 @@ func (w *RenderWorker) findNextScheduledTime(now time.Time, location *time.Locat
 	return nextRender.UTC()
 }
 
-// isForceRefreshWithDailyRate determines if this is a force refresh job with a daily-type rate
-// Returns true if we should skip rescheduling (preserve original schedule)
-func (w *RenderWorker) isForceRefreshWithDailyRate(job database.RenderQueue, refreshInterval int) bool {
-	// Check if this is a force refresh job (priority 999)
-	if job.Priority != 999 {
-		return false
-	}
-	
-	// Check if this is a "x times daily" rate that should preserve schedule
-	dailyRates := []int{
-		database.RefreshRateDaily,   // Daily
-		database.RefreshRate2xDay,   // Twice daily 
-		database.RefreshRate3xDay,   // 3 times daily
-		database.RefreshRate4xDay,   // 4 times daily
-	}
-	
-	for _, dailyRate := range dailyRates {
-		if refreshInterval == dailyRate {
-			return true
-		}
-	}
-	
-	// For interval-based rates (15min, 30min, hourly, etc.), allow normal rescheduling
-	return false
-}
 
 
 // markJobFailed marks a render job as failed with an error message
@@ -717,11 +718,20 @@ func (w *RenderWorker) CleanupOldContentSmart(ctx context.Context) error {
 		
 		cutoff := time.Now().Add(-retentionPeriod)
 		
-		// Find old content for this specific user plugin
+		// Find old content for this specific user plugin, but preserve the most recent content per device
+		// Use a subquery to ensure we never delete the latest content for each plugin+device combination
 		var oldContent []database.RenderedContent
-		err = w.db.WithContext(ctx).
-			Where("plugin_instance_id = ? AND rendered_at < ?", pluginInstanceID, cutoff).
-			Find(&oldContent).Error
+		err = w.db.WithContext(ctx).Raw(`
+			SELECT * FROM rendered_contents rc1 
+			WHERE plugin_instance_id = ? 
+			AND rendered_at < ?
+			AND EXISTS (
+				SELECT 1 FROM rendered_contents rc2 
+				WHERE rc2.plugin_instance_id = rc1.plugin_instance_id 
+				AND rc2.device_id = rc1.device_id 
+				AND rc2.rendered_at > rc1.rendered_at
+			)
+		`, pluginInstanceID, cutoff).Find(&oldContent).Error
 		if err != nil {
 			logging.Info("[RENDER_WORKER] Failed to find old content for plugin", "plugin_instance_id", pluginInstanceID, "error", err)
 			continue
@@ -751,10 +761,19 @@ func (w *RenderWorker) CleanupOldContentSmart(ctx context.Context) error {
 			}
 		}
 		
-		// Delete database records for this plugin
-		err = w.db.WithContext(ctx).
-			Where("plugin_instance_id = ? AND rendered_at < ?", pluginInstanceID, cutoff).
-			Delete(&database.RenderedContent{}).Error
+		// Delete database records for this plugin using the same safe logic
+		result := w.db.WithContext(ctx).Exec(`
+			DELETE FROM rendered_contents rc1 
+			WHERE plugin_instance_id = ? 
+			AND rendered_at < ?
+			AND EXISTS (
+				SELECT 1 FROM rendered_contents rc2 
+				WHERE rc2.plugin_instance_id = rc1.plugin_instance_id 
+				AND rc2.device_id = rc1.device_id 
+				AND rc2.rendered_at > rc1.rendered_at
+			)
+		`, pluginInstanceID, cutoff)
+		err = result.Error
 		if err != nil {
 			logging.Info("[RENDER_WORKER] Failed to delete old content records for plugin", "plugin_instance_id", pluginInstanceID, "error", err)
 			continue
@@ -825,4 +844,10 @@ func (w *RenderWorker) CleanupOrphanedFiles(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// calculateImageHash creates a SHA256 hash of image bytes
+func (w *RenderWorker) calculateImageHash(imageBytes []byte) string {
+	hash := sha256.Sum256(imageBytes)
+	return fmt.Sprintf("%x", hash)
 }

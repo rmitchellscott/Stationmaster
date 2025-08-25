@@ -306,23 +306,65 @@ func UpdatePluginInstanceHandler(c *gin.Context) {
 
 	// Try to update as unified PluginInstance first
 	var unifiedInstance database.PluginInstance
-	err := db.Where("id = ? AND user_id = ?", instanceID, userID).First(&unifiedInstance).Error
+	err := db.Preload("PluginDefinition").Where("id = ? AND user_id = ?", instanceID, userID).First(&unifiedInstance).Error
 	if err == nil {
 		// Update unified instance
+		logging.Info("[PLUGIN_UPDATE] Updating plugin instance", "instance_id", instanceID, "name", req.Name)
 		unifiedInstance.Name = req.Name
+		
 		// Convert settings map to datatypes.JSON
+		logging.Info("[PLUGIN_UPDATE] Processing settings update", "settings_count", len(req.Settings), "settings", req.Settings)
+		
 		if len(req.Settings) > 0 {
-			if settingsJSON, err := json.Marshal(req.Settings); err == nil {
-				unifiedInstance.Settings = settingsJSON
+			settingsJSON, err := json.Marshal(req.Settings)
+			if err != nil {
+				logging.Error("[PLUGIN_UPDATE] Failed to marshal settings", "instance_id", instanceID, "error", err, "settings", req.Settings)
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to process settings: " + err.Error()})
+				return
 			}
+			unifiedInstance.Settings = settingsJSON
+			logging.Info("[PLUGIN_UPDATE] Settings marshaled successfully", "instance_id", instanceID, "settings_json", string(settingsJSON))
+		} else if req.Settings != nil {
+			// Handle the case where settings is an empty map - this should still be saved
+			settingsJSON, err := json.Marshal(req.Settings)
+			if err != nil {
+				logging.Error("[PLUGIN_UPDATE] Failed to marshal empty settings", "instance_id", instanceID, "error", err)
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to process settings: " + err.Error()})
+				return
+			}
+			unifiedInstance.Settings = settingsJSON
+			logging.Info("[PLUGIN_UPDATE] Empty settings saved", "instance_id", instanceID)
 		}
 		if req.RefreshInterval > 0 {
 			unifiedInstance.RefreshInterval = req.RefreshInterval
 		}
 
 		if err := db.Save(&unifiedInstance).Error; err != nil {
+			logging.Error("[PLUGIN_UPDATE] Failed to save plugin instance to database", "instance_id", instanceID, "error", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update plugin instance: " + err.Error()})
 			return
+		}
+		
+		logging.Info("[PLUGIN_UPDATE] Plugin instance updated successfully", "instance_id", instanceID, "name", unifiedInstance.Name)
+
+		// Schedule immediate independent render for updated plugin instance if it requires processing
+		if unifiedInstance.PluginDefinition.RequiresProcessing {
+			renderJob := database.RenderQueue{
+				ID:               uuid.New(),
+				PluginInstanceID: unifiedInstance.ID,
+				Priority:         999, // High priority for immediate processing
+				ScheduledFor:     time.Now(),
+				Status:           "pending",
+				IndependentRender: true, // Plugin updates are independent renders
+			}
+			
+			err = db.Create(&renderJob).Error
+			if err != nil {
+				logging.Error("[PLUGIN_UPDATE] Failed to schedule immediate render job", "instance_id", unifiedInstance.ID, "error", err)
+				// Don't fail the update if render scheduling fails
+			} else {
+				logging.Info("[PLUGIN_UPDATE] Scheduled immediate render for updated plugin", "instance_id", unifiedInstance.ID, "name", unifiedInstance.Name)
+			}
 		}
 
 		c.JSON(http.StatusOK, gin.H{"instance": unifiedInstance})
@@ -394,13 +436,30 @@ func ForceRefreshPluginInstanceHandler(c *gin.Context) {
 
 		// Check if this plugin requires processing (rendering)
 		if unifiedInstance.PluginDefinition.RequiresProcessing {
-			// Schedule an immediate high-priority render job
+			// Determine if this should be an independent render based on refresh rate type
+			dailyRates := []int{
+				database.RefreshRateDaily,   // Daily
+				database.RefreshRate2xDay,   // Twice daily 
+				database.RefreshRate3xDay,   // 3 times daily
+				database.RefreshRate4xDay,   // 4 times daily
+			}
+			
+			isDaily := false
+			for _, dailyRate := range dailyRates {
+				if unifiedInstance.RefreshInterval == dailyRate {
+					isDaily = true
+					break
+				}
+			}
+			
+			// Schedule an immediate render job
 			renderJob := database.RenderQueue{
 				ID:               uuid.New(),
 				PluginInstanceID: unifiedInstance.ID,
 				Priority:         999, // High priority for force refresh
 				ScheduledFor:     time.Now(),
 				Status:           "pending",
+				IndependentRender: isDaily, // Daily rates: independent, interval rates: reschedule from now
 			}
 
 			err = db.Create(&renderJob).Error

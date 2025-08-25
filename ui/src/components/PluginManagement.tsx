@@ -93,6 +93,8 @@ interface PluginInstance {
   updated_at: string;
   plugin: Plugin;
   is_used_in_playlists: boolean;
+  needs_config_update: boolean;
+  last_schema_version: number;
 }
 
 interface RefreshRateOption {
@@ -166,6 +168,10 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
   // Edit dialog specific alerts
   const [editDialogError, setEditDialogError] = useState<string | null>(null);
   const [editDialogSuccess, setEditDialogSuccess] = useState<string | null>(null);
+  
+  // Schema diff state
+  const [schemaDiff, setSchemaDiff] = useState<any>(null);
+  const [schemaDiffLoading, setSchemaDiffLoading] = useState(false);
 
   // Delete confirmation dialog
   const [deletePluginDialog, setDeletePluginDialog] = useState<{
@@ -175,6 +181,9 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
 
   // Private plugin management state
   const [previewingPrivatePlugin, setPreviewingPrivatePlugin] = useState<any | null>(null);
+
+  // Pending edit state for handling navigation timing issues
+  const [pendingEditInstanceId, setPendingEditInstanceId] = useState<string | null>(null);
 
   // Get active subtab from URL query parameters
   const activeTab = (searchParams.get('subtab') as 'instances' | 'private') || 'instances';
@@ -317,6 +326,29 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
     );
   };
 
+  // Fetch schema diff for an instance that needs config updates
+  const fetchSchemaDiff = async (instanceId: string) => {
+    setSchemaDiffLoading(true);
+    setSchemaDiff(null);
+    
+    try {
+      const response = await fetch(`/api/plugin-instances/${instanceId}/schema-diff`, {
+        credentials: "include",
+      });
+      
+      if (response.ok) {
+        const diff = await response.json();
+        setSchemaDiff(diff);
+      } else {
+        console.error("Failed to fetch schema diff");
+      }
+    } catch (error) {
+      console.error("Error fetching schema diff:", error);
+    } finally {
+      setSchemaDiffLoading(false);
+    }
+  };
+
   const updatePluginInstance = async () => {
     if (!editPluginInstance || !editInstanceName.trim()) {
       setError("Please provide a name for the plugin instance");
@@ -452,6 +484,81 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
     }
   }, [sortState]);
 
+  // Helper function to open edit dialog for an instance
+  const openEditDialog = (instanceToEdit: PluginInstance) => {
+    setEditPluginInstance(instanceToEdit);
+    setEditInstanceName(instanceToEdit.name);
+    
+    // Parse settings from JSON string to object
+    let parsedSettings = {};
+    try {
+      if (instanceToEdit.settings && typeof instanceToEdit.settings === 'string') {
+        parsedSettings = JSON.parse(instanceToEdit.settings);
+      } else if (instanceToEdit.settings && typeof instanceToEdit.settings === 'object') {
+        parsedSettings = instanceToEdit.settings;
+      }
+    } catch (e) {
+      console.error("Error parsing plugin settings:", e);
+      parsedSettings = {};
+    }
+    
+    setEditInstanceSettings(parsedSettings);
+    setEditInstanceRefreshRate(instanceToEdit.refresh_interval || 86400);
+    
+    // Clear dialog-specific alerts when opening
+    setEditDialogError(null);
+    setEditDialogSuccess(null);
+    
+    // Fetch schema diff if instance needs config update
+    if (instanceToEdit.needs_config_update) {
+      fetchSchemaDiff(instanceToEdit.id);
+    } else {
+      setSchemaDiff(null);
+    }
+    
+    setShowEditDialog(true);
+  };
+
+  // Handle auto-opening edit dialog from URL parameter - Check for edit parameter
+  useEffect(() => {
+    const editInstanceId = searchParams.get('edit');
+    
+    if (editInstanceId) {
+      if (pluginInstances.length > 0) {
+        // Instances are loaded, try to find and open the edit dialog
+        const instanceToEdit = pluginInstances.find(instance => instance.id === editInstanceId);
+        if (instanceToEdit) {
+          openEditDialog(instanceToEdit);
+          setPendingEditInstanceId(null); // Clear pending since we handled it
+          
+          // Clear the URL parameter
+          const newSearchParams = new URLSearchParams(searchParams);
+          newSearchParams.delete('edit');
+          setSearchParams(newSearchParams);
+        }
+      } else {
+        // Instances not loaded yet, store the pending edit ID
+        setPendingEditInstanceId(editInstanceId);
+      }
+    }
+  }, [searchParams, pluginInstances, setSearchParams]);
+
+  // Handle pending edit when plugin instances load
+  useEffect(() => {
+    if (pendingEditInstanceId && pluginInstances.length > 0) {
+      const instanceToEdit = pluginInstances.find(instance => instance.id === pendingEditInstanceId);
+      if (instanceToEdit) {
+        openEditDialog(instanceToEdit);
+        setPendingEditInstanceId(null);
+        
+        // Clear the URL parameter
+        const newSearchParams = new URLSearchParams(searchParams);
+        newSearchParams.delete('edit');
+        setSearchParams(newSearchParams);
+      }
+    }
+  }, [pluginInstances, pendingEditInstanceId, searchParams, setSearchParams]);
+
   // Sort function
   const handleSort = (column: SortColumn) => {
     setSortState(prevState => ({
@@ -476,8 +583,9 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
           bValue = b.plugin?.name?.toLowerCase() || '';
           break;
         case 'status':
-          aValue = a.is_used_in_playlists ? 1 : 0; // Active first
-          bValue = b.is_used_in_playlists ? 1 : 0;
+          // Priority system: Update Config (3) > Active (2) > Unused (1)
+          aValue = a.needs_config_update ? 3 : (a.is_used_in_playlists ? 2 : 1);
+          bValue = b.needs_config_update ? 3 : (b.is_used_in_playlists ? 2 : 1);
           break;
         case 'created':
           aValue = new Date(a.created_at).getTime();
@@ -768,6 +876,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
     );
   };
 
+
   return (
     <div className="space-y-4">
       {error && (
@@ -908,12 +1017,55 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
               </TableHeader>
               <TableBody>
                 {sortedPluginInstances.map((userPlugin) => (
-                  <TableRow key={userPlugin.id}>
+                  <TableRow 
+                    key={userPlugin.id}
+                    className=""
+                  >
                     <TableCell className="font-medium">
                       <div>
                         <div>{userPlugin.name}</div>
-                        <div className="text-sm text-muted-foreground lg:hidden">
-                          {userPlugin.plugin?.name || "Unknown Plugin"} • {userPlugin.is_used_in_playlists ? "Active" : "Unused"}
+                        <div className="text-sm lg:hidden flex items-center gap-2">
+                          <span className="text-muted-foreground">{userPlugin.plugin?.name || "Unknown Plugin"}</span>
+                          {userPlugin.needs_config_update ? (
+                            <Badge 
+                              variant="destructive" 
+                              className="text-xs cursor-pointer hover:bg-destructive/80"
+                              onClick={() => {
+                                // Same click logic as desktop version
+                                setEditPluginInstance(userPlugin);
+                                setEditInstanceName(userPlugin.name);
+                                
+                                // Parse settings from JSON string to object
+                                let parsedSettings = {};
+                                try {
+                                  if (userPlugin.settings && typeof userPlugin.settings === 'string') {
+                                    parsedSettings = JSON.parse(userPlugin.settings);
+                                  } else if (userPlugin.settings && typeof userPlugin.settings === 'object') {
+                                    parsedSettings = userPlugin.settings;
+                                  }
+                                } catch (e) {
+                                  console.error("Error parsing plugin settings:", e);
+                                  parsedSettings = {};
+                                }
+                                
+                                setEditInstanceSettings(parsedSettings);
+                                setEditInstanceRefreshRate(userPlugin.refresh_interval || 86400);
+                                
+                                // Clear dialog-specific alerts when opening
+                                setEditDialogError(null);
+                                setEditDialogSuccess(null);
+                                
+                                // Fetch schema diff if instance needs config update
+                                fetchSchemaDiff(userPlugin.id);
+                                
+                                setShowEditDialog(true);
+                              }}
+                            >
+                              Update Config
+                            </Badge>
+                          ) : (
+                            <span className="text-muted-foreground">• {userPlugin.is_used_in_playlists ? "Active" : "Unused"}</span>
+                          )}
                         </div>
                       </div>
                     </TableCell>
@@ -923,11 +1075,50 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                       </div>
                     </TableCell>
                     <TableCell className="hidden md:table-cell">
-                      {userPlugin.is_used_in_playlists ? (
-                        <Badge variant="outline">Active</Badge>
-                      ) : (
-                        <Badge variant="secondary">Unused</Badge>
-                      )}
+                      <div className="flex gap-1 flex-wrap">
+                        {userPlugin.needs_config_update ? (
+                          <Badge 
+                            variant="destructive" 
+                            className="cursor-pointer hover:bg-destructive/80"
+                            onClick={() => {
+                              // Open edit dialog for this instance
+                              setEditPluginInstance(userPlugin);
+                              setEditInstanceName(userPlugin.name);
+                              
+                              // Parse settings from JSON string to object
+                              let parsedSettings = {};
+                              try {
+                                if (userPlugin.settings && typeof userPlugin.settings === 'string') {
+                                  parsedSettings = JSON.parse(userPlugin.settings);
+                                } else if (userPlugin.settings && typeof userPlugin.settings === 'object') {
+                                  parsedSettings = userPlugin.settings;
+                                }
+                              } catch (e) {
+                                console.error("Error parsing plugin settings:", e);
+                                parsedSettings = {};
+                              }
+                              
+                              setEditInstanceSettings(parsedSettings);
+                              setEditInstanceRefreshRate(userPlugin.refresh_interval || 86400);
+                              
+                              // Clear dialog-specific alerts when opening
+                              setEditDialogError(null);
+                              setEditDialogSuccess(null);
+                              
+                              // Fetch schema diff if instance needs config update
+                              fetchSchemaDiff(userPlugin.id);
+                              
+                              setShowEditDialog(true);
+                            }}
+                          >
+                            Update Config
+                          </Badge>
+                        ) : userPlugin.is_used_in_playlists ? (
+                          <Badge variant="outline">Active</Badge>
+                        ) : (
+                          <Badge variant="secondary">Unused</Badge>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell className="hidden lg:table-cell">
                       {new Date(userPlugin.created_at).toLocaleDateString()}
@@ -960,6 +1151,13 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                             // Clear dialog-specific alerts when opening
                             setEditDialogError(null);
                             setEditDialogSuccess(null);
+                            
+                            // Fetch schema diff if instance needs config update
+                            if (userPlugin.needs_config_update) {
+                              fetchSchemaDiff(userPlugin.id);
+                            } else {
+                              setSchemaDiff(null);
+                            }
                             
                             setShowEditDialog(true);
                           }}
@@ -1215,6 +1413,18 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
               Update the settings for "{editPluginInstance?.name}".
             </DialogDescription>
           </DialogHeader>
+          
+          {/* Schema diff warning banner */}
+          {editPluginInstance?.needs_config_update && schemaDiff?.needs_update && (
+            <Alert variant="destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>
+                <strong>Configuration Update Required</strong>
+                <br />
+                {schemaDiff.message || "This plugin's form has changed. Please review and update your settings."}
+              </AlertDescription>
+            </Alert>
+          )}
 
           <div className="space-y-6">
             {editDialogError && (

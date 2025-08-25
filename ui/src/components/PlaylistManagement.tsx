@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "@/components/AuthProvider";
 import { useDeviceEvents } from "@/hooks/useDeviceEvents";
@@ -98,6 +99,8 @@ interface PluginInstance {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  needs_config_update: boolean;
+  last_schema_version: number;
   plugin: {
     id: string;
     name: string;
@@ -400,7 +403,7 @@ function SortableTableRow({
     <TableRow 
       ref={setNodeRef} 
       style={style} 
-      className={animationClasses}
+      className={`${animationClasses} ${item.plugin_instance?.needs_config_update ? 'opacity-60 bg-muted/30' : ''}`}
     >
       <TableCell>
         <div className="flex items-center gap-2">
@@ -436,22 +439,51 @@ function SortableTableRow({
           <div className="text-sm text-muted-foreground">
             {item.plugin_instance?.plugin_definition?.name || "Unknown Plugin"}
           </div>
-          <div className="text-xs text-muted-foreground md:hidden mt-1">
+          <div className="text-xs md:hidden mt-1">
             <span className="flex items-center gap-1">
-              {isCurrentlyShowing ? (
-                <PlayCircle className="h-3 w-3" />
-              ) : isActive && item.is_visible ? (
-                <Eye className="h-3 w-3" />
+              {item.plugin_instance?.needs_config_update ? (
+                <Badge 
+                  variant="destructive" 
+                  className="text-xs cursor-pointer hover:bg-destructive/80 !opacity-100 relative z-10"
+                  onClick={() => {
+                    // Navigate to plugin management and open edit for this instance
+                    navigate(`/?tab=plugins&subtab=instances&edit=${item.plugin_instance_id}`);
+                  }}
+                >
+                  Update Config
+                </Badge>
               ) : (
-                <EyeOff className="h-3 w-3" />
+                <>
+                  {isCurrentlyShowing ? (
+                    <PlayCircle className="h-3 w-3" />
+                  ) : isActive && item.is_visible ? (
+                    <Eye className="h-3 w-3" />
+                  ) : (
+                    <EyeOff className="h-3 w-3" />
+                  )}
+                  <span className="text-muted-foreground">
+                    {isCurrentlyShowing ? "Now Showing" : isActive ? "Active" : item.is_visible ? "Scheduled" : "Hidden"} • {item.importance ? "Important" : "Normal"}
+                  </span>
+                </>
               )}
-              {isCurrentlyShowing ? "Now Showing" : isActive ? "Active" : item.is_visible ? "Scheduled" : "Hidden"} • {item.importance ? "Important" : "Normal"}
             </span>
           </div>
         </div>
       </TableCell>
       <TableCell className="hidden md:table-cell">
-        {item.is_sleep_mode ? (
+        {item.plugin_instance?.needs_config_update ? (
+          // Config update takes priority over all other statuses
+          <Badge 
+            variant="destructive"
+            className="cursor-pointer hover:bg-destructive/80 !opacity-100 relative z-10"
+            onClick={() => {
+              // Navigate to plugin management and open edit for this instance
+              navigate(`/?tab=plugins&subtab=instances&edit=${item.plugin_instance_id}`);
+            }}
+          >
+            Update Config
+          </Badge>
+        ) : item.is_sleep_mode ? (
           // Special status logic for sleep mode items
           timeTravelMode ? (
             // In time travel mode, just show if sleep would be active at that time
@@ -598,6 +630,7 @@ function SortableTableRow({
 export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: PlaylistManagementProps) {
   const { t } = useTranslation();
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [playlistItems, setPlaylistItems] = useState<PlaylistItem[]>([]);
   
   // Use SSE hook for real-time device events
@@ -1278,7 +1311,9 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
 
   const getAvailablePluginInstances = () => {
     const usedPluginIds = playlistItems.map(item => item.plugin_instance_id);
-    return pluginInstances.filter(plugin => !usedPluginIds.includes(plugin.id));
+    return pluginInstances.filter(plugin => 
+      !usedPluginIds.includes(plugin.id) && !plugin.needs_config_update
+    );
   };
 
   useEffect(() => {
@@ -1302,6 +1337,7 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
       handleTimeTravelChange();
     }
   }, [timeTravelDate, timeTravelTime, timeTravelMode]);
+
 
   return (
     <div className="space-y-4">

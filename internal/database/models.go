@@ -399,6 +399,9 @@ type PluginDefinition struct {
 	EnableDarkMode    *bool          `gorm:"default:false" json:"enable_dark_mode,omitempty"`    // Nullable for backward compatibility
 	SampleData        datatypes.JSON `json:"sample_data,omitempty"`                              // JSON sample data for preview/testing
 	
+	// Schema versioning for form field changes
+	SchemaVersion int `gorm:"default:1" json:"schema_version"` // Increments when FormFields change
+	
 	// Meta
 	IsActive  bool      `gorm:"default:true" json:"is_active"`
 	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
@@ -426,6 +429,11 @@ type PluginInstance struct {
 	Settings        datatypes.JSON `gorm:"type:text" json:"settings"`           // JSON settings specific to this instance
 	RefreshInterval int           `gorm:"default:3600" json:"refresh_interval"` // Refresh interval in seconds
 	IsActive        bool          `gorm:"default:true" json:"is_active"`
+	
+	// Schema version tracking for config update detection
+	LastSchemaVersion   int  `gorm:"default:1" json:"last_schema_version"`      // Schema version this instance was last updated against
+	NeedsConfigUpdate   bool `gorm:"default:false" json:"needs_config_update"`  // Flag when parent plugin schema changes
+	
 	CreatedAt       time.Time     `gorm:"autoCreateTime" json:"created_at"`
 	UpdatedAt       time.Time     `gorm:"autoUpdateTime" json:"updated_at"`
 	

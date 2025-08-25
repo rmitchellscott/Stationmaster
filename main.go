@@ -483,6 +483,7 @@ func main() {
 	protected.PUT("/plugin-instances/:id", handlers.UpdatePluginInstanceHandler) // PUT /api/plugin-instances/:id - update plugin instance
 	protected.DELETE("/plugin-instances/:id", handlers.DeletePluginInstanceHandler) // DELETE /api/plugin-instances/:id - delete plugin instance
 	protected.POST("/plugin-instances/:id/force-refresh", handlers.ForceRefreshPluginInstanceHandler) // POST /api/plugin-instances/:id/force-refresh - force refresh plugin instance
+	protected.GET("/plugin-instances/:id/schema-diff", handlers.GetPluginInstanceSchemaDiffHandler) // GET /api/plugin-instances/:id/schema-diff - get schema differences for instance
 
 
 

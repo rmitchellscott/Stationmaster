@@ -167,6 +167,8 @@ func (s *UnifiedPluginService) CreatePluginInstance(userID, definitionID uuid.UU
 		Settings:           settingsJSON,
 		RefreshInterval:    refreshInterval,
 		IsActive:           true,
+		LastSchemaVersion:  definition.SchemaVersion, // Set to current schema version
+		NeedsConfigUpdate:  false, // New instances are always up to date
 	}
 	
 	if err := s.db.Create(instance).Error; err != nil {

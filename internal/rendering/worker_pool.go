@@ -447,15 +447,8 @@ func (p *RenderWorkerPool) cleanupRoutine(ctx context.Context) {
 				logging.Error("[WORKER_POOL] Failed to cleanup old jobs", "error", err)
 			}
 			
-			// Clean up old rendered content (only when no active renders to prevent race conditions)
-			activeWorkers := atomic.LoadInt32(&p.metrics.ActiveWorkers)
-			if activeWorkers == 0 {
-				if err := p.renderWorker.CleanupOldContentSmart(ctx); err != nil {
-					logging.Error("[WORKER_POOL] Failed to cleanup old content", "error", err)
-				}
-			} else {
-				logging.Debug("[WORKER_POOL] Skipping content cleanup - active renders in progress", "active_workers", activeWorkers)
-			}
+			// Content cleanup is now handled by render function after successful renders
+			// This prevents timing race conditions and ensures hash comparison always works
 			
 			// Clean up orphaned files
 			if err := p.renderWorker.CleanupOrphanedFiles(ctx); err != nil {

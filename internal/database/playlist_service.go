@@ -409,6 +409,11 @@ func (pls *PlaylistService) GetActivePlaylistItemsForTime(deviceID uuid.UUID, cu
 		if !item.IsVisible {
 			continue
 		}
+		
+		// Skip items that need config updates - they shouldn't be served to devices
+		if item.PluginInstance.NeedsConfigUpdate {
+			continue
+		}
 
 		// If no schedules, item is always active
 		if len(item.Schedules) == 0 {

@@ -69,16 +69,20 @@ func (w *RenderWorker) ProcessRenderQueue(ctx context.Context) error {
 	
 	var jobIDs []JobID
 	err := w.db.WithContext(ctx).Raw(`
-		SELECT id FROM render_queues rq1
-		WHERE status = ? AND scheduled_for <= ?
-		AND id = (
-			SELECT id FROM render_queues rq2
+		SELECT rq1.id FROM render_queues rq1
+		JOIN plugin_instances pi ON rq1.plugin_instance_id = pi.id
+		WHERE rq1.status = ? AND rq1.scheduled_for <= ?
+		AND pi.needs_config_update = false
+		AND rq1.id = (
+			SELECT rq2.id FROM render_queues rq2
+			JOIN plugin_instances pi2 ON rq2.plugin_instance_id = pi2.id
 			WHERE rq2.plugin_instance_id = rq1.plugin_instance_id
 			AND rq2.status = ? AND rq2.scheduled_for <= ?
-			ORDER BY priority DESC, scheduled_for ASC
+			AND pi2.needs_config_update = false
+			ORDER BY rq2.priority DESC, rq2.scheduled_for ASC
 			LIMIT 1
 		)
-		GROUP BY plugin_instance_id, id
+		GROUP BY rq1.plugin_instance_id, rq1.id
 		LIMIT 10
 	`, "pending", time.Now(), "pending", time.Now()).Scan(&jobIDs).Error
 
@@ -206,6 +210,7 @@ func (w *RenderWorker) processRenderJob(ctx context.Context, job database.Render
 		}
 	}
 
+
 	// Mark job as completed
 	err = w.db.WithContext(ctx).Model(&job).Update("status", "completed").Error
 	if err != nil {
@@ -281,43 +286,8 @@ func (w *RenderWorker) renderForDevice(ctx context.Context, pluginInstance datab
 		return nil
 	}
 
-	// Clean up old rendered content and files for this specific device BEFORE creating new ones
-	var oldContent []database.RenderedContent
-	err = w.db.WithContext(ctx).
-		Where("plugin_instance_id = ? AND device_id = ?",
-			pluginInstance.ID, device.ID).
-		Find(&oldContent).Error
-	if err != nil {
-		logging.Error("[RENDER_WORKER] Failed to find old content", "error", err)
-	} else {
-		// Delete old image files first
-		for _, content := range oldContent {
-			var fullPath string
-			if filepath.IsAbs(content.ImagePath) {
-				fullPath = content.ImagePath
-			} else {
-				// Convert relative path to absolute
-				fullPath = filepath.Join(w.staticDir, content.ImagePath)
-			}
-			
-			if filepath.HasPrefix(fullPath, w.renderedDir) {
-				if err := os.Remove(fullPath); err != nil && !os.IsNotExist(err) {
-					logging.Error("[RENDER_WORKER] Failed to delete old image", "path", fullPath, "error", err)
-				} else if err == nil {
-					logging.Debug("[RENDER_WORKER] Deleted old image", "path", fullPath)
-				}
-			}
-		}
-		
-		// Delete database records for this device
-		err = w.db.WithContext(ctx).
-			Where("plugin_instance_id = ? AND device_id = ?",
-				pluginInstance.ID, device.ID).
-			Delete(&database.RenderedContent{}).Error
-		if err != nil {
-			logging.Error("[RENDER_WORKER] Failed to clean up old content records", "error", err)
-		}
-	}
+	// Note: Old content cleanup now happens AFTER new content is saved to avoid
+	// "record not found" errors during hash comparison
 
 	var imagePath string
 	var fileSize int64
@@ -400,13 +370,6 @@ func (w *RenderWorker) renderForDevice(ctx context.Context, pluginInstance datab
 				logging.Warn("[RENDER_WORKER] Failed to check existing content, continuing with render", 
 					"error", err, "plugin_instance_id", pluginInstance.ID)
 			}
-			
-			logging.Debug("[RENDER_WORKER] Proceeding with render - content changed or first render",
-				"plugin_instance_id", pluginInstance.ID,
-				"plugin_name", pluginInstance.Name, 
-				"device", device.FriendlyID,
-				"new_hash", newHash,
-				"had_existing", err == nil)
 
 			// Save processed image data to disk with simplified device-specific naming
 			randomString := generateRandomString(10)
@@ -485,6 +448,11 @@ func (w *RenderWorker) renderForDevice(ctx context.Context, pluginInstance datab
 		if err != nil {
 			return fmt.Errorf("failed to store rendered content: %w", err)
 		}
+		
+		// Cleanup old content for this plugin after successful save
+		if err := w.CleanupOldContentForPlugin(ctx, pluginInstance.ID); err != nil {
+			logging.Warn("[RENDER_WORKER] Failed to cleanup old content after render", "plugin_instance_id", pluginInstance.ID, "error", err)
+		}
 	}
 
 	if contentChanged {
@@ -506,17 +474,8 @@ func (w *RenderWorker) renderForDevice(ctx context.Context, pluginInstance datab
 			"existing_path", imagePath)
 	}
 
-	// Trigger immediate cleanup for this plugin after successful render
-	// This ensures timely cleanup without race conditions
-	if contentChanged {
-		go func() {
-			cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-			if err := w.CleanupOldContentForPlugin(cleanupCtx, pluginInstance.ID); err != nil {
-				logging.Warn("[RENDER_WORKER] Failed post-render cleanup", "plugin_instance_id", pluginInstance.ID, "error", err)
-			}
-		}()
-	}
+	// Cleanup is now handled synchronously after content save (above)
+	// This ensures proper timing and prevents race conditions
 
 	return nil
 }
@@ -835,6 +794,7 @@ func (w *RenderWorker) CleanupOldContentSmart(ctx context.Context) error {
 
 // CleanupOldContentForPlugin removes old content for a specific plugin using latest + 1 previous retention
 func (w *RenderWorker) CleanupOldContentForPlugin(ctx context.Context, pluginInstanceID uuid.UUID) error {
+	
 	// Find old content to cleanup: keep latest + 1 previous per device, delete the rest
 	var oldContent []database.RenderedContent
 	err := w.db.WithContext(ctx).Raw(`
@@ -890,10 +850,6 @@ func (w *RenderWorker) CleanupOldContentForPlugin(ctx context.Context, pluginIns
 		return fmt.Errorf("failed to delete old content records: %w", result.Error)
 	}
 	
-	logging.Debug("[RENDER_WORKER] Post-render cleanup completed", 
-		"plugin_instance_id", pluginInstanceID, 
-		"items_cleaned", len(oldContent), 
-		"files_deleted", filesDeleted)
 	
 	return nil
 }

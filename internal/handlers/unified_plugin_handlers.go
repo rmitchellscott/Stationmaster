@@ -202,6 +202,10 @@ type UnifiedPluginInstance struct {
 	UpdatedAt          string                 `json:"updated_at"`
 	IsUsedInPlaylists  bool                   `json:"is_used_in_playlists"`
 	
+	// Config update status
+	NeedsConfigUpdate  bool                   `json:"needs_config_update"`
+	LastSchemaVersion  int                    `json:"last_schema_version"`
+	
 	// Plugin info
 	Plugin struct {
 		ID                 string `json:"id"`
@@ -254,6 +258,8 @@ func GetPluginInstancesHandler(c *gin.Context) {
 				CreatedAt:         pluginInstance.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 				UpdatedAt:         pluginInstance.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
 				IsUsedInPlaylists: playlistCount > 0,
+				NeedsConfigUpdate: pluginInstance.NeedsConfigUpdate,
+				LastSchemaVersion: pluginInstance.LastSchemaVersion,
 			}
 
 			// Fill plugin info from PluginDefinition
@@ -337,6 +343,13 @@ func UpdatePluginInstanceHandler(c *gin.Context) {
 		}
 		if req.RefreshInterval > 0 {
 			unifiedInstance.RefreshInterval = req.RefreshInterval
+		}
+
+		// Clear config update flag and sync schema version when instance is updated
+		if unifiedInstance.NeedsConfigUpdate {
+			unifiedInstance.NeedsConfigUpdate = false
+			unifiedInstance.LastSchemaVersion = unifiedInstance.PluginDefinition.SchemaVersion
+			logging.Info("[PLUGIN_UPDATE] Clearing config update flag, syncing to schema version", "instance_id", instanceID, "schema_version", unifiedInstance.PluginDefinition.SchemaVersion)
 		}
 
 		if err := db.Save(&unifiedInstance).Error; err != nil {
@@ -837,6 +850,10 @@ func UpdatePluginDefinitionHandler(c *gin.Context) {
 		return
 	}
 
+	// Check if form fields have changed to increment schema version
+	formFieldsChanged := CompareFormFieldSchemas(pluginDefinition.FormFields, formFieldsJSON)
+	currentSchemaVersion := pluginDefinition.SchemaVersion
+
 	// Update fields
 	if req.Name != "" {
 		pluginDefinition.Name = req.Name
@@ -858,9 +875,31 @@ func UpdatePluginDefinitionHandler(c *gin.Context) {
 	pluginDefinition.EnableDarkMode = &req.EnableDarkMode
 	pluginDefinition.UpdatedAt = time.Now()
 
+	// Increment schema version if form fields changed
+	if formFieldsChanged {
+		pluginDefinition.SchemaVersion = currentSchemaVersion + 1
+		logging.Info("[PLUGIN_UPDATE] Form fields changed, incrementing schema version", "plugin_id", pluginDefinition.ID, "old_version", currentSchemaVersion, "new_version", pluginDefinition.SchemaVersion)
+	}
+
 	if err := db.Save(&pluginDefinition).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update plugin definition: " + err.Error()})
 		return
+	}
+
+	// If form fields changed, flag all instances to need config updates
+	if formFieldsChanged {
+		result := db.Model(&database.PluginInstance{}).
+			Where("plugin_definition_id = ?", pluginDefinition.ID).
+			Updates(map[string]interface{}{
+				"needs_config_update": true,
+				"updated_at": time.Now(),
+			})
+		
+		if result.Error != nil {
+			logging.Error("[PLUGIN_UPDATE] Failed to flag instances for config updates", "plugin_id", pluginDefinition.ID, "error", result.Error)
+		} else {
+			logging.Info("[PLUGIN_UPDATE] Flagged instances for config updates", "plugin_id", pluginDefinition.ID, "affected_instances", result.RowsAffected)
+		}
 	}
 
 	// Schedule renders for all instances of this updated plugin definition
@@ -1281,4 +1320,53 @@ func TestPluginDefinitionHandler(c *gin.Context) {
 		"success":     true,
 		"preview_url": previewURL,
 	})
+}
+
+// GetPluginInstanceSchemaDiffHandler returns schema differences for an instance that needs config updates
+func GetPluginInstanceSchemaDiffHandler(c *gin.Context) {
+	user, ok := auth.RequireUser(c)
+	if !ok {
+		return
+	}
+	userID := user.ID
+
+	instanceID := c.Param("id")
+	if instanceID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Instance ID is required"})
+		return
+	}
+
+	db := database.GetDB()
+	var pluginInstance database.PluginInstance
+	err := db.Preload("PluginDefinition").Where("id = ? AND user_id = ?", instanceID, userID).First(&pluginInstance).Error
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Plugin instance not found"})
+		return
+	}
+
+	// Only return diff if instance needs config update
+	if !pluginInstance.NeedsConfigUpdate {
+		c.JSON(http.StatusOK, gin.H{
+			"needs_update": false,
+			"message":      "Instance is up to date",
+		})
+		return
+	}
+
+	type SchemaDiff struct {
+		NeedsUpdate         bool   `json:"needs_update"`
+		CurrentSchemaVersion int    `json:"current_schema_version"`
+		InstanceSchemaVersion int   `json:"instance_schema_version"`
+		Message             string `json:"message"`
+		// TODO: Add more detailed field-level diff information when needed
+	}
+
+	diff := SchemaDiff{
+		NeedsUpdate:          true,
+		CurrentSchemaVersion: pluginInstance.PluginDefinition.SchemaVersion,
+		InstanceSchemaVersion: pluginInstance.LastSchemaVersion,
+		Message:              "This plugin instance needs to be updated because the form configuration has changed. Please review and update your settings.",
+	}
+
+	c.JSON(http.StatusOK, diff)
 }

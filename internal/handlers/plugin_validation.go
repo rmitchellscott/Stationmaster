@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 
@@ -313,4 +315,23 @@ func generateFieldSchema(field FormField) map[string]interface{} {
 	}
 
 	return schema
+}
+
+// CompareFormFieldSchemas compares two form field configurations and returns true if they differ
+func CompareFormFieldSchemas(oldFormFields, newFormFields []byte) bool {
+	// If one is nil and the other isn't, they're different
+	if (oldFormFields == nil) != (newFormFields == nil) {
+		return true
+	}
+	
+	// If both are nil, they're the same
+	if oldFormFields == nil && newFormFields == nil {
+		return false
+	}
+	
+	// Compare content hashes for efficient comparison
+	oldHash := sha256.Sum256(oldFormFields)
+	newHash := sha256.Sum256(newFormFields)
+	
+	return hex.EncodeToString(oldHash[:]) != hex.EncodeToString(newHash[:])
 }

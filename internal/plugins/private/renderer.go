@@ -127,22 +127,267 @@ func (r *PrivatePluginRenderer) RenderToClientSideHTML(opts RenderOptions) (stri
             }
         }, 3000);
         
+        // TRMNL Compatibility Layer Functions
+        function preprocessTRNMLTemplate(template) {
+            // Only convert TRMNL's alternative syntax at the START of Liquid expressions
+            // Look for {{ variable: filter }} patterns where there are NO pipes before the colon
+            let processed = template;
+            
+            // Pattern 1: {{ var: filter, param }} → {{ var | filter: param }}
+            // Only match if there's no | before the first :
+            processed = processed.replace(/\{\{\s*([^|}]+?):\s*([^,\s]+)\s*,\s*([^}]+?)\s*\}\}/g, '{{ $1 | $2: $3 }}');
+            
+            // Pattern 2: {{ var: filter }} → {{ var | filter }}  
+            // Only match if there's no | before the first :
+            processed = processed.replace(/\{\{\s*([^|}]+?):\s*([^}\s]+)\s*\}\}/g, '{{ $1 | $2 }}');
+            
+            return processed;
+        }
+        
+        function registerTRNMLFilters(engine) {
+            
+            // l_date: Localized date formatting with strftime syntax
+            engine.registerFilter('l_date', function(dateValue, format, locale) {
+                if (!dateValue) return '';
+                
+                // Use locale from context if not provided
+                if (!locale && this.context) {
+                    locale = this.context.get(['trmnl', 'user', 'locale']) || 'en';
+                }
+                
+                try {
+                    const date = new Date(dateValue);
+                    if (isNaN(date.getTime())) return dateValue;
+                    
+                    // Convert strftime format to Intl.DateTimeFormat options
+                    const options = convertStrftimeToIntlOptions(format || '%Y-%m-%d');
+                    return new Intl.DateTimeFormat(locale, options).format(date);
+                } catch (e) {
+                    console.warn('l_date filter error:', e);
+                    return dateValue;
+                }
+            });
+            
+            // l_word: Localize common words
+            engine.registerFilter('l_word', async function(word, locale) {
+                if (!locale && this.context) {
+                    locale = this.context.get(['trmnl', 'user', 'locale']) || 'en';
+                }
+                
+                try {
+                    const localeData = await loadLocaleData(locale);
+                    
+                    // Look for the word in the locale data
+                    if (localeData[word]) {
+                        return localeData[word];
+                    }
+                    
+                    // Fallback to hardcoded translations for common words
+                    const fallbackTranslations = getTRNMLWordTranslations();
+                    const localeKey = locale.toLowerCase().split('-')[0];
+                    
+                    if (fallbackTranslations[word] && fallbackTranslations[word][localeKey]) {
+                        return fallbackTranslations[word][localeKey];
+                    }
+                } catch (e) {
+                    console.warn('l_word filter error:', e);
+                }
+                
+                return word; // Return original if no translation found
+            });
+            
+            // json: Convert to JSON
+            engine.registerFilter('json', function(value) {
+                try {
+                    return JSON.stringify(value, null, 2);
+                } catch (e) {
+                    return String(value);
+                }
+            });
+            
+            // parse_json: Parse JSON strings
+            engine.registerFilter('parse_json', function(jsonString) {
+                try {
+                    return JSON.parse(jsonString);
+                } catch (e) {
+                    console.warn('parse_json filter error:', e);
+                    return jsonString;
+                }
+            });
+            
+            // group_by: Group array by key
+            engine.registerFilter('group_by', function(array, key) {
+                if (!Array.isArray(array)) return array;
+                
+                const grouped = {};
+                array.forEach(item => {
+                    const groupKey = item[key] || 'undefined';
+                    if (!grouped[groupKey]) grouped[groupKey] = [];
+                    grouped[groupKey].push(item);
+                });
+                
+                return Object.keys(grouped).map(k => ({
+                    name: k,
+                    items: grouped[k],
+                    size: grouped[k].length
+                }));
+            });
+            
+            // find_by: Find array item by key/value
+            engine.registerFilter('find_by', function(array, key, value) {
+                if (!Array.isArray(array)) return null;
+                return array.find(item => item[key] === value) || null;
+            });
+            
+            // sample: Random array selection
+            engine.registerFilter('sample', function(array) {
+                if (!Array.isArray(array) || array.length === 0) return null;
+                return array[Math.floor(Math.random() * array.length)];
+            });
+            
+            // number_with_delimiter: Format numbers with delimiters
+            engine.registerFilter('number_with_delimiter', function(number, delimiter) {
+                if (isNaN(number)) return number;
+                const delim = delimiter || ',';
+                return Number(number).toLocaleString().replace(/,/g, delim);
+            });
+            
+            // number_to_currency: Convert to localized currency
+            engine.registerFilter('number_to_currency', function(number, currency, locale) {
+                if (isNaN(number)) return number;
+                
+                if (!locale && this.context) {
+                    locale = this.context.get(['trmnl', 'user', 'locale']) || 'en-US';
+                }
+                
+                const options = {
+                    style: 'currency',
+                    currency: currency || 'USD'
+                };
+                
+                try {
+                    return new Intl.NumberFormat(locale, options).format(number);
+                } catch (e) {
+                    return currency + ' ' + number;
+                }
+            });
+            
+            // pluralize: Word inflection based on count
+            engine.registerFilter('pluralize', function(word, count, pluralForm) {
+                if (count === 1) return word;
+                return pluralForm || (word + 's');
+            });
+            
+            // markdown_to_html: Simple markdown conversion
+            engine.registerFilter('markdown_to_html', function(markdown) {
+                if (!markdown) return '';
+                
+                // Basic markdown conversion (extend as needed)
+                return markdown
+                    .replace(/^# (.*$)/gim, '<h1>$1</h1>')
+                    .replace(/^## (.*$)/gim, '<h2>$1</h2>')
+                    .replace(/^### (.*$)/gim, '<h3>$1</h3>')
+                    .replace(/\*\*(.*)\*\*/gim, '<strong>$1</strong>')
+                    .replace(/\*(.*)\*/gim, '<em>$1</em>')
+                    .replace(/\n/gim, '<br>');
+            });
+            
+            // append_random: Generate unique identifiers
+            engine.registerFilter('append_random', function(string) {
+                const randomSuffix = Math.random().toString(36).substring(2, 8);
+                return string + '_' + randomSuffix;
+            });
+            
+            // days_ago: Generate date X days before current
+            engine.registerFilter('days_ago', function(days) {
+                const date = new Date();
+                date.setDate(date.getDate() - parseInt(days));
+                return date.toISOString().split('T')[0];
+            });
+            
+        }
+        
+        function convertStrftimeToIntlOptions(format) {
+            // Convert common strftime patterns to Intl.DateTimeFormat options
+            const options = {};
+            
+            if (format.includes('%A')) options.weekday = 'long';
+            else if (format.includes('%a')) options.weekday = 'short';
+            
+            if (format.includes('%B')) options.month = 'long';
+            else if (format.includes('%b')) options.month = 'short';
+            else if (format.includes('%m')) options.month = '2-digit';
+            
+            if (format.includes('%d')) options.day = '2-digit';
+            else if (format.includes('%e')) options.day = 'numeric';
+            
+            if (format.includes('%Y')) options.year = 'numeric';
+            else if (format.includes('%y')) options.year = '2-digit';
+            
+            if (format.includes('%H')) options.hour = '2-digit';
+            else if (format.includes('%I')) {
+                options.hour = '2-digit';
+                options.hour12 = true;
+            }
+            
+            if (format.includes('%M')) options.minute = '2-digit';
+            if (format.includes('%S')) options.second = '2-digit';
+            
+            return options;
+        }
+        
+        // Global locale cache for translations
+        let localeCache = {};
+        
+        async function loadLocaleData(locale) {
+            // Check cache first
+            if (localeCache[locale]) {
+                return localeCache[locale];
+            }
+            
+            try {
+                const response = await fetch('/api/locales/' + locale);
+                if (response.ok) {
+                    const localeData = await response.json();
+                    localeCache[locale] = localeData;
+                    return localeData;
+                }
+            } catch (e) {
+                console.warn('Failed to load locale data for ' + locale + ':', e);
+            }
+            
+            // Fallback to English if locale fails
+            if (locale !== 'en') {
+                return loadLocaleData('en');
+            }
+            
+            return {};
+        }
+        
+        function getTRNMLWordTranslations() {
+            // This is now just a fallback - real translations come from loadLocaleData
+            return {
+                'today': { 'en': 'today' },
+                'tomorrow': { 'en': 'tomorrow' }, 
+                'yesterday': { 'en': 'yesterday' }
+            };
+        }
+        
         // Define the function BEFORE the LiquidJS script loads
         function initializeLiquid() {
-            console.log('LiquidJS loaded! Starting template rendering...');
-            console.log('liquidjs type:', typeof liquidjs);
-            console.log('Template length:', template.length);
-            console.log('Data keys:', Object.keys(data));
             
             // Use liquidjs constructor (we know this exists)
             const engine = new liquidjs.Liquid();
+            
+            // Register TRMNL custom filters for compatibility
+            registerTRNMLFilters(engine);
+            
+            // Preprocess template for TRMNL syntax compatibility
+            const processedTemplate = preprocessTRNMLTemplate(template);
         
             // Render template
-            console.log('Starting template render with liquidjs...');
-            engine.parseAndRender(template, data)
+            engine.parseAndRender(processedTemplate, data)
                 .then(renderedContent => {
-                    console.log('Template rendered successfully! Content length:', renderedContent.length);
-                    console.log('Rendered content preview:', renderedContent.substring(0, 200) + '...');
                     
                     // Process the rendered content similar to server-side processing
                     let processedTemplate = renderedContent;
@@ -189,7 +434,6 @@ func (r *PrivatePluginRenderer) RenderToClientSideHTML(opts RenderOptions) (stri
                     const hasViewClass = processedTemplate.includes('class="view') || 
                                        processedTemplate.includes("class='view");
                     
-                    console.log('Has view class:', hasViewClass);
                     
                     // Build screen classes based on options
                     let screenClasses = ['screen'];
@@ -217,7 +461,6 @@ func (r *PrivatePluginRenderer) RenderToClientSideHTML(opts RenderOptions) (stri
                     
                     // Hide loading, show output - wait for DOM to be ready
                     function waitForDOMAndShow() {
-                        console.log('Debug: Document ready state:', document.readyState);
                         
                         if (document.readyState === 'loading') {
                             // DOM still loading, wait a bit more
@@ -239,8 +482,8 @@ func (r *PrivatePluginRenderer) RenderToClientSideHTML(opts RenderOptions) (stri
                             // Load TRMNL plugins.js AFTER content is shown
                             const script = document.createElement('script');
                             script.src = 'https://usetrmnl.com/js/latest/plugins.js';
-                            script.onload = () => console.log('TRMNL plugins.js loaded successfully');
-                            script.onerror = (e) => console.log('TRMNL plugins.js failed to load:', e);
+                            script.onload = () => {}; // Plugin loaded successfully
+                            script.onerror = (e) => console.error('TRMNL plugins.js failed to load:', e);
                             document.head.appendChild(script);
                         }
                     }
@@ -251,7 +494,6 @@ func (r *PrivatePluginRenderer) RenderToClientSideHTML(opts RenderOptions) (stri
                     function waitForFontsAndComplete() {
                         // Check if fonts are loaded using document.fonts API
                         if (document.fonts && document.fonts.status === 'loaded') {
-                            console.log('Fonts loaded, setting completion signal');
                             if (document.body) {
                                 document.body.setAttribute('data-render-complete', 'true');
                             }
@@ -261,14 +503,12 @@ func (r *PrivatePluginRenderer) RenderToClientSideHTML(opts RenderOptions) (stri
                         }
                     }
                     
-                    console.log('Template rendered successfully, waiting for fonts...');
                     // Start font loading check, but also set a maximum wait time
                     waitForFontsAndComplete();
                     
                     // Fallback: set completion signal after 2 seconds even if fonts aren't loaded
                     setTimeout(() => {
                         if (document.body && !document.body.hasAttribute('data-render-complete')) {
-                            console.log('Font loading timeout, setting completion signal anyway');
                             document.body.setAttribute('data-render-complete', 'true');
                         }
                     }, 2000);

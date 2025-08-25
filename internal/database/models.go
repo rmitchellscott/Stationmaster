@@ -388,15 +388,16 @@ type PluginDefinition struct {
 	DataStrategy    *string        `gorm:"size:50" json:"data_strategy,omitempty"`      // webhook, polling, static
 	WebhookToken    *string        `gorm:"size:255;uniqueIndex" json:"webhook_token,omitempty"`
 	PollingConfig   datatypes.JSON `json:"polling_config,omitempty"`   // URLs, headers, body, intervals, etc.
-	FormFields      datatypes.JSON `json:"form_fields,omitempty"`      // YAML form field definitions converted to JSON schema
+	FormFields      datatypes.JSON `json:"form_fields"`                // YAML form field definitions converted to JSON schema
 	
 	// Publishing (for future public plugins)
 	IsPublished bool       `gorm:"default:false" json:"is_published"`
 	PublishedAt *time.Time `json:"published_at,omitempty"`
 	
 	// Screen options (for private plugins)
-	RemoveBleedMargin *bool `gorm:"default:false" json:"remove_bleed_margin,omitempty"` // Nullable for backward compatibility
-	EnableDarkMode    *bool `gorm:"default:false" json:"enable_dark_mode,omitempty"`    // Nullable for backward compatibility
+	RemoveBleedMargin *bool          `gorm:"default:false" json:"remove_bleed_margin,omitempty"` // Nullable for backward compatibility
+	EnableDarkMode    *bool          `gorm:"default:false" json:"enable_dark_mode,omitempty"`    // Nullable for backward compatibility
+	SampleData        datatypes.JSON `json:"sample_data,omitempty"`                              // JSON sample data for preview/testing
 	
 	// Meta
 	IsActive  bool      `gorm:"default:true" json:"is_active"`

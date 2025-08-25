@@ -35,7 +35,7 @@ func (p *RedirectPlugin) Description() string {
 
 // Author returns the plugin author
 func (p *RedirectPlugin) Author() string {
-	return "Stationmaster Team"
+	return "Stationmaster"
 }
 
 // Version returns the plugin version
@@ -99,7 +99,7 @@ func (p *RedirectPlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespo
 	// Get endpoint URL from settings
 	endpointURL := ctx.GetStringSetting("endpoint_url", "")
 	if endpointURL == "" {
-		return plugins.CreateErrorResponse("endpoint_url not configured"), 
+		return plugins.CreateErrorResponse("endpoint_url not configured"),
 			fmt.Errorf("endpoint_url not configured in plugin settings")
 	}
 

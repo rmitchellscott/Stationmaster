@@ -98,17 +98,17 @@ func (p *PrivatePlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespon
 		sharedMarkup = *p.definition.SharedMarkup
 	}
 
-	// Prepare template data with form fields and external data
+	// Prepare template data with external data only
 	templateData := make(map[string]interface{})
 
-	// Add form field values from instance settings
+	// Parse form field values from instance settings for polling variable substitution
+	var formFieldValues map[string]interface{}
 	if p.instance != nil && p.instance.Settings != nil {
-		var settings map[string]interface{}
-		if err := json.Unmarshal(p.instance.Settings, &settings); err == nil {
-			for key, value := range settings {
-				templateData[key] = value
-			}
+		if err := json.Unmarshal(p.instance.Settings, &formFieldValues); err != nil {
+			formFieldValues = make(map[string]interface{})
 		}
+	} else {
+		formFieldValues = make(map[string]interface{})
 	}
 
 	// Fetch external data based on data strategy
@@ -118,7 +118,7 @@ func (p *PrivatePlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespon
 		poller := NewEnhancedDataPoller()
 		pollingCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		if polledResult, err := poller.PollData(pollingCtx, p.definition, templateData); err == nil && polledResult.Success {
+		if polledResult, err := poller.PollData(pollingCtx, p.definition, formFieldValues); err == nil && polledResult.Success {
 			// Merge polling data into template data
 			for key, value := range polledResult.Data {
 				templateData[key] = value
@@ -248,11 +248,25 @@ func (p *PrivatePlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespon
 		if p.definition.PollingConfig != nil {
 			var pollingConfig map[string]interface{}
 			if err := json.Unmarshal(p.definition.PollingConfig, &pollingConfig); err == nil {
-				if url, ok := pollingConfig["url"].(string); ok {
-					pluginSettings["polling_url"] = url
-				}
-				if headers, ok := pollingConfig["headers"].(string); ok {
-					pluginSettings["polling_headers"] = headers
+				// Handle both legacy single URL format and new URLs array format
+				if urls, ok := pollingConfig["urls"].([]interface{}); ok && len(urls) > 0 {
+					// New format with URLs array
+					if urlObj, ok := urls[0].(map[string]interface{}); ok {
+						if url, ok := urlObj["url"].(string); ok {
+							pluginSettings["polling_url"] = url
+						}
+						if headers, ok := urlObj["headers"]; ok {
+							pluginSettings["polling_headers"] = fmt.Sprintf("%v", headers)
+						}
+					}
+				} else {
+					// Legacy format with single URL
+					if url, ok := pollingConfig["url"].(string); ok {
+						pluginSettings["polling_url"] = url
+					}
+					if headers, ok := pollingConfig["headers"].(string); ok {
+						pluginSettings["polling_headers"] = headers
+					}
 				}
 			}
 		}
@@ -261,6 +275,9 @@ func (p *PrivatePlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespon
 	// Add default plugin configuration (these might come from plugin definition or defaults)
 	pluginSettings["dark_mode"] = "no"
 	pluginSettings["no_screen_padding"] = "no"
+	
+	// Add custom_fields_values containing form field values (TRMNL compatibility)
+	pluginSettings["custom_fields_values"] = formFieldValues
 	
 	trmnlData["plugin_settings"] = pluginSettings
 	

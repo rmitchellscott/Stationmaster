@@ -57,6 +57,7 @@ interface PrivatePlugin {
   data_strategy: 'webhook' | 'polling' | 'static';
   polling_config?: PollingConfig;
   form_fields?: FormFieldConfig;
+  sample_data?: any;
   version: string;
   webhook_token?: string;
   remove_bleed_margin?: boolean;
@@ -75,7 +76,7 @@ interface PollingConfig {
 interface URLConfig {
   url: string;
   method: string;
-  headers: Record<string, string>; // Header key-value pairs
+  headers: string; // Headers in TRMNL format: key=value&key2=value2
   body: string;    // JSON body for POST requests
 }
 
@@ -175,22 +176,18 @@ export function PrivatePluginCreator({
   const [formFieldsValid, setFormFieldsValid] = useState<boolean>(true);
   const [formFieldsErrors, setFormFieldsErrors] = useState<string[]>([]);
 
-  // Helper function to convert legacy string headers to map format
-  const convertLegacyHeaders = (headers: any): Record<string, string> => {
+  // Helper function to convert headers to TRMNL string format
+  const convertHeadersToString = (headers: any): string => {
     if (typeof headers === 'string') {
-      const headerMap: Record<string, string> = {};
-      if (headers.trim()) {
-        const pairs = headers.split('&');
-        for (const pair of pairs) {
-          const [key, value] = pair.split('=', 2);
-          if (key && value) {
-            headerMap[key.trim()] = value.trim();
-          }
-        }
-      }
-      return headerMap;
+      return headers;
     }
-    return headers || {};
+    if (typeof headers === 'object' && headers !== null) {
+      // Convert object to string format for backward compatibility
+      return Object.entries(headers)
+        .map(([key, value]) => `${key}=${value}`)
+        .join('&');
+    }
+    return '';
   };
 
   // Initialize form with existing plugin data
@@ -198,10 +195,10 @@ export function PrivatePluginCreator({
     if (plugin) {
       setFormData(plugin);
       if (plugin.polling_config?.urls) {
-        // Convert any legacy string headers to map format
+        // Convert headers to string format
         const convertedUrls = plugin.polling_config.urls.map(url => ({
           ...url,
-          headers: convertLegacyHeaders(url.headers)
+          headers: convertHeadersToString(url.headers)
         }));
         setPollingUrls(convertedUrls);
       }
@@ -222,6 +219,9 @@ export function PrivatePluginCreator({
         version: '1.0.0',
       });
       setPollingUrls([]);
+      setFormFieldsYAML('');
+      setFormFieldsErrors([]);
+      setFormFieldsValid(true);
     }
   }, [plugin]);
 
@@ -254,7 +254,7 @@ export function PrivatePluginCreator({
     setPollingUrls(prev => [...prev, {
       url: '',
       method: 'GET',
-      headers: {},
+      headers: '',
       body: ''
     }]);
   };
@@ -354,12 +354,10 @@ export function PrivatePluginCreator({
         };
       }
 
-      // Include form fields YAML if provided
-      if (formFieldsYAML.trim()) {
-        submitData.form_fields = {
-          yaml: formFieldsYAML
-        };
-      }
+      // Always include form fields YAML (empty string clears existing form fields)
+      submitData.form_fields = {
+        yaml: formFieldsYAML.trim()
+      };
 
       onSave(submitData);
       
@@ -479,61 +477,16 @@ export function PrivatePluginCreator({
                               </Select>
                             </div>
                             <div>
-                              <Label>Headers</Label>
-                              <div className="mt-2 space-y-2">
-                                {Object.entries(urlConfig.headers).map(([key, value], headerIndex) => (
-                                  <div key={headerIndex} className="flex gap-2 items-center">
-                                    <Input
-                                      placeholder="Header name"
-                                      value={key}
-                                      onChange={(e) => {
-                                        const newHeaders = { ...urlConfig.headers };
-                                        delete newHeaders[key];
-                                        newHeaders[e.target.value] = value;
-                                        updatePollingURL(index, 'headers', newHeaders);
-                                      }}
-                                      className="flex-1"
-                                    />
-                                    <Input
-                                      placeholder="Header value"
-                                      value={value}
-                                      onChange={(e) => {
-                                        const newHeaders = { ...urlConfig.headers };
-                                        newHeaders[key] = e.target.value;
-                                        updatePollingURL(index, 'headers', newHeaders);
-                                      }}
-                                      className="flex-1"
-                                    />
-                                    <Button
-                                      type="button"
-                                      variant="outline"
-                                      size="sm"
-                                      onClick={() => {
-                                        const newHeaders = { ...urlConfig.headers };
-                                        delete newHeaders[key];
-                                        updatePollingURL(index, 'headers', newHeaders);
-                                      }}
-                                    >
-                                      <Trash2 className="w-4 h-4" />
-                                    </Button>
-                                  </div>
-                                ))}
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => {
-                                    const newHeaders = { ...urlConfig.headers, '': '' };
-                                    updatePollingURL(index, 'headers', newHeaders);
-                                  }}
-                                  className="w-full"
-                                >
-                                  <Plus className="w-4 h-4 mr-2" />
-                                  Add Header
-                                </Button>
-                              </div>
+                              <Label htmlFor={`headers-${index}`}>Headers</Label>
+                              <Input
+                                id={`headers-${index}`}
+                                value={urlConfig.headers}
+                                onChange={(e) => updatePollingURL(index, 'headers', e.target.value)}
+                                placeholder="authorization=bearer {{ api_key }}&content-type=application/json"
+                                className="mt-2"
+                              />
                               <p className="text-xs text-muted-foreground mt-1">
-                                Use {`{{ form_field_name }}`} in header values for form field substitution.
+                                Format: key=value&key2=value2. Use {`{{ form_field_name }}`} for form field substitution.
                               </p>
                             </div>
                           </div>
@@ -781,7 +734,7 @@ export function PrivatePluginCreator({
                   />
 
                   <div className="text-xs text-muted-foreground">
-                    <p>Available variables: `data.*`, `trmnl.user.*`, `trmnl.device.*`, `layout.*`, `instance_id`</p>
+                    <p>Available variables: data.*, trmnl.user.*, trmnl.device.*, layout.*</p>
                     <p>Uses TRMNL framework CSS classes. Templates are automatically wrapped with proper layout structure.</p>
                   </div>
                 </TabsContent>

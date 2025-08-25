@@ -26,10 +26,10 @@ type EnhancedPollingConfig struct {
 
 // EnhancedURLConfig represents configuration for a single URL to poll
 type EnhancedURLConfig struct {
-	URL     string            `json:"url"`
-	Headers map[string]string `json:"headers"` // Changed from string to map for better structure
-	Method  string            `json:"method"`  // GET, POST, etc.
-	Body    string            `json:"body"`    // Request body for POST requests
+	URL     string      `json:"url"`
+	Headers interface{} `json:"headers"` // Can be string (TRMNL format) or map for legacy
+	Method  string      `json:"method"`  // GET, POST, etc.
+	Body    string      `json:"body"`    // Request body for POST requests
 }
 
 // EnhancedPolledData represents the result of polling external URLs
@@ -192,8 +192,9 @@ func (p *EnhancedDataPoller) fetchURL(ctx context.Context, urlConfig EnhancedURL
 	// Set User-Agent
 	req.Header.Set("User-Agent", config.UserAgent)
 
-	// Set headers from configuration (now using map structure)
-	for key, value := range urlConfig.Headers {
+	// Set headers from configuration (handle both string and map formats)
+	headerMap := p.parseHeaders(urlConfig.Headers)
+	for key, value := range headerMap {
 		// Apply template variable substitution to header values
 		processedValue := p.replaceMergeVariables(value, templateData)
 		req.Header.Set(key, processedValue)
@@ -236,6 +237,44 @@ func (p *EnhancedDataPoller) fetchURL(ctx context.Context, urlConfig EnhancedURL
 
 	// If not JSON, return as string
 	return string(bodyBytes), nil
+}
+
+// parseHeaders converts headers from either string (TRMNL format) or map format to map[string]string
+func (p *EnhancedDataPoller) parseHeaders(headers interface{}) map[string]string {
+	headerMap := make(map[string]string)
+
+	switch h := headers.(type) {
+	case string:
+		// TRMNL format: key=value&key2=value2
+		if strings.TrimSpace(h) == "" {
+			return headerMap
+		}
+		pairs := strings.Split(h, "&")
+		for _, pair := range pairs {
+			if pair = strings.TrimSpace(pair); pair != "" {
+				parts := strings.SplitN(pair, "=", 2)
+				if len(parts) == 2 {
+					// Handle URL decoding for special characters like %3D for =
+					key := strings.TrimSpace(parts[0])
+					value := strings.TrimSpace(parts[1])
+					// Basic URL decoding for common cases
+					value = strings.ReplaceAll(value, "%3D", "=")
+					value = strings.ReplaceAll(value, "%20", " ")
+					headerMap[key] = value
+				}
+			}
+		}
+	case map[string]interface{}:
+		// Legacy object format
+		for key, value := range h {
+			headerMap[key] = fmt.Sprintf("%v", value)
+		}
+	case map[string]string:
+		// Direct map format
+		headerMap = h
+	}
+
+	return headerMap
 }
 
 // replaceMergeVariables replaces {{ variable }} placeholders with values from template data

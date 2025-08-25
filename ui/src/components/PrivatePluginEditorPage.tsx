@@ -27,6 +27,7 @@ interface PrivatePlugin {
   data_strategy: 'webhook' | 'polling' | 'static';
   polling_config?: any;
   form_fields?: any;
+  sample_data?: any;
   version: string;
   webhook_token?: string;
   remove_bleed_margin?: boolean;

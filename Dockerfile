@@ -24,6 +24,18 @@ RUN go mod download
 COPY . .
 COPY --from=ui-builder /app/ui/dist ./ui/dist
 
+# Download TRMNL locale files for i18n compatibility
+RUN apk add --no-cache git && \
+    echo "Cloning TRMNL i18n repository..." && \
+    git clone --depth 1 --filter=blob:none --sparse https://github.com/usetrmnl/trmnl-i18n.git /tmp/trmnl-i18n && \
+    cd /tmp/trmnl-i18n && \
+    git sparse-checkout set lib/trmnl/i18n/locales/custom_plugins && \
+    mkdir -p /app/internal/locales && \
+    cp lib/trmnl/i18n/locales/custom_plugins/*.yml /app/internal/locales/ && \
+    echo "Successfully copied $(ls /app/internal/locales/*.yml | wc -l) locale files" && \
+    rm -rf /tmp/trmnl-i18n && \
+    apk del git
+
 # Build args for version injection
 ARG VERSION=dev
 ARG GIT_COMMIT=unknown

@@ -151,6 +151,7 @@ func GetAvailablePluginDefinitionsHandler(c *gin.Context) {
 						"shared_markup":     "",
 						"polling_config":    nil,
 						"form_fields":       nil,
+						"sample_data":       nil,
 					}
 					
 					// Add markup fields if they exist
@@ -167,6 +168,14 @@ func GetAvailablePluginDefinitionsHandler(c *gin.Context) {
 						privatePlugin["markup_quadrant"] = *pluginDef.MarkupQuadrant
 					}
 					privatePlugin["shared_markup"] = pluginDef.SharedMarkup
+					
+					// Add sample data if it exists
+					if len(pluginDef.SampleData) > 0 {
+						var sampleDataMap map[string]interface{}
+						if err := json.Unmarshal(pluginDef.SampleData, &sampleDataMap); err == nil {
+							privatePlugin["sample_data"] = sampleDataMap
+						}
+					}
 					
 					privatePluginList = append(privatePluginList, privatePlugin)
 				}
@@ -574,6 +583,7 @@ func CreatePluginDefinitionHandler(c *gin.Context) {
 		WebhookToken      string      `json:"webhook_token"`
 		PollingConfig     interface{} `json:"polling_config"`
 		FormFields        interface{} `json:"form_fields"`
+		SampleData        interface{} `json:"sample_data"`
 		RemoveBleedMargin bool        `json:"remove_bleed_margin"`
 		EnableDarkMode    bool        `json:"enable_dark_mode"`
 	}
@@ -604,7 +614,7 @@ func CreatePluginDefinitionHandler(c *gin.Context) {
 	}
 
 	// Convert configs to JSON for storage
-	var pollingConfigJSON, formFieldsJSON []byte
+	var pollingConfigJSON, formFieldsJSON, sampleDataJSON []byte
 
 	if req.PollingConfig != nil {
 		pollingConfigJSON, err = json.Marshal(req.PollingConfig)
@@ -618,6 +628,14 @@ func CreatePluginDefinitionHandler(c *gin.Context) {
 		formFieldsJSON, err = json.Marshal(req.FormFields)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid form fields config"})
+			return
+		}
+	}
+
+	if req.SampleData != nil {
+		sampleDataJSON, err = json.Marshal(req.SampleData)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid sample data"})
 			return
 		}
 	}
@@ -652,6 +670,7 @@ func CreatePluginDefinitionHandler(c *gin.Context) {
 		WebhookToken:       &webhookToken,
 		PollingConfig:      pollingConfigJSON,
 		FormFields:         formFieldsJSON,
+		SampleData:         sampleDataJSON,
 		RemoveBleedMargin:  &req.RemoveBleedMargin,
 		EnableDarkMode:     &req.EnableDarkMode,
 		IsPublished:        false,
@@ -695,6 +714,7 @@ func UpdatePluginDefinitionHandler(c *gin.Context) {
 		DataStrategy      string      `json:"data_strategy"`
 		PollingConfig     interface{} `json:"polling_config"`
 		FormFields        interface{} `json:"form_fields"`
+		SampleData        interface{} `json:"sample_data"`
 		RemoveBleedMargin bool        `json:"remove_bleed_margin"`
 		EnableDarkMode    bool        `json:"enable_dark_mode"`
 	}
@@ -719,7 +739,7 @@ func UpdatePluginDefinitionHandler(c *gin.Context) {
 	}
 
 	// Convert configs to JSON for storage
-	var pollingConfigJSON, formFieldsJSON []byte
+	var pollingConfigJSON, formFieldsJSON, sampleDataJSON []byte
 
 	if req.PollingConfig != nil {
 		pollingConfigJSON, err = json.Marshal(req.PollingConfig)
@@ -733,6 +753,14 @@ func UpdatePluginDefinitionHandler(c *gin.Context) {
 		formFieldsJSON, err = json.Marshal(req.FormFields)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid form fields config"})
+			return
+		}
+	}
+
+	if req.SampleData != nil {
+		sampleDataJSON, err = json.Marshal(req.SampleData)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid sample data"})
 			return
 		}
 	}
@@ -763,6 +791,7 @@ func UpdatePluginDefinitionHandler(c *gin.Context) {
 	pluginDefinition.DataStrategy = &req.DataStrategy
 	pluginDefinition.PollingConfig = pollingConfigJSON
 	pluginDefinition.FormFields = formFieldsJSON
+	pluginDefinition.SampleData = sampleDataJSON
 	pluginDefinition.RemoveBleedMargin = &req.RemoveBleedMargin
 	pluginDefinition.EnableDarkMode = &req.EnableDarkMode
 	pluginDefinition.UpdatedAt = time.Now()

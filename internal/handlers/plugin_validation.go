@@ -9,10 +9,10 @@ import (
 
 // PollingURLConfig represents a single URL configuration for polling
 type PollingURLConfig struct {
-	URL     string            `json:"url" binding:"required"`
-	Method  string            `json:"method" binding:"oneof=GET POST"`
-	Headers map[string]string `json:"headers,omitempty"`
-	Body    string            `json:"body,omitempty"`
+	URL     string      `json:"url" binding:"required"`
+	Method  string      `json:"method" binding:"oneof=GET POST"`
+	Headers interface{} `json:"headers,omitempty"` // Can be string (TRMNL format) or map[string]string (legacy)
+	Body    string      `json:"body,omitempty"`
 }
 
 // PollingConfig represents the complete polling configuration
@@ -35,14 +35,14 @@ type FormField struct {
 	Default      interface{}            `json:"default" yaml:"default,omitempty"`
 	Placeholder  string                 `json:"placeholder" yaml:"placeholder,omitempty"`
 	HelpText     string                 `json:"help_text" yaml:"help_text,omitempty"`
-	Options      []FormFieldOption      `json:"options" yaml:"options,omitempty"` // For select fields
+	Options      interface{}            `json:"options" yaml:"options,omitempty"` // TRMNL format: array of maps
 	Validation   map[string]interface{} `json:"validation" yaml:"validation,omitempty"`
 }
 
-// FormFieldOption represents an option for select fields
+// FormFieldOption represents a parsed option for select fields
 type FormFieldOption struct {
-	Label string `json:"label" yaml:"label" binding:"required"`
-	Value string `json:"value" yaml:"value" binding:"required"`
+	Label string `json:"label"`
+	Value string `json:"value"`
 }
 
 // FormFieldsConfig represents the complete form fields configuration
@@ -155,6 +155,15 @@ func ValidateFormFields(formFields interface{}) (string, error) {
 
 // convertYAMLFormFieldsToJSONSchema converts YAML form field definitions to JSON schema
 func convertYAMLFormFieldsToJSONSchema(yamlContent string) (string, error) {
+	// Try to parse as direct array first (TRMNL format)
+	var fields []FormField
+	if err := yaml.Unmarshal([]byte(yamlContent), &fields); err == nil && len(fields) > 0 {
+		// Direct array format - use as is
+		config := FormFieldsConfig{Fields: fields}
+		return generateJSONSchemaFromFormFields(config)
+	}
+
+	// Fall back to wrapped format for backward compatibility
 	var config FormFieldsConfig
 	if err := yaml.Unmarshal([]byte(yamlContent), &config); err != nil {
 		return "", fmt.Errorf("invalid YAML format: %w", err)
@@ -195,6 +204,52 @@ func generateJSONSchemaFromFormFields(config FormFieldsConfig) (string, error) {
 	return string(schemaJSON), nil
 }
 
+// parseTRNMLOptions parses TRMNL format options into FormFieldOption slice
+// TRMNL format: [{'Label 1': 'value1'}, {'Label 2': 'value2'}]
+func parseTRNMLOptions(options interface{}) []FormFieldOption {
+	if options == nil {
+		return nil
+	}
+
+	// Handle slice of interfaces (YAML unmarshals to []interface{})
+	optionsSlice, ok := options.([]interface{})
+	if !ok {
+		return nil
+	}
+
+	var parsedOptions []FormFieldOption
+	for _, option := range optionsSlice {
+		// Each option should be a map with one key-value pair
+		optionMap, ok := option.(map[interface{}]interface{})
+		if !ok {
+			// Try map[string]interface{} as well
+			if strMap, ok := option.(map[string]interface{}); ok {
+				for label, value := range strMap {
+					parsedOptions = append(parsedOptions, FormFieldOption{
+						Label: label,
+						Value: fmt.Sprintf("%v", value),
+					})
+					break // Only take first key-value pair
+				}
+			}
+			continue
+		}
+
+		// Extract the single key-value pair
+		for key, value := range optionMap {
+			label := fmt.Sprintf("%v", key)
+			val := fmt.Sprintf("%v", value)
+			parsedOptions = append(parsedOptions, FormFieldOption{
+				Label: label,
+				Value: val,
+			})
+			break // Only take first key-value pair from each map
+		}
+	}
+
+	return parsedOptions
+}
+
 // generateFieldSchema generates JSON schema for a single form field
 func generateFieldSchema(field FormField) map[string]interface{} {
 	schema := map[string]interface{}{
@@ -231,10 +286,12 @@ func generateFieldSchema(field FormField) map[string]interface{} {
 		schema["format"] = "timezone"
 	case "select":
 		schema["type"] = "string"
-		if len(field.Options) > 0 {
-			enum := make([]string, len(field.Options))
-			enumNames := make([]string, len(field.Options))
-			for i, option := range field.Options {
+		// Parse TRMNL format options
+		parsedOptions := parseTRNMLOptions(field.Options)
+		if len(parsedOptions) > 0 {
+			enum := make([]string, len(parsedOptions))
+			enumNames := make([]string, len(parsedOptions))
+			for i, option := range parsedOptions {
 				enum[i] = option.Value
 				enumNames[i] = option.Label
 			}

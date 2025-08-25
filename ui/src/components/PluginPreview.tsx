@@ -46,7 +46,12 @@ interface PrivatePlugin {
   data_strategy: 'webhook' | 'polling' | 'static';
   polling_config?: any;
   form_fields?: any;
+  sample_data?: any;
   version: string;
+  author?: string;
+  webhook_token?: string;
+  remove_bleed_margin?: boolean;
+  enable_dark_mode?: boolean;
 }
 
 interface PluginPreviewProps {
@@ -131,11 +136,28 @@ export function PluginPreview({ plugin, isOpen, onClose }: PluginPreviewProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'preview' | 'data'>('preview');
+  const [savingSampleData, setSavingSampleData] = useState(false);
+  const [sampleDataSaved, setSampleDataSaved] = useState(false);
   
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   // Get the current layout option
   const currentLayout = layoutOptions.find(l => l.id === selectedLayout) || layoutOptions[0];
+
+  // Initialize sample data from plugin when plugin changes
+  useEffect(() => {
+    if (plugin) {
+      console.log('[PluginPreview] Loading plugin:', plugin.name, 'sample_data:', plugin.sample_data);
+      if (plugin.sample_data) {
+        console.log('[PluginPreview] Using plugin sample data');
+        setCustomData(JSON.stringify(plugin.sample_data, null, 2));
+      } else {
+        console.log('[PluginPreview] Using default sample data');
+        setCustomData(JSON.stringify(sampleData, null, 2));
+      }
+      setSampleDataSaved(false);
+    }
+  }, [plugin]);
 
   // Generate preview when plugin, layout, or data changes
   useEffect(() => {
@@ -242,6 +264,75 @@ export function PluginPreview({ plugin, isOpen, onClose }: PluginPreviewProps) {
 
   const resetSampleData = () => {
     setCustomData(JSON.stringify(sampleData, null, 2));
+    setSampleDataSaved(false);
+  };
+
+  const saveSampleData = async () => {
+    if (!plugin.id) {
+      setError("Plugin must be saved before sample data can be saved");
+      return;
+    }
+
+    try {
+      console.log('[PluginPreview] Starting to save sample data for plugin:', plugin.id);
+      setSavingSampleData(true);
+      setError(null);
+
+      // Parse custom data to validate it
+      let parsedData;
+      try {
+        parsedData = JSON.parse(customData);
+        console.log('[PluginPreview] Parsed sample data:', parsedData);
+      } catch (e) {
+        throw new Error("Invalid JSON in sample data");
+      }
+
+      // Update the plugin with sample data
+      const response = await fetch(`/api/plugin-definitions/${plugin.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          name: plugin.name,
+          description: plugin.description,
+          version: plugin.version,
+          author: plugin.author || '',
+          markup_full: plugin.markup_full,
+          markup_half_vert: plugin.markup_half_vert,
+          markup_half_horiz: plugin.markup_half_horiz,
+          markup_quadrant: plugin.markup_quadrant,
+          shared_markup: plugin.shared_markup,
+          data_strategy: plugin.data_strategy,
+          polling_config: plugin.polling_config,
+          form_fields: plugin.form_fields,
+          sample_data: parsedData,
+          remove_bleed_margin: plugin.remove_bleed_margin || false,
+          enable_dark_mode: plugin.enable_dark_mode || false,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('[PluginPreview] Save failed:', response.status, errorData);
+        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+      }
+
+      const responseData = await response.json();
+      console.log('[PluginPreview] Save successful:', responseData);
+      
+      setSampleDataSaved(true);
+      // Update the plugin object in memory
+      plugin.sample_data = parsedData;
+      console.log('[PluginPreview] Updated plugin object with sample data');
+      
+    } catch (err) {
+      console.error('[PluginPreview] Save error:', err);
+      setError(err instanceof Error ? err.message : "Failed to save sample data");
+    } finally {
+      setSavingSampleData(false);
+    }
   };
 
   return (
@@ -366,10 +457,30 @@ export function PluginPreview({ plugin, isOpen, onClose }: PluginPreviewProps) {
                     <div className="flex items-center gap-2">
                       <Code2 className="h-4 w-4" />
                       Sample Data
+                      {sampleDataSaved && (
+                        <span className="text-xs text-green-600 font-normal">Saved</span>
+                      )}
                     </div>
-                    <Button variant="outline" size="sm" onClick={resetSampleData}>
-                      Reset to Default
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={saveSampleData}
+                        disabled={savingSampleData}
+                      >
+                        {savingSampleData ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                            Saving...
+                          </>
+                        ) : (
+                          'Save Sample Data'
+                        )}
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={resetSampleData}>
+                        Reset to Default
+                      </Button>
+                    </div>
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -377,7 +488,10 @@ export function PluginPreview({ plugin, isOpen, onClose }: PluginPreviewProps) {
                     <Label>JSON Data (will be available as `data.*` in templates)</Label>
                     <Textarea
                       value={customData}
-                      onChange={(e) => setCustomData(e.target.value)}
+                      onChange={(e) => {
+                        setCustomData(e.target.value);
+                        setSampleDataSaved(false);
+                      }}
                       className="font-mono text-sm min-h-[300px]"
                       placeholder="Enter JSON data for testing templates..."
                     />

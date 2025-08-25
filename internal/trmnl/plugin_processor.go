@@ -205,7 +205,7 @@ func (pp *PluginProcessor) processUnifiedPluginInstance(device *database.Device,
 			}
 		} else {
 			// Since plugin doesn't require processing, we can use the response directly
-			logging.Debug("[PLUGIN] Plugin processed successfully (no processing required)", "plugin_type", plugin.Type())
+			logging.Debug("[PLUGIN] Plugin processed successfully", "plugin_type", plugin.Type())
 		}
 	}
 	

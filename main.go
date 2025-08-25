@@ -25,6 +25,7 @@ import (
 	"github.com/rmitchellscott/stationmaster/internal/config"
 	"github.com/rmitchellscott/stationmaster/internal/database"
 	"github.com/rmitchellscott/stationmaster/internal/handlers"
+	"github.com/rmitchellscott/stationmaster/internal/locales"
 	"github.com/rmitchellscott/stationmaster/internal/logging"
 	"github.com/rmitchellscott/stationmaster/internal/plugins"
 	_ "github.com/rmitchellscott/stationmaster/internal/plugins/private" // Register private plugin factory
@@ -217,6 +218,18 @@ func main() {
 		"User-Agent",
 	}
 	router.Use(cors.New(corsConfig))
+
+	// Initialize locale manager for TRMNL i18n compatibility
+	localeManager, err := locales.NewLocaleManager()
+	if err != nil {
+		logging.ErrorWithComponent(logging.ComponentStartup, "Failed to initialize locale manager", "error", err)
+		os.Exit(1)
+	}
+	logging.InfoWithComponent(logging.ComponentStartup, "Locale manager initialized", 
+		"locales", len(localeManager.GetAvailableLocales()))
+
+	// Register public locale API routes (needed by browserless for template rendering)
+	handlers.RegisterLocaleRoutes(router, localeManager)
 
 	// Public auth endpoints
 	router.POST("/api/auth/login", auth.MultiUserLoginHandler)

@@ -529,6 +529,33 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
           const prop = properties[key];
           const value = settings[key] || prop.default || "";
 
+          // Handle enum (select dropdown) FIRST - before string type
+          if (prop.enum && Array.isArray(prop.enum)) {
+            const enumNames = prop.enumNames && Array.isArray(prop.enumNames) ? prop.enumNames : prop.enum;
+            return (
+              <div key={key}>
+                <Label htmlFor={key}>{prop.title || key}</Label>
+                <Select value={value} onValueChange={(val) => onChange(key, val)}>
+                  <SelectTrigger className="mt-2">
+                    <SelectValue placeholder={prop.placeholder || "Select an option"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {prop.enum.map((option, index) => (
+                      <SelectItem key={option} value={option}>
+                        {enumNames[index] || option}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {prop.description && (
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {prop.description}
+                  </p>
+                )}
+              </div>
+            );
+          }
+
           if (prop.type === "string") {
             // Handle different string formats
             if (prop.format === "date") {
@@ -673,31 +700,6 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
             );
           }
 
-          // Handle enum (select dropdown)
-          if (prop.enum && Array.isArray(prop.enum)) {
-            return (
-              <div key={key}>
-                <Label htmlFor={key}>{prop.title || key}</Label>
-                <Select value={value} onValueChange={(val) => onChange(key, val)}>
-                  <SelectTrigger className="mt-2">
-                    <SelectValue placeholder={prop.placeholder || "Select an option"} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {prop.enum.map((option) => (
-                      <SelectItem key={option} value={option}>
-                        {option}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {prop.description && (
-                  <p className="text-sm text-muted-foreground mt-1">
-                    {prop.description}
-                  </p>
-                )}
-              </div>
-            );
-          }
 
           if (prop.type === "integer" || prop.type === "number") {
             const numValue = typeof value === 'number' ? value : (prop.default || 0);
@@ -1060,7 +1062,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                             <Button
                               onClick={() => {
                                 setSelectedPlugin(plugin);
-                                setInstanceName(`My ${plugin.name}`);
+                                setInstanceName(plugin.name);
                                 setCreateDialogError(null);
                                 
                                 try {
@@ -1127,7 +1129,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                     <Label htmlFor="instanceName" className="text-sm">Instance Name</Label>
                     <Input
                       id="instanceName"
-                      placeholder={`My ${selectedPlugin.name}`}
+                      placeholder={selectedPlugin.name}
                       value={instanceName}
                       onChange={(e) => setInstanceName(e.target.value)}
                       className="mt-1"

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -16,33 +17,37 @@ import (
 
 // CreatePrivatePluginRequest represents the request to create a private plugin
 type CreatePrivatePluginRequest struct {
-	Name            string                 `json:"name" binding:"required,min=1,max=255"`
-	Description     string                 `json:"description"`
-	MarkupFull      string                 `json:"markup_full"`
-	MarkupHalfVert  string                 `json:"markup_half_vert"`
-	MarkupHalfHoriz string                 `json:"markup_half_horiz"`
-	MarkupQuadrant  string                 `json:"markup_quadrant"`
-	SharedMarkup    string                 `json:"shared_markup"`
-	DataStrategy    string                 `json:"data_strategy" binding:"required,oneof=webhook polling merge"`
-	PollingConfig   map[string]interface{} `json:"polling_config"`
-	FormFields      map[string]interface{} `json:"form_fields"`
-	Version         string                 `json:"version"`
+	Name              string                 `json:"name" binding:"required,min=1,max=255"`
+	Description       string                 `json:"description"`
+	MarkupFull        string                 `json:"markup_full"`
+	MarkupHalfVert    string                 `json:"markup_half_vert"`
+	MarkupHalfHoriz   string                 `json:"markup_half_horiz"`
+	MarkupQuadrant    string                 `json:"markup_quadrant"`
+	SharedMarkup      string                 `json:"shared_markup"`
+	DataStrategy      string                 `json:"data_strategy" binding:"required,oneof=webhook polling static"`
+	PollingConfig     map[string]interface{} `json:"polling_config"`
+	FormFields        map[string]interface{} `json:"form_fields"`
+	Version           string                 `json:"version"`
+	RemoveBleedMargin bool                   `json:"remove_bleed_margin"`
+	EnableDarkMode    bool                   `json:"enable_dark_mode"`
 }
 
 // UpdatePrivatePluginRequest represents the request to update a private plugin
 type UpdatePrivatePluginRequest struct {
-	Name            string                 `json:"name" binding:"required,min=1,max=255"`
-	Description     string                 `json:"description"`
-	MarkupFull      string                 `json:"markup_full"`
-	MarkupHalfVert  string                 `json:"markup_half_vert"`
-	MarkupHalfHoriz string                 `json:"markup_half_horiz"`
-	MarkupQuadrant  string                 `json:"markup_quadrant"`
-	SharedMarkup    string                 `json:"shared_markup"`
-	DataStrategy    string                 `json:"data_strategy" binding:"required,oneof=webhook polling merge"`
-	PollingConfig   map[string]interface{} `json:"polling_config"`
-	FormFields      map[string]interface{} `json:"form_fields"`
-	Version         string                 `json:"version"`
-	IsPublished     bool                   `json:"is_published"`
+	Name              string                 `json:"name" binding:"required,min=1,max=255"`
+	Description       string                 `json:"description"`
+	MarkupFull        string                 `json:"markup_full"`
+	MarkupHalfVert    string                 `json:"markup_half_vert"`
+	MarkupHalfHoriz   string                 `json:"markup_half_horiz"`
+	MarkupQuadrant    string                 `json:"markup_quadrant"`
+	SharedMarkup      string                 `json:"shared_markup"`
+	DataStrategy      string                 `json:"data_strategy" binding:"required,oneof=webhook polling static"`
+	PollingConfig     map[string]interface{} `json:"polling_config"`
+	FormFields        map[string]interface{} `json:"form_fields"`
+	Version           string                 `json:"version"`
+	IsPublished       bool                   `json:"is_published"`
+	RemoveBleedMargin bool                   `json:"remove_bleed_margin"`
+	EnableDarkMode    bool                   `json:"enable_dark_mode"`
 }
 
 // PrivatePluginResponse represents the response format for private plugins  
@@ -117,18 +122,20 @@ func CreatePrivatePluginHandler(c *gin.Context) {
 
 	// Create the private plugin model
 	plugin := &database.PrivatePlugin{
-		Name:            req.Name,
-		Description:     req.Description,
-		MarkupFull:      req.MarkupFull,
-		MarkupHalfVert:  req.MarkupHalfVert,
-		MarkupHalfHoriz: req.MarkupHalfHoriz,
-		MarkupQuadrant:  req.MarkupQuadrant,
-		SharedMarkup:    req.SharedMarkup,
-		DataStrategy:    req.DataStrategy,
-		PollingConfig:   pollingConfigJSON,
-		FormFields:      formFieldsJSON,
-		Version:         req.Version,
-		IsPublished:     false, // New plugins are not published by default
+		Name:              req.Name,
+		Description:       req.Description,
+		MarkupFull:        req.MarkupFull,
+		MarkupHalfVert:    req.MarkupHalfVert,
+		MarkupHalfHoriz:   req.MarkupHalfHoriz,
+		MarkupQuadrant:    req.MarkupQuadrant,
+		SharedMarkup:      req.SharedMarkup,
+		DataStrategy:      req.DataStrategy,
+		PollingConfig:     pollingConfigJSON,
+		FormFields:        formFieldsJSON,
+		Version:           req.Version,
+		RemoveBleedMargin: req.RemoveBleedMargin,
+		EnableDarkMode:    req.EnableDarkMode,
+		IsPublished:       false, // New plugins are not published by default
 	}
 
 	// Set default version if not provided
@@ -143,6 +150,13 @@ func CreatePrivatePluginHandler(c *gin.Context) {
 	if err := service.CreatePrivatePlugin(user.ID, plugin); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create private plugin", "details": err.Error()})
 		return
+	}
+	
+	// Sync to unified plugin system
+	unifiedService := database.NewUnifiedPluginService(db)
+	if _, err := unifiedService.MigratePrivatePlugin(plugin); err != nil {
+		// Log but don't fail the creation - unified system is secondary
+		fmt.Printf("Warning: Failed to sync private plugin to unified system: %v\n", err)
 	}
 
 	// Return the created plugin with webhook token
@@ -285,18 +299,20 @@ func UpdatePrivatePluginHandler(c *gin.Context) {
 
 	// Create update model
 	updates := &database.PrivatePlugin{
-		Name:            req.Name,
-		Description:     req.Description,
-		MarkupFull:      req.MarkupFull,
-		MarkupHalfVert:  req.MarkupHalfVert,
-		MarkupHalfHoriz: req.MarkupHalfHoriz,
-		MarkupQuadrant:  req.MarkupQuadrant,
-		SharedMarkup:    req.SharedMarkup,
-		DataStrategy:    req.DataStrategy,
-		PollingConfig:   pollingConfigJSON,
-		FormFields:      formFieldsJSON,
-		Version:         req.Version,
-		IsPublished:     req.IsPublished,
+		Name:              req.Name,
+		Description:       req.Description,
+		MarkupFull:        req.MarkupFull,
+		MarkupHalfVert:    req.MarkupHalfVert,
+		MarkupHalfHoriz:   req.MarkupHalfHoriz,
+		MarkupQuadrant:    req.MarkupQuadrant,
+		SharedMarkup:      req.SharedMarkup,
+		DataStrategy:      req.DataStrategy,
+		PollingConfig:     pollingConfigJSON,
+		FormFields:        formFieldsJSON,
+		Version:           req.Version,
+		IsPublished:       req.IsPublished,
+		RemoveBleedMargin: req.RemoveBleedMargin,
+		EnableDarkMode:    req.EnableDarkMode,
 	}
 
 	db := database.GetDB()
@@ -307,11 +323,18 @@ func UpdatePrivatePluginHandler(c *gin.Context) {
 		return
 	}
 
-	// Fetch and return updated plugin
+	// Fetch updated plugin for unified system sync
 	plugin, err := service.GetPrivatePluginByID(id, user.ID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch updated plugin"})
 		return
+	}
+
+	// Sync to unified plugin system
+	unifiedService := database.NewUnifiedPluginService(db)
+	if _, err := unifiedService.MigratePrivatePlugin(plugin); err != nil {
+		// Log but don't fail the update - unified system is secondary
+		fmt.Printf("Warning: Failed to sync private plugin update to unified system: %v\n", err)
 	}
 
 	response := PrivatePluginResponse{

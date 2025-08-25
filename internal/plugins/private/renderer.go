@@ -7,14 +7,16 @@ import (
 
 // RenderOptions contains all options needed to render a private plugin to HTML
 type RenderOptions struct {
-	SharedMarkup   string
-	LayoutTemplate string
-	Data           map[string]interface{}
-	Width          int
-	Height         int
-	PluginName     string
-	InstanceID     string
-	InstanceName   string
+	SharedMarkup      string
+	LayoutTemplate    string
+	Data              map[string]interface{}
+	Width             int
+	Height            int
+	PluginName        string
+	InstanceID        string
+	InstanceName      string
+	RemoveBleedMargin bool
+	EnableDarkMode    bool
 }
 
 // PrivatePluginRenderer handles HTML generation for private plugins
@@ -95,6 +97,13 @@ func (r *PrivatePluginRenderer) RenderToClientSideHTML(opts RenderOptions) (stri
             font-size: 12px;
             white-space: pre-wrap;
         }
+        /* Dark mode inversion CSS */
+        .screen--dark-mode {
+            filter: invert(1);
+        }
+        .screen--dark-mode .image {
+            filter: invert(1);
+        }
     </style>
 </head>
 <body>
@@ -107,6 +116,8 @@ func (r *PrivatePluginRenderer) RenderToClientSideHTML(opts RenderOptions) (stri
         const template = %s;
         const data = %s;
         const instanceId = "%s";
+        const removeBleedMargin = %t;
+        const enableDarkMode = %t;
         
         // Set a timeout fallback in case anything fails
         setTimeout(() => {
@@ -180,15 +191,25 @@ func (r *PrivatePluginRenderer) RenderToClientSideHTML(opts RenderOptions) (stri
                     
                     console.log('Has view class:', hasViewClass);
                     
+                    // Build screen classes based on options
+                    let screenClasses = ['screen'];
+                    if (removeBleedMargin) {
+                        screenClasses.push('screen--no-bleed');
+                    }
+                    if (enableDarkMode) {
+                        screenClasses.push('screen--dark-mode');
+                    }
+                    const screenClassString = screenClasses.join(' ');
+                    
                     // Wrap user template in TRMNL framework structure
                     let wrappedContent;
                     if (hasViewClass) {
                         wrappedContent = '<div id="plugin-' + instanceId + '" class="environment trmnl">' +
-                            '<div class="screen">' + processedTemplate + '</div>' +
+                            '<div class="' + screenClassString + '">' + processedTemplate + '</div>' +
                             '</div>';
                     } else {
                         wrappedContent = '<div id="plugin-' + instanceId + '" class="environment trmnl">' +
-                            '<div class="screen">' +
+                            '<div class="' + screenClassString + '">' +
                             '<div class="view view--full">' + processedTemplate + '</div>' +
                             '</div>' +
                             '</div>';
@@ -304,7 +325,9 @@ func (r *PrivatePluginRenderer) RenderToClientSideHTML(opts RenderOptions) (stri
 		opts.Height,
 		string(templateJSON),
 		string(dataJSON),
-		opts.InstanceID)
+		opts.InstanceID,
+		opts.RemoveBleedMargin,
+		opts.EnableDarkMode)
 	
 	return html, nil
 }

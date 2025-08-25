@@ -262,7 +262,7 @@ type PrivatePlugin struct {
 	SharedMarkup    string         `gorm:"type:text" json:"shared_markup"`     // Shared markup prepended to all layouts
 	
 	// Data configuration
-	DataStrategy    string         `gorm:"size:50;not null;default:'webhook'" json:"data_strategy"` // webhook, merge, polling
+	DataStrategy    string         `gorm:"size:50;not null;default:'webhook'" json:"data_strategy"` // webhook, static, polling
 	WebhookToken    string         `gorm:"size:255;uniqueIndex" json:"webhook_token"`              // Unique token for webhook URL
 	PollingConfig   datatypes.JSON `json:"polling_config"`                                         // URLs, headers, body, intervals, etc.
 	FormFields      datatypes.JSON `json:"form_fields"`                                            // YAML form field definitions converted to JSON schema
@@ -270,6 +270,10 @@ type PrivatePlugin struct {
 	// Publishing
 	IsPublished     bool           `gorm:"default:false" json:"is_published"` // Available as recipe
 	Version         string         `gorm:"size:20;default:'1.0.0'" json:"version"`
+	
+	// Screen options
+	RemoveBleedMargin bool          `gorm:"default:false" json:"remove_bleed_margin"` // Apply screen--no-bleed class
+	EnableDarkMode   bool           `gorm:"default:false" json:"enable_dark_mode"`    // Apply screen--dark-mode class with inversion
 	
 	// Timestamps
 	CreatedAt       time.Time      `json:"created_at"`
@@ -381,7 +385,7 @@ type PluginDefinition struct {
 	MarkupHalfHoriz *string        `gorm:"type:text" json:"markup_half_horiz,omitempty"`
 	MarkupQuadrant  *string        `gorm:"type:text" json:"markup_quadrant,omitempty"`
 	SharedMarkup    *string        `gorm:"type:text" json:"shared_markup,omitempty"`
-	DataStrategy    *string        `gorm:"size:50" json:"data_strategy,omitempty"`      // webhook, polling, merge
+	DataStrategy    *string        `gorm:"size:50" json:"data_strategy,omitempty"`      // webhook, polling, static
 	WebhookToken    *string        `gorm:"size:255;uniqueIndex" json:"webhook_token,omitempty"`
 	PollingConfig   datatypes.JSON `json:"polling_config,omitempty"`   // URLs, headers, body, intervals, etc.
 	FormFields      datatypes.JSON `json:"form_fields,omitempty"`      // YAML form field definitions converted to JSON schema
@@ -389,6 +393,10 @@ type PluginDefinition struct {
 	// Publishing (for future public plugins)
 	IsPublished bool       `gorm:"default:false" json:"is_published"`
 	PublishedAt *time.Time `json:"published_at,omitempty"`
+	
+	// Screen options (for private plugins)
+	RemoveBleedMargin *bool `gorm:"default:false" json:"remove_bleed_margin,omitempty"` // Nullable for backward compatibility
+	EnableDarkMode    *bool `gorm:"default:false" json:"enable_dark_mode,omitempty"`    // Nullable for backward compatibility
 	
 	// Meta
 	IsActive  bool      `gorm:"default:true" json:"is_active"`

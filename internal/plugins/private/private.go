@@ -134,9 +134,9 @@ func (p *PrivatePlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespon
 	case dataStrategy != nil && *dataStrategy == "webhook":
 		// Webhook data is handled separately via webhook endpoints
 		// No additional data fetching needed here
-	case dataStrategy != nil && *dataStrategy == "merge":
-		// TODO: Implement plugin merge functionality
-		fmt.Printf("Plugin merge data strategy not yet implemented for plugin %s\n", p.definition.ID)
+	case dataStrategy != nil && *dataStrategy == "static":
+		// Static strategy uses only form fields and trmnl struct - no external data
+		// No additional data fetching needed here
 	}
 
 	// Create TRMNL data structure to match official API
@@ -266,17 +266,29 @@ func (p *PrivatePlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespon
 	
 	templateData["trmnl"] = trmnlData
 	
+	// Get screen options from definition, defaulting to false if nil
+	removeBleedMargin := false
+	if p.definition.RemoveBleedMargin != nil {
+		removeBleedMargin = *p.definition.RemoveBleedMargin
+	}
+	enableDarkMode := false
+	if p.definition.EnableDarkMode != nil {
+		enableDarkMode = *p.definition.EnableDarkMode
+	}
+	
 	// Use the private plugin renderer service with client-side LiquidJS
 	htmlRenderer := NewPrivatePluginRenderer()
 	html, err := htmlRenderer.RenderToClientSideHTML(RenderOptions{
-		SharedMarkup:   sharedMarkup,
-		LayoutTemplate: *p.definition.MarkupFull,
-		Data:           templateData,
-		Width:          ctx.Device.DeviceModel.ScreenWidth,
-		Height:         ctx.Device.DeviceModel.ScreenHeight,
-		PluginName:     p.definition.Name,
-		InstanceID:     instanceID,
-		InstanceName:   p.Name(),
+		SharedMarkup:      sharedMarkup,
+		LayoutTemplate:    *p.definition.MarkupFull,
+		Data:              templateData,
+		Width:             ctx.Device.DeviceModel.ScreenWidth,
+		Height:            ctx.Device.DeviceModel.ScreenHeight,
+		PluginName:        p.definition.Name,
+		InstanceID:        instanceID,
+		InstanceName:      p.Name(),
+		RemoveBleedMargin: removeBleedMargin,
+		EnableDarkMode:    enableDarkMode,
 	})
 	if err != nil {
 		return plugins.CreateErrorResponse(fmt.Sprintf("Failed to render template: %v", err)),

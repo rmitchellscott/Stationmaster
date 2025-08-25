@@ -560,20 +560,22 @@ func CreatePluginDefinitionHandler(c *gin.Context) {
 	userID := user.ID
 
 	type CreatePluginRequest struct {
-		PluginType       string      `json:"plugin_type" binding:"required"`
-		Name             string      `json:"name" binding:"required"`
-		Description      string      `json:"description"`
-		Version          string      `json:"version"`
-		Author           string      `json:"author"`
-		MarkupFull       string      `json:"markup_full"`
-		MarkupHalfVert   string      `json:"markup_half_vert"`
-		MarkupHalfHoriz  string      `json:"markup_half_horiz"`
-		MarkupQuadrant   string      `json:"markup_quadrant"`
-		SharedMarkup     string      `json:"shared_markup"`
-		DataStrategy     string      `json:"data_strategy"`
-		WebhookToken     string      `json:"webhook_token"`
-		PollingConfig    interface{} `json:"polling_config"`
-		FormFields       interface{} `json:"form_fields"`
+		PluginType        string      `json:"plugin_type" binding:"required"`
+		Name              string      `json:"name" binding:"required"`
+		Description       string      `json:"description"`
+		Version           string      `json:"version"`
+		Author            string      `json:"author"`
+		MarkupFull        string      `json:"markup_full"`
+		MarkupHalfVert    string      `json:"markup_half_vert"`
+		MarkupHalfHoriz   string      `json:"markup_half_horiz"`
+		MarkupQuadrant    string      `json:"markup_quadrant"`
+		SharedMarkup      string      `json:"shared_markup"`
+		DataStrategy      string      `json:"data_strategy"`
+		WebhookToken      string      `json:"webhook_token"`
+		PollingConfig     interface{} `json:"polling_config"`
+		FormFields        interface{} `json:"form_fields"`
+		RemoveBleedMargin bool        `json:"remove_bleed_margin"`
+		EnableDarkMode    bool        `json:"enable_dark_mode"`
 	}
 
 	var req CreatePluginRequest
@@ -650,6 +652,8 @@ func CreatePluginDefinitionHandler(c *gin.Context) {
 		WebhookToken:       &webhookToken,
 		PollingConfig:      pollingConfigJSON,
 		FormFields:         formFieldsJSON,
+		RemoveBleedMargin:  &req.RemoveBleedMargin,
+		EnableDarkMode:     &req.EnableDarkMode,
 		IsPublished:        false,
 		IsActive:           true,
 		CreatedAt:          time.Now(),
@@ -679,18 +683,20 @@ func UpdatePluginDefinitionHandler(c *gin.Context) {
 	}
 
 	type UpdatePluginRequest struct {
-		Name             string      `json:"name"`
-		Description      string      `json:"description"`
-		Version          string      `json:"version"`
-		Author           string      `json:"author"`
-		MarkupFull       string      `json:"markup_full"`
-		MarkupHalfVert   string      `json:"markup_half_vert"`
-		MarkupHalfHoriz  string      `json:"markup_half_horiz"`
-		MarkupQuadrant   string      `json:"markup_quadrant"`
-		SharedMarkup     string      `json:"shared_markup"`
-		DataStrategy     string      `json:"data_strategy"`
-		PollingConfig    interface{} `json:"polling_config"`
-		FormFields       interface{} `json:"form_fields"`
+		Name              string      `json:"name"`
+		Description       string      `json:"description"`
+		Version           string      `json:"version"`
+		Author            string      `json:"author"`
+		MarkupFull        string      `json:"markup_full"`
+		MarkupHalfVert    string      `json:"markup_half_vert"`
+		MarkupHalfHoriz   string      `json:"markup_half_horiz"`
+		MarkupQuadrant    string      `json:"markup_quadrant"`
+		SharedMarkup      string      `json:"shared_markup"`
+		DataStrategy      string      `json:"data_strategy"`
+		PollingConfig     interface{} `json:"polling_config"`
+		FormFields        interface{} `json:"form_fields"`
+		RemoveBleedMargin bool        `json:"remove_bleed_margin"`
+		EnableDarkMode    bool        `json:"enable_dark_mode"`
 	}
 
 	var req UpdatePluginRequest
@@ -757,6 +763,8 @@ func UpdatePluginDefinitionHandler(c *gin.Context) {
 	pluginDefinition.DataStrategy = &req.DataStrategy
 	pluginDefinition.PollingConfig = pollingConfigJSON
 	pluginDefinition.FormFields = formFieldsJSON
+	pluginDefinition.RemoveBleedMargin = &req.RemoveBleedMargin
+	pluginDefinition.EnableDarkMode = &req.EnableDarkMode
 	pluginDefinition.UpdatedAt = time.Now()
 
 	if err := db.Save(&pluginDefinition).Error; err != nil {

@@ -138,7 +138,7 @@ func (f *UnifiedPluginFactory) validatePrivateDefinition(def *database.PluginDef
 	validStrategies := map[string]bool{
 		"webhook": true,
 		"polling": true,
-		"merge":   true,
+		"static":  true,
 	}
 	
 	if !validStrategies[*def.DataStrategy] {

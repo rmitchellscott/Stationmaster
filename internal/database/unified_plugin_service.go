@@ -352,6 +352,8 @@ func (s *UnifiedPluginService) MigratePrivatePlugin(legacyPlugin *PrivatePlugin)
 		WebhookToken:       &legacyPlugin.WebhookToken,
 		PollingConfig:      legacyPlugin.PollingConfig,
 		FormFields:         legacyPlugin.FormFields,
+		RemoveBleedMargin:  &legacyPlugin.RemoveBleedMargin,
+		EnableDarkMode:     &legacyPlugin.EnableDarkMode,
 		IsPublished:        legacyPlugin.IsPublished,
 		IsActive:           true,
 		CreatedAt:          legacyPlugin.CreatedAt,

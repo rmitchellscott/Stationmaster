@@ -24,11 +24,13 @@ interface PrivatePlugin {
   markup_half_horiz: string;
   markup_quadrant: string;
   shared_markup: string;
-  data_strategy: 'webhook' | 'polling' | 'merge';
+  data_strategy: 'webhook' | 'polling' | 'static';
   polling_config?: any;
   form_fields?: any;
   version: string;
   webhook_token?: string;
+  remove_bleed_margin?: boolean;
+  enable_dark_mode?: boolean;
 }
 
 export function PrivatePluginEditorPage() {

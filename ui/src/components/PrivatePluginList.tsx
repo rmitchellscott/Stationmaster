@@ -58,7 +58,7 @@ interface PrivatePlugin {
   markup_half_horiz: string;
   markup_quadrant: string;
   shared_markup: string;
-  data_strategy: 'webhook' | 'polling' | 'merge';
+  data_strategy: 'webhook' | 'polling' | 'static';
   polling_config?: any;
   form_fields?: any;
   version: string;
@@ -153,7 +153,7 @@ export function PrivatePluginList({
         return <Webhook className="h-4 w-4" />;
       case 'polling':
         return <Globe className="h-4 w-4" />;
-      case 'merge':
+      case 'static':
         return <Database className="h-4 w-4" />;
       default:
         return <Code2 className="h-4 w-4" />;

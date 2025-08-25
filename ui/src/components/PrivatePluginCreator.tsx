@@ -19,6 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
 import {
   SquareIcon,
   ColumnsIcon,
@@ -53,11 +54,13 @@ interface PrivatePlugin {
   markup_half_horiz: string;
   markup_quadrant: string;
   shared_markup: string;
-  data_strategy: 'webhook' | 'polling' | 'merge';
+  data_strategy: 'webhook' | 'polling' | 'static';
   polling_config?: PollingConfig;
   form_fields?: FormFieldConfig;
   version: string;
   webhook_token?: string;
+  remove_bleed_margin?: boolean;
+  enable_dark_mode?: boolean;
 }
 
 interface PollingConfig {
@@ -146,6 +149,8 @@ export function PrivatePluginCreator({
     shared_markup: '',
     data_strategy: 'webhook',
     version: '1.0.0',
+    remove_bleed_margin: false,
+    enable_dark_mode: false,
   });
 
   // UI state
@@ -563,21 +568,21 @@ export function PrivatePluginCreator({
           </Card>
         );
 
-      case 'merge':
+      case 'static':
         return (
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Database className="h-4 w-4" />
-                Plugin Merge Configuration
+                Static Configuration
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
                 <div>
-                  <Label>Source Plugins</Label>
+                  <Label>Data Source</Label>
                   <p className="text-sm text-muted-foreground mt-1">
-                    Coming soon: Select other plugins to merge data from
+                    Uses only form fields and TRMNL device/user data - no external data sources
                   </p>
                 </div>
               </div>
@@ -706,7 +711,7 @@ export function PrivatePluginCreator({
                   <SelectContent>
                     <SelectItem value="webhook">Webhook</SelectItem>
                     <SelectItem value="polling">Polling</SelectItem>
-                    <SelectItem value="merge">Plugin Merge</SelectItem>
+                    <SelectItem value="static">Static</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -716,42 +721,6 @@ export function PrivatePluginCreator({
 
         {/* Data Strategy Configuration */}
         {renderDataStrategyConfig()}
-
-        {/* Form Fields Configuration */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Shield className="h-4 w-4" />
-              Plugin Settings Form
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <p className="text-sm text-muted-foreground">
-                Define form fields that users will fill out when configuring instances of your plugin. 
-                These values will be available in your templates as merge variables.
-              </p>
-              
-              {formFieldsErrors.length > 0 && (
-                <Alert variant="destructive">
-                  <AlertTriangle className="h-4 w-4" />
-                  <AlertDescription>
-                    Form fields validation failed. Please fix the errors before saving.
-                  </AlertDescription>
-                </Alert>
-              )}
-              
-              <FormFieldBuilder
-                value={formFieldsYAML}
-                onChange={setFormFieldsYAML}
-                onValidationChange={(isValid: boolean, errors: string[]) => {
-                  setFormFieldsValid(isValid);
-                  setFormFieldsErrors(errors);
-                }}
-              />
-            </div>
-          </CardContent>
-        </Card>
 
         {/* Layout Templates */}
         <Card>
@@ -818,6 +787,77 @@ export function PrivatePluginCreator({
                 </TabsContent>
               ))}
             </Tabs>
+          </CardContent>
+        </Card>
+
+        {/* Screen Options */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Screen Options</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <Label htmlFor="remove-bleed-margin">Remove Bleed Margin</Label>
+                <p className="text-sm text-muted-foreground">
+                  Removes default padding and margins, allowing content to extend to screen edges
+                </p>
+              </div>
+              <Switch
+                id="remove-bleed-margin"
+                checked={formData.remove_bleed_margin || false}
+                onCheckedChange={(checked) => handleInputChange('remove_bleed_margin', checked)}
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <Label htmlFor="enable-dark-mode">Enable Dark Mode</Label>
+                <p className="text-sm text-muted-foreground">
+                  Inverts black/white pixels. Will modify entire screen. Add class "image" to img tags as needed.
+                </p>
+              </div>
+              <Switch
+                id="enable-dark-mode"
+                checked={formData.enable_dark_mode || false}
+                onCheckedChange={(checked) => handleInputChange('enable_dark_mode', checked)}
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Plugin Settings Form */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Shield className="h-4 w-4" />
+              Plugin Settings Form
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Define form fields that users will fill out when configuring instances of your plugin. 
+                These values will be available in your templates as merge variables.
+              </p>
+              
+              {formFieldsErrors.length > 0 && (
+                <Alert variant="destructive">
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertDescription>
+                    Form fields validation failed. Please fix the errors before saving.
+                  </AlertDescription>
+                </Alert>
+              )}
+              
+              <FormFieldBuilder
+                value={formFieldsYAML}
+                onChange={setFormFieldsYAML}
+                onValidationChange={(isValid: boolean, errors: string[]) => {
+                  setFormFieldsValid(isValid);
+                  setFormFieldsErrors(errors);
+                }}
+              />
+            </div>
           </CardContent>
         </Card>
       </div>

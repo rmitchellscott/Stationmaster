@@ -479,6 +479,70 @@ func RunMigrations(logPrefix string) error {
 				return nil
 			},
 		},
+		{
+			ID: "20250825_add_screen_options_to_plugin_definitions",
+			Migrate: func(tx *gorm.DB) error {
+				logging.Info("[MIGRATION] Adding remove_bleed_margin and enable_dark_mode fields to plugin_definitions")
+				
+				// Add remove_bleed_margin boolean field
+				if err := tx.Exec("ALTER TABLE plugin_definitions ADD COLUMN remove_bleed_margin BOOLEAN DEFAULT FALSE").Error; err != nil {
+					return fmt.Errorf("failed to add remove_bleed_margin column: %w", err)
+				}
+				
+				// Add enable_dark_mode boolean field
+				if err := tx.Exec("ALTER TABLE plugin_definitions ADD COLUMN enable_dark_mode BOOLEAN DEFAULT FALSE").Error; err != nil {
+					return fmt.Errorf("failed to add enable_dark_mode column: %w", err)
+				}
+				
+				logging.Info("[MIGRATION] Successfully added screen option fields to plugin_definitions")
+				return nil
+			},
+			Rollback: func(tx *gorm.DB) error {
+				logging.Info("[MIGRATION] Removing screen option fields from plugin_definitions")
+				
+				if err := tx.Exec("ALTER TABLE plugin_definitions DROP COLUMN IF EXISTS enable_dark_mode").Error; err != nil {
+					return fmt.Errorf("failed to drop enable_dark_mode column: %w", err)
+				}
+				
+				if err := tx.Exec("ALTER TABLE plugin_definitions DROP COLUMN IF EXISTS remove_bleed_margin").Error; err != nil {
+					return fmt.Errorf("failed to drop remove_bleed_margin column: %w", err)
+				}
+				
+				return nil
+			},
+		},
+		{
+			ID: "20250825_add_screen_options_to_private_plugins",
+			Migrate: func(tx *gorm.DB) error {
+				logging.Info("[MIGRATION] Adding remove_bleed_margin and enable_dark_mode fields to private_plugins")
+				
+				// Add remove_bleed_margin boolean field
+				if err := tx.Exec("ALTER TABLE private_plugins ADD COLUMN remove_bleed_margin BOOLEAN DEFAULT FALSE").Error; err != nil {
+					return fmt.Errorf("failed to add remove_bleed_margin column: %w", err)
+				}
+				
+				// Add enable_dark_mode boolean field
+				if err := tx.Exec("ALTER TABLE private_plugins ADD COLUMN enable_dark_mode BOOLEAN DEFAULT FALSE").Error; err != nil {
+					return fmt.Errorf("failed to add enable_dark_mode column: %w", err)
+				}
+				
+				logging.Info("[MIGRATION] Successfully added screen option fields to private_plugins")
+				return nil
+			},
+			Rollback: func(tx *gorm.DB) error {
+				logging.Info("[MIGRATION] Removing screen option fields from private_plugins")
+				
+				if err := tx.Exec("ALTER TABLE private_plugins DROP COLUMN IF EXISTS enable_dark_mode").Error; err != nil {
+					return fmt.Errorf("failed to drop enable_dark_mode column: %w", err)
+				}
+				
+				if err := tx.Exec("ALTER TABLE private_plugins DROP COLUMN IF EXISTS remove_bleed_margin").Error; err != nil {
+					return fmt.Errorf("failed to drop remove_bleed_margin column: %w", err)
+				}
+				
+				return nil
+			},
+		},
 	}
 
 	// Create migrator with our migrations

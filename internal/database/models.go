@@ -17,6 +17,8 @@ type User struct {
 	IsAdmin             bool      `gorm:"default:false" json:"is_admin"`
 	IsActive            bool      `gorm:"default:true" json:"is_active"`
 	OnboardingCompleted bool      `gorm:"default:false" json:"onboarding_completed"`
+	FirstName           string    `gorm:"size:100" json:"first_name,omitempty"`   // User's first name
+	LastName            string    `gorm:"size:100" json:"last_name,omitempty"`    // User's last name
 	Timezone            string    `gorm:"size:50;default:'UTC'" json:"timezone"` // User's preferred timezone (IANA format)
 	Locale              string    `gorm:"size:10;default:'en-US'" json:"locale"` // User's preferred locale
 

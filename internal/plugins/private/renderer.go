@@ -3,7 +3,6 @@ package private
 import (
 	"encoding/json"
 	"fmt"
-	"time"
 )
 
 // RenderOptions contains all options needed to render a private plugin to HTML
@@ -15,6 +14,7 @@ type RenderOptions struct {
 	Height         int
 	PluginName     string
 	InstanceID     string
+	InstanceName   string
 }
 
 // PrivatePluginRenderer handles HTML generation for private plugins
@@ -42,14 +42,11 @@ func (r *PrivatePluginRenderer) RenderToClientSideHTML(opts RenderOptions) (stri
 		return "", fmt.Errorf("no template content provided")
 	}
 	
-	// Add timestamp to template data for client-side access
+	// Use template data as-is - TRMNL structure is already complete
 	templateData := make(map[string]interface{})
 	for k, v := range opts.Data {
 		templateData[k] = v
 	}
-	templateData["timestamp"] = time.Now().Format("2006-01-02T15:04:05Z07:00")
-	templateData["plugin_name"] = opts.PluginName
-	templateData["instance_id"] = opts.InstanceID
 	
 	// JSON encode template and data for JavaScript
 	templateJSON, err := json.Marshal(combinedTemplate)

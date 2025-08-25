@@ -53,6 +53,8 @@ export function UserSettingsPage() {
 
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [timezone, setTimezone] = useState("");
   const [timezoneOpen, setTimezoneOpen] = useState(false);
   const [locale, setLocale] = useState("");
@@ -61,6 +63,8 @@ export function UserSettingsPage() {
   const [originalValues, setOriginalValues] = useState({
     username: "",
     email: "",
+    firstName: "",
+    lastName: "",
     timezone: "",
     locale: ""
   });
@@ -163,6 +167,8 @@ export function UserSettingsPage() {
     if (user) {
       setUsername(user.username);
       setEmail(user.email);
+      setFirstName(user.first_name || "");
+      setLastName(user.last_name || "");
       const userTimezone = user.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
       setTimezone(userTimezone);
       const userLocale = user.locale || navigator.language || 'en-US';
@@ -171,6 +177,8 @@ export function UserSettingsPage() {
       setOriginalValues({
         username: user.username,
         email: user.email,
+        firstName: user.first_name || "",
+        lastName: user.last_name || "",
         timezone: userTimezone,
         locale: userLocale
       });
@@ -190,12 +198,16 @@ export function UserSettingsPage() {
       
       setUsername("");
       setEmail("");
+      setFirstName("");
+      setLastName("");
       setTimezone("");
       setLocale("");
       
       setOriginalValues({
         username: "",
         email: "",
+        firstName: "",
+        lastName: "",
         timezone: "",
         locale: ""
       });
@@ -213,6 +225,8 @@ export function UserSettingsPage() {
     return (
       (!config?.oidcEnabled && username !== originalValues.username) ||
       (!config?.oidcEnabled && email !== originalValues.email) ||
+      firstName !== originalValues.firstName ||
+      lastName !== originalValues.lastName ||
       timezone !== originalValues.timezone ||
       locale !== originalValues.locale
     );
@@ -231,6 +245,8 @@ export function UserSettingsPage() {
         credentials: "include",
         body: JSON.stringify({
           ...(config?.oidcEnabled ? {} : { username, email }),
+          first_name: firstName,
+          last_name: lastName,
           timezone,
           locale
         }),
@@ -240,6 +256,8 @@ export function UserSettingsPage() {
         setOriginalValues({
           username,
           email,
+          firstName,
+          lastName,
           timezone,
           locale
         });
@@ -448,6 +466,26 @@ export function UserSettingsPage() {
                         className="mt-2"
                       />
                     )}
+                  </div>
+                  <div>
+                    <Label htmlFor="firstName">First Name</Label>
+                    <Input
+                      id="firstName"
+                      value={firstName}
+                      onChange={(e) => setFirstName(e.target.value)}
+                      className="mt-2"
+                      placeholder="Enter your first name"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="lastName">Last Name</Label>
+                    <Input
+                      id="lastName"
+                      value={lastName}
+                      onChange={(e) => setLastName(e.target.value)}
+                      className="mt-2"
+                      placeholder="Enter your last name"
+                    />
                   </div>
 
                   <div>

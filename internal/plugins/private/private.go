@@ -9,6 +9,7 @@ import (
 	"github.com/rmitchellscott/stationmaster/internal/database"
 	"github.com/rmitchellscott/stationmaster/internal/plugins"
 	"github.com/rmitchellscott/stationmaster/internal/rendering"
+	"github.com/rmitchellscott/stationmaster/internal/utils"
 )
 
 // PrivatePlugin implements the Plugin interface for user-created private plugins
@@ -138,23 +139,53 @@ func (p *PrivatePlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespon
 		fmt.Printf("Plugin merge data strategy not yet implemented for plugin %s\n", p.definition.ID)
 	}
 
-	// Add TRMNL global variables
-	trmnlData := map[string]interface{}{
-		"timestamp": time.Now().Format("2006-01-02 15:04:05"),
-		"date":      time.Now().Format("2006-01-02"),
-		"time":      time.Now().Format("15:04:05"),
-		"device_id": ctx.Device.ID.String(),
+	// Create TRMNL data structure to match official API
+	trmnlData := map[string]interface{}{}
+
+	// Add system information - Unix timestamp
+	systemData := map[string]interface{}{
+		"timestamp_utc": time.Now().Unix(),
 	}
-	
-	// Add user-specific properties if user is available
+	trmnlData["system"] = systemData
+
+	// Add device information if available
+	if ctx.Device != nil {
+		deviceData := map[string]interface{}{
+			"friendly_id": ctx.Device.FriendlyID,
+		}
+
+		// Add device model dimensions if available
+		if ctx.Device.DeviceModel != nil {
+			deviceData["width"] = ctx.Device.DeviceModel.ScreenWidth
+			deviceData["height"] = ctx.Device.DeviceModel.ScreenHeight
+		}
+
+		// Add battery information if available
+		if ctx.Device.BatteryVoltage > 0 {
+			batteryPercentage := utils.CalculateBatteryPercentage(ctx.Device.BatteryVoltage)
+			deviceData["percent_charged"] = float64(batteryPercentage)
+		}
+
+		// Add WiFi information if available  
+		if ctx.Device.RSSI != 0 {
+			wifiPercentage := utils.CalculateWiFiPercentage(ctx.Device.RSSI)
+			deviceData["wifi_strength"] = wifiPercentage
+		}
+
+		trmnlData["device"] = deviceData
+	}
+
+	// Add user information if available
 	if ctx.User != nil {
 		// Calculate UTC offset in seconds
 		utcOffset := int64(0)
-		locale := "en-US" // Default locale
-		timezone := "UTC" // Default timezone
+		locale := "en" // Default locale
+		timezone := "UTC" // Default timezone IANA
+		timezoneFriendly := "UTC" // Default friendly name
 		
 		if ctx.User.Timezone != "" {
 			timezone = ctx.User.Timezone
+			timezoneFriendly = utils.GetTimezoneFriendlyName(ctx.User.Timezone)
 			// Parse timezone and calculate UTC offset
 			loc, err := time.LoadLocation(ctx.User.Timezone)
 			if err == nil {
@@ -164,15 +195,74 @@ func (p *PrivatePlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespon
 		}
 		
 		if ctx.User.Locale != "" {
-			locale = ctx.User.Locale
+			// Convert "en-US" to "en" format if needed
+			if len(ctx.User.Locale) >= 2 {
+				locale = ctx.User.Locale[:2]
+			}
+		}
+
+		// Build user full name
+		firstName := ctx.User.FirstName
+		lastName := ctx.User.LastName
+		fullName := ""
+		if firstName != "" && lastName != "" {
+			fullName = firstName + " " + lastName
+		} else if firstName != "" {
+			fullName = firstName
+		} else if lastName != "" {
+			fullName = lastName
+		} else {
+			// Fallback to username if no names available
+			fullName = ctx.User.Username
+		}
+
+		userData := map[string]interface{}{
+			"name":           fullName,
+			"first_name":     firstName,
+			"last_name":      lastName,
+			"locale":         locale,
+			"time_zone":      timezoneFriendly,
+			"time_zone_iana": timezone,
+			"utc_offset":     utcOffset,
 		}
 		
-		trmnlData["user"] = map[string]interface{}{
-			"utc_offset":      utcOffset,
-			"time_zone_iana":  timezone,
-			"locale":          locale,
+		trmnlData["user"] = userData
+	}
+
+	// Add plugin settings - this contains plugin metadata, not user form data
+	pluginSettings := map[string]interface{}{
+		"instance_name": p.Name(),
+	}
+	
+	// Add data strategy if available
+	if p.definition.DataStrategy != nil {
+		pluginSettings["strategy"] = *p.definition.DataStrategy
+	}
+	
+	// Add polling config if this is a polling plugin
+	if p.definition.DataStrategy != nil && *p.definition.DataStrategy == "polling" {
+		pluginSettings["polling_url"] = ""
+		pluginSettings["polling_headers"] = ""
+		
+		// Parse polling config if available
+		if p.definition.PollingConfig != nil {
+			var pollingConfig map[string]interface{}
+			if err := json.Unmarshal(p.definition.PollingConfig, &pollingConfig); err == nil {
+				if url, ok := pollingConfig["url"].(string); ok {
+					pluginSettings["polling_url"] = url
+				}
+				if headers, ok := pollingConfig["headers"].(string); ok {
+					pluginSettings["polling_headers"] = headers
+				}
+			}
 		}
 	}
+	
+	// Add default plugin configuration (these might come from plugin definition or defaults)
+	pluginSettings["dark_mode"] = "no"
+	pluginSettings["no_screen_padding"] = "no"
+	
+	trmnlData["plugin_settings"] = pluginSettings
 	
 	templateData["trmnl"] = trmnlData
 	
@@ -184,8 +274,9 @@ func (p *PrivatePlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespon
 		Data:           templateData,
 		Width:          ctx.Device.DeviceModel.ScreenWidth,
 		Height:         ctx.Device.DeviceModel.ScreenHeight,
-		PluginName:     p.Name(),
+		PluginName:     p.definition.Name,
 		InstanceID:     instanceID,
+		InstanceName:   p.Name(),
 	})
 	if err != nil {
 		return plugins.CreateErrorResponse(fmt.Sprintf("Failed to render template: %v", err)),

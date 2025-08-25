@@ -41,6 +41,8 @@ type UserResponse struct {
 	ID                  uuid.UUID  `json:"id"`
 	Username            string     `json:"username"`
 	Email               string     `json:"email"`
+	FirstName           string     `json:"first_name,omitempty"`
+	LastName            string     `json:"last_name,omitempty"`
 	Timezone            string     `json:"timezone"`
 	Locale              string     `json:"locale"`
 	IsAdmin             bool       `json:"is_admin"`
@@ -195,6 +197,8 @@ func RegisterHandler(c *gin.Context) {
 		ID:                  newUser.ID,
 		Username:            newUser.Username,
 		Email:               newUser.Email,
+		FirstName:           newUser.FirstName,
+		LastName:            newUser.LastName,
 		Timezone:            newUser.Timezone,
 		Locale:              newUser.Locale,
 		IsAdmin:             newUser.IsAdmin,
@@ -296,6 +300,8 @@ func MultiUserLoginHandler(c *gin.Context) {
 			ID:                  user.ID,
 			Username:            user.Username,
 			Email:               user.Email,
+			FirstName:           user.FirstName,
+			LastName:            user.LastName,
 			Timezone:            user.Timezone,
 			Locale:              user.Locale,
 			IsAdmin:             user.IsAdmin,
@@ -399,6 +405,8 @@ func GetCurrentUserHandler(c *gin.Context) {
 		ID:                  user.ID,
 		Username:            user.Username,
 		Email:               user.Email,
+		FirstName:           user.FirstName,
+		LastName:            user.LastName,
 		Timezone:            user.Timezone,
 		Locale:              user.Locale,
 		IsAdmin:             user.IsAdmin,
@@ -471,6 +479,8 @@ func MultiUserCheckAuthHandler(c *gin.Context) {
 			ID:                  user.ID,
 			Username:            user.Username,
 			Email:               user.Email,
+			FirstName:           user.FirstName,
+			LastName:            user.LastName,
 			Timezone:            user.Timezone,
 			Locale:              user.Locale,
 			IsAdmin:             user.IsAdmin,

@@ -14,12 +14,14 @@ import (
 
 // UpdateUserRequest represents a user update request
 type UpdateUserRequest struct {
-	Username *string `json:"username,omitempty"`
-	Email    *string `json:"email,omitempty" binding:"omitempty,email"`
-	Timezone *string `json:"timezone,omitempty"`
-	Locale   *string `json:"locale,omitempty"`
-	IsAdmin  *bool   `json:"is_admin,omitempty"`
-	IsActive *bool   `json:"is_active,omitempty"`
+	Username  *string `json:"username,omitempty"`
+	Email     *string `json:"email,omitempty" binding:"omitempty,email"`
+	FirstName *string `json:"first_name,omitempty"`
+	LastName  *string `json:"last_name,omitempty"`
+	Timezone  *string `json:"timezone,omitempty"`
+	Locale    *string `json:"locale,omitempty"`
+	IsAdmin   *bool   `json:"is_admin,omitempty"`
+	IsActive  *bool   `json:"is_active,omitempty"`
 }
 
 // UpdatePasswordRequest represents a password update request
@@ -107,6 +109,8 @@ func GetUsersHandler(c *gin.Context) {
 			ID:                  user.ID,
 			Username:            user.Username,
 			Email:               user.Email,
+			FirstName:           user.FirstName,
+			LastName:            user.LastName,
 			Timezone:            user.Timezone,
 			Locale:              user.Locale,
 			IsAdmin:             user.IsAdmin,
@@ -162,6 +166,8 @@ func GetUserHandler(c *gin.Context) {
 		ID:                  user.ID,
 		Username:            user.Username,
 		Email:               user.Email,
+		FirstName:           user.FirstName,
+		LastName:            user.LastName,
 		Timezone:            user.Timezone,
 		Locale:              user.Locale,
 		IsAdmin:             user.IsAdmin,
@@ -214,6 +220,12 @@ func UpdateUserHandler(c *gin.Context) {
 	}
 	if req.Email != nil && *req.Email != "" {
 		updates["email"] = *req.Email
+	}
+	if req.FirstName != nil {
+		updates["first_name"] = *req.FirstName
+	}
+	if req.LastName != nil {
+		updates["last_name"] = *req.LastName
 	}
 	if req.Timezone != nil && *req.Timezone != "" {
 		if err := utils.ValidateTimezone(*req.Timezone); err != nil {
@@ -324,6 +336,12 @@ func UpdateCurrentUserHandler(c *gin.Context) {
 	}
 	if req.Email != nil && *req.Email != "" {
 		updates["email"] = *req.Email
+	}
+	if req.FirstName != nil {
+		updates["first_name"] = *req.FirstName
+	}
+	if req.LastName != nil {
+		updates["last_name"] = *req.LastName
 	}
 	if req.Timezone != nil && *req.Timezone != "" {
 		if err := utils.ValidateTimezone(*req.Timezone); err != nil {

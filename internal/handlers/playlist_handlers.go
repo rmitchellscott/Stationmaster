@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"errors"
-	"log"
 	"net/http"
 	"time"
 
@@ -10,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/rmitchellscott/stationmaster/internal/auth"
 	"github.com/rmitchellscott/stationmaster/internal/database"
+	"github.com/rmitchellscott/stationmaster/internal/logging"
 	"github.com/rmitchellscott/stationmaster/internal/sse"
 	"github.com/rmitchellscott/stationmaster/internal/utils"
 	"gorm.io/gorm"
@@ -268,7 +268,7 @@ func AddPlaylistItemHandler(c *gin.Context) {
 	}
 
 	var req struct {
-		UserPluginID     uuid.UUID `json:"user_plugin_id" binding:"required"`
+		PluginInstanceID uuid.UUID `json:"plugin_instance_id" binding:"required"`
 		Importance       bool      `json:"importance"`
 		DurationOverride *int      `json:"duration_override"`
 	}
@@ -280,7 +280,7 @@ func AddPlaylistItemHandler(c *gin.Context) {
 
 	db := database.GetDB()
 	playlistService := database.NewPlaylistService(db)
-	pluginService := database.NewPluginService(db)
+	unifiedPluginService := database.NewUnifiedPluginService(db)
 
 	// Verify playlist ownership
 	playlist, err := playlistService.GetPlaylistByID(playlistID)
@@ -294,22 +294,40 @@ func AddPlaylistItemHandler(c *gin.Context) {
 		return
 	}
 
-	// Verify user plugin ownership
-	userPlugin, err := pluginService.GetUserPluginByID(req.UserPluginID)
+	// Verify plugin instance ownership
+	pluginInstance, err := unifiedPluginService.GetPluginInstanceByID(req.PluginInstanceID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "User plugin not found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "Plugin instance not found"})
 		return
 	}
 
-	if userPlugin.UserID != userUUID {
+	if pluginInstance.UserID != userUUID {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
 		return
 	}
 
-	item, err := playlistService.AddItemToPlaylist(playlistID, req.UserPluginID, req.Importance, req.DurationOverride)
+	item, err := playlistService.AddItemToPlaylist(playlistID, req.PluginInstanceID, req.Importance, req.DurationOverride)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add item to playlist"})
 		return
+	}
+
+	// Schedule immediate independent render for the plugin instance
+	renderJob := database.RenderQueue{
+		ID:               uuid.New(),
+		PluginInstanceID: req.PluginInstanceID,
+		Priority:         999, // High priority for immediate render on playlist addition
+		ScheduledFor:     time.Now(),
+		Status:           "pending",
+		IndependentRender: true, // Playlist additions are independent renders
+	}
+	
+	err = db.Create(&renderJob).Error
+	if err != nil {
+		logging.Error("[PLAYLIST] Failed to schedule immediate render job for playlist addition", "plugin_instance_id", req.PluginInstanceID, "error", err)
+		// Don't fail the playlist addition if render scheduling fails
+	} else {
+		logging.Info("[PLAYLIST] Scheduled immediate render for playlist addition", "plugin_instance_id", req.PluginInstanceID, "job_id", renderJob.ID)
 	}
 
 	// Broadcast playlist item added event
@@ -415,11 +433,11 @@ func DeletePlaylistItemHandler(c *gin.Context) {
 	userUUID := user.ID
 	itemIDStr := c.Param("itemId")
 
-	log.Printf("[DeletePlaylistItemHandler] User %s attempting to delete playlist item %s", userUUID.String(), itemIDStr)
+	logging.InfoWithComponent(logging.ComponentPlaylist, "User attempting to delete playlist item", "user", userUUID.String(), "item_id", itemIDStr)
 
 	itemID, err := uuid.Parse(itemIDStr)
 	if err != nil {
-		log.Printf("[DeletePlaylistItemHandler] Invalid item ID format: %s", itemIDStr)
+		logging.WarnWithComponent(logging.ComponentPlaylist, "Invalid item ID format", "item_id", itemIDStr)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid item ID format"})
 		return
 	}
@@ -430,34 +448,33 @@ func DeletePlaylistItemHandler(c *gin.Context) {
 	// Get the playlist item with detailed logging
 	item, err := playlistService.GetPlaylistItemByID(itemID)
 	if err != nil {
-		log.Printf("[DeletePlaylistItemHandler] Playlist item not found: %s, error: %v", itemID.String(), err)
+		logging.WarnWithComponent(logging.ComponentPlaylist, "Playlist item not found", "item_id", itemID.String(), "error", err)
 		c.JSON(http.StatusNotFound, gin.H{"error": "Playlist item not found"})
 		return
 	}
 
-	log.Printf("[DeletePlaylistItemHandler] Found playlist item %s in playlist %s", itemID.String(), item.PlaylistID.String())
+	logging.InfoWithComponent(logging.ComponentPlaylist, "Found playlist item", "item_id", itemID.String(), "playlist_id", item.PlaylistID.String())
 
 	// Verify ownership through playlist
 	playlist, err := playlistService.GetPlaylistByID(item.PlaylistID)
 	if err != nil {
-		log.Printf("[DeletePlaylistItemHandler] Failed to get playlist %s: %v", item.PlaylistID.String(), err)
+		logging.ErrorWithComponent(logging.ComponentPlaylist, "Failed to get playlist", "playlist_id", item.PlaylistID.String(), "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify playlist ownership"})
 		return
 	}
 
 	if playlist.UserID != userUUID {
-		log.Printf("[DeletePlaylistItemHandler] Access denied - user %s does not own playlist %s (owner: %s)",
-			userUUID.String(), playlist.ID.String(), playlist.UserID.String())
+		logging.WarnWithComponent(logging.ComponentPlaylist, "Access denied - user does not own playlist", "user", userUUID.String(), "playlist_id", playlist.ID.String(), "owner", playlist.UserID.String())
 		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
 		return
 	}
 
-	log.Printf("[DeletePlaylistItemHandler] Ownership verified, proceeding with deletion")
+	logging.InfoWithComponent(logging.ComponentPlaylist, "Ownership verified, proceeding with deletion")
 
 	// Attempt to delete the playlist item
 	err = playlistService.DeletePlaylistItem(itemID)
 	if err != nil {
-		log.Printf("[DeletePlaylistItemHandler] Failed to delete playlist item %s: %v", itemID.String(), err)
+		logging.ErrorWithComponent(logging.ComponentPlaylist, "Failed to delete playlist item", "item_id", itemID.String(), "error", err)
 
 		// Provide more specific error messages
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -468,7 +485,7 @@ func DeletePlaylistItemHandler(c *gin.Context) {
 		return
 	}
 
-	log.Printf("[DeletePlaylistItemHandler] Successfully deleted playlist item %s", itemID.String())
+	logging.InfoWithComponent(logging.ComponentPlaylist, "Successfully deleted playlist item", "item_id", itemID.String())
 
 	// Broadcast playlist item removed event
 	sseService := sse.GetSSEService()

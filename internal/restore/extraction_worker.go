@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/rmitchellscott/stationmaster/internal/config"
 	"github.com/rmitchellscott/stationmaster/internal/database"
+	"github.com/rmitchellscott/stationmaster/internal/logging"
 	"gorm.io/gorm"
 )
 
@@ -79,7 +80,7 @@ func (w *ExtractionWorker) CancelJob(jobID uuid.UUID) {
 	w.activeJobsMu.RUnlock()
 
 	if exists {
-		fmt.Printf("[RESTORE] Cancelling extraction job %s\n", jobID)
+		logging.InfoWithComponent(logging.ComponentRestore, "Cancelling extraction job", "job_id", jobID)
 		cancel()
 	}
 }
@@ -113,7 +114,7 @@ func (w *ExtractionWorker) processPendingJobs() {
 
 		// Auto-shutdown after 15 empty polls (30 seconds with 2s interval)
 		if emptyPolls >= 15 {
-			fmt.Printf("[RESTORE] Extraction worker shutting down after %d empty polls\n", emptyPolls)
+			logging.InfoWithComponent(logging.ComponentRestore, "Extraction worker shutting down after empty polls", "empty_polls", emptyPolls)
 			w.Stop()
 			return
 		}
@@ -154,7 +155,7 @@ func (w *ExtractionWorker) processJob(job database.RestoreExtractionJob) {
 	job.StatusMessage = "Starting extraction..."
 
 	if err := w.db.Save(&job).Error; err != nil {
-		fmt.Printf("[ERROR] Failed to update extraction job status: %v\n", err)
+		logging.ErrorWithComponent(logging.ComponentRestore, "Failed to update extraction job status", "error", err)
 		return
 	}
 
@@ -189,7 +190,7 @@ func (w *ExtractionWorker) processJob(job database.RestoreExtractionJob) {
 		os.RemoveAll(extractDir)
 		if strings.Contains(err.Error(), "cancelled") {
 			// Job was cancelled, just return - CleanupExtractionJob already handled the database side
-			fmt.Printf("[RESTORE] Extraction job %s was cancelled, exiting cleanly\n", job.ID)
+			logging.InfoWithComponent(logging.ComponentRestore, "Extraction job was cancelled, exiting cleanly", "job_id", job.ID)
 			return
 		}
 		w.failJob(job, fmt.Sprintf("Extraction failed: %v", err))
@@ -200,7 +201,7 @@ func (w *ExtractionWorker) processJob(job database.RestoreExtractionJob) {
 	select {
 	case <-ctx.Done():
 		// Context was cancelled, job should have been handled above
-		fmt.Printf("[RESTORE] Extraction job %s was cancelled during completion\n", job.ID)
+		logging.InfoWithComponent(logging.ComponentRestore, "Extraction job was cancelled during completion", "job_id", job.ID)
 		return
 	default:
 	}
@@ -216,17 +217,17 @@ func (w *ExtractionWorker) processJob(job database.RestoreExtractionJob) {
 	if err := w.db.Save(&job).Error; err != nil {
 		// Check if it's a foreign key violation (parent upload deleted)
 		if strings.Contains(err.Error(), "fk_restore_extraction_jobs_restore_upload") {
-			fmt.Printf("[RESTORE] Extraction job %s parent upload deleted, cleaning up extracted files\n", job.ID)
+			logging.InfoWithComponent(logging.ComponentRestore, "Extraction job parent upload deleted, cleaning up extracted files", "job_id", job.ID)
 			// Clean up the extracted files since the parent is gone
 			if extractDir != "" {
 				os.RemoveAll(extractDir)
 			}
 			return
 		}
-		fmt.Printf("[ERROR] Failed to mark extraction job as completed: %v\n", err)
+		logging.ErrorWithComponent(logging.ComponentRestore, "Failed to mark extraction job as completed", "error", err)
 	}
 
-	fmt.Printf("[RESTORE] Extraction job %s completed successfully, extracted to: %s\n", job.ID, extractDir)
+	logging.InfoWithComponent(logging.ComponentRestore, "Extraction job completed successfully", "job_id", job.ID, "extract_dir", extractDir)
 }
 
 func (w *ExtractionWorker) extractTarGz(ctx context.Context, archivePath, destDir string, job *database.RestoreExtractionJob) error {
@@ -263,7 +264,7 @@ func (w *ExtractionWorker) extractTarGz(ctx context.Context, archivePath, destDi
 			select {
 			case <-ctx.Done():
 				// Context cancelled, exit gracefully
-				fmt.Printf("[RESTORE] Extraction job %s context cancelled, stopping progress updates\n", job.ID)
+				logging.InfoWithComponent(logging.ComponentRestore, "Extraction job context cancelled, stopping progress updates", "job_id", job.ID)
 				return
 			case update, ok := <-progressChan:
 				if !ok {
@@ -277,7 +278,7 @@ func (w *ExtractionWorker) extractTarGz(ctx context.Context, archivePath, destDi
 					// Check if job was cancelled
 					var currentJob database.RestoreExtractionJob
 					if err := w.db.First(&currentJob, job.ID).Error; err == nil && currentJob.Status == "cancelled" {
-						fmt.Printf("[RESTORE] Extraction job %s was cancelled\n", job.ID)
+						logging.InfoWithComponent(logging.ComponentRestore, "Extraction job was cancelled", "job_id", job.ID)
 						return
 					}
 
@@ -287,10 +288,10 @@ func (w *ExtractionWorker) extractTarGz(ctx context.Context, archivePath, destDi
 					if err := w.db.Save(job).Error; err != nil {
 						// Check if it's a foreign key violation (parent upload deleted)
 						if strings.Contains(err.Error(), "fk_restore_extraction_jobs_restore_upload") {
-							fmt.Printf("[RESTORE] Extraction job %s parent upload deleted, stopping updates\n", job.ID)
+							logging.InfoWithComponent(logging.ComponentRestore, "Extraction job parent upload deleted, stopping updates", "job_id", job.ID)
 							return
 						}
-						fmt.Printf("[WARNING] Failed to update extraction progress: %v\n", err)
+						logging.WarnWithComponent(logging.ComponentRestore, "Failed to update extraction progress", "error", err)
 					}
 
 					lastSavedProgress = scaledProgress
@@ -326,10 +327,10 @@ func (w *ExtractionWorker) failJob(job database.RestoreExtractionJob, errorMsg s
 	job.StatusMessage = "Extraction failed"
 
 	if err := w.db.Save(&job).Error; err != nil {
-		fmt.Printf("[ERROR] Failed to mark extraction job as failed: %v\n", err)
+		logging.ErrorWithComponent(logging.ComponentRestore, "Failed to mark extraction job as failed", "error", err)
 	}
 
-	fmt.Printf("[ERROR] Extraction job %s failed: %s\n", job.ID, errorMsg)
+	logging.ErrorWithComponent(logging.ComponentRestore, "Extraction job failed", "job_id", job.ID, "error", errorMsg)
 }
 
 // CreateExtractionJob creates a new extraction job for a restore upload
@@ -358,7 +359,7 @@ func CreateExtractionJob(db *gorm.DB, adminUserID, restoreUploadID uuid.UUID) (*
 		return nil, fmt.Errorf("failed to create extraction job: %w", err)
 	}
 
-	fmt.Printf("[RESTORE] Created extraction job %s for upload %s\n", job.ID, restoreUploadID)
+	logging.InfoWithComponent(logging.ComponentRestore, "Created extraction job for upload", "job_id", job.ID, "upload_id", restoreUploadID)
 	return &job, nil
 }
 
@@ -417,7 +418,7 @@ func CreateCompletedExtractionJob(db *gorm.DB, adminUserID, restoreUploadID uuid
 		return nil, fmt.Errorf("failed to update extraction job: %w", err)
 	}
 
-	fmt.Printf("[RESTORE] Created completed extraction job %s for upload %s, reused files from: %s\n", job.ID, restoreUploadID, finalExtractionDir)
+	logging.InfoWithComponent(logging.ComponentRestore, "Created completed extraction job, reused files", "job_id", job.ID, "upload_id", restoreUploadID, "extraction_dir", finalExtractionDir)
 	return &job, nil
 }
 
@@ -447,7 +448,7 @@ func CleanupExtractionJob(db *gorm.DB, jobID uuid.UUID, adminUserID uuid.UUID) e
 	if err := db.Where("id = ? AND admin_user_id = ?", jobID, adminUserID).First(&job).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			// Job doesn't exist, nothing to clean up - this is normal after FK violations
-			fmt.Printf("[RESTORE] Extraction job %s not found, assuming already cleaned up\n", jobID)
+			logging.InfoWithComponent(logging.ComponentRestore, "Extraction job not found, assuming already cleaned up", "job_id", jobID)
 			return nil
 		}
 		return err
@@ -462,7 +463,7 @@ func CleanupExtractionJob(db *gorm.DB, jobID uuid.UUID, adminUserID uuid.UUID) e
 		job.Status = "cancelled"
 		job.StatusMessage = "Extraction cancelled by user"
 		if err := db.Save(&job).Error; err != nil {
-			fmt.Printf("[WARNING] Failed to mark job as cancelled: %v\n", err)
+			logging.WarnWithComponent(logging.ComponentRestore, "Failed to mark job as cancelled", "error", err)
 		}
 
 		// Wait a short time for worker to acknowledge cancellation
@@ -472,9 +473,9 @@ func CleanupExtractionJob(db *gorm.DB, jobID uuid.UUID, adminUserID uuid.UUID) e
 	// Clean up files if they exist
 	if job.ExtractedPath != "" {
 		if err := os.RemoveAll(job.ExtractedPath); err != nil {
-			fmt.Printf("[WARNING] Failed to remove extraction directory %s: %v\n", job.ExtractedPath, err)
+			logging.WarnWithComponent(logging.ComponentRestore, "Failed to remove extraction directory", "path", job.ExtractedPath, "error", err)
 		} else {
-			fmt.Printf("[RESTORE] Cleaned up extraction directory: %s\n", job.ExtractedPath)
+			logging.InfoWithComponent(logging.ComponentRestore, "Cleaned up extraction directory", "path", job.ExtractedPath)
 		}
 	}
 
@@ -495,18 +496,18 @@ func CleanupExpiredExtractions(db *gorm.DB) error {
 		// Clean up extraction files
 		if job.ExtractedPath != "" {
 			if err := os.RemoveAll(job.ExtractedPath); err != nil {
-				fmt.Printf("[WARNING] Failed to remove old extraction directory %s: %v\n", job.ExtractedPath, err)
+				logging.WarnWithComponent(logging.ComponentRestore, "Failed to remove old extraction directory", "path", job.ExtractedPath, "error", err)
 			}
 		}
 
 		// Delete job record
 		if err := db.Delete(&job).Error; err != nil {
-			fmt.Printf("[WARNING] Failed to delete old extraction job %s: %v\n", job.ID, err)
+			logging.WarnWithComponent(logging.ComponentRestore, "Failed to delete old extraction job", "job_id", job.ID, "error", err)
 		}
 	}
 
 	if len(oldJobs) > 0 {
-		fmt.Printf("[RESTORE] Cleaned up %d expired extraction jobs\n", len(oldJobs))
+		logging.InfoWithComponent(logging.ComponentRestore, "Cleaned up expired extraction jobs", "count", len(oldJobs))
 	}
 
 	return nil
@@ -648,7 +649,7 @@ func EnsureWorkerRunning(db *gorm.DB) {
 	// Create and start new worker
 	globalExtractionWorker = NewExtractionWorker(db)
 	globalExtractionWorker.Start()
-	fmt.Printf("[RESTORE] Extraction worker started on-demand\n")
+	logging.InfoWithComponent(logging.ComponentRestore, "Extraction worker started on-demand")
 }
 
 // CancelJobGlobal cancels a job on the global worker instance

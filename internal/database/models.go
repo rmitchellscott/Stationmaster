@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
 
@@ -16,7 +17,10 @@ type User struct {
 	IsAdmin             bool      `gorm:"default:false" json:"is_admin"`
 	IsActive            bool      `gorm:"default:true" json:"is_active"`
 	OnboardingCompleted bool      `gorm:"default:false" json:"onboarding_completed"`
+	FirstName           string    `gorm:"size:100" json:"first_name,omitempty"`   // User's first name
+	LastName            string    `gorm:"size:100" json:"last_name,omitempty"`    // User's last name
 	Timezone            string    `gorm:"size:50;default:'UTC'" json:"timezone"` // User's preferred timezone (IANA format)
+	Locale              string    `gorm:"size:10;default:'en-US'" json:"locale"` // User's preferred locale
 
 	// Password reset
 	ResetToken        string    `gorm:"index" json:"-"`
@@ -212,7 +216,7 @@ type Device struct {
 	RefreshRate             int        `gorm:"default:1800" json:"refresh_rate"` // seconds
 	AllowFirmwareUpdates    bool       `gorm:"default:true" json:"allow_firmware_updates"`
 	LastSeen                *time.Time `json:"last_seen,omitempty"`
-	LastPlaylistIndex       int        `gorm:"default:0" json:"last_playlist_index"` // Track last shown playlist item
+	LastPlaylistItemID      *uuid.UUID `gorm:"type:uuid;references:playlist_items(id)" json:"last_playlist_item_id,omitempty"` // Track last shown playlist item by UUID
 	IsActive                bool       `gorm:"default:true" json:"is_active"`
 	IsShareable             bool       `gorm:"default:false" json:"is_shareable"`                        // Whether this device can be mirrored by others
 	MirrorSourceID          *uuid.UUID `gorm:"type:uuid;index" json:"mirror_source_id,omitempty"`        // ID of device being mirrored (nullable)
@@ -242,54 +246,18 @@ func (d *Device) BeforeCreate(tx *gorm.DB) error {
 }
 
 // Plugin represents a system-wide plugin type (managed by admins)
-type Plugin struct {
-	ID                 uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
-	Name               string    `gorm:"size:255;not null;uniqueIndex" json:"name"`
-	Type               string    `gorm:"size:100;not null" json:"type"`
-	Description        string    `gorm:"type:text" json:"description"`
-	ConfigSchema       string    `gorm:"type:text" json:"config_schema"` // JSON schema for plugin settings
-	Version            string    `gorm:"size:50" json:"version"`
-	Author             string    `gorm:"size:255" json:"author,omitempty"`
-	IsActive           bool      `gorm:"default:true" json:"is_active"`
-	RequiresProcessing bool      `gorm:"default:false" json:"requires_processing"`
-	CreatedAt          time.Time `gorm:"autoCreateTime" json:"created_at"`
-	UpdatedAt          time.Time `gorm:"autoUpdateTime" json:"updated_at"`
 
-	// Associations
-	UserPlugins []UserPlugin `gorm:"foreignKey:PluginID;constraint:OnDelete:CASCADE" json:"-"`
-}
-
-func (p *Plugin) BeforeCreate(tx *gorm.DB) error {
-	if p.ID == uuid.Nil {
-		p.ID = uuid.New()
-	}
-	return nil
-}
-
-// UserPlugin represents a user's instance of a plugin with specific settings
-type UserPlugin struct {
-	ID              uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
-	UserID          uuid.UUID `gorm:"type:uuid;not null;index" json:"user_id"`
-	PluginID        uuid.UUID `gorm:"type:uuid;not null;index" json:"plugin_id"`
-	Name            string    `gorm:"size:255;not null" json:"name"`        // User-defined name for this instance
-	Settings        string    `gorm:"type:text" json:"settings"`            // JSON settings specific to this instance
-	RefreshInterval int       `gorm:"default:3600" json:"refresh_interval"` // Refresh interval in seconds
-	IsActive        bool      `gorm:"default:true" json:"is_active"`
-	CreatedAt       time.Time `gorm:"autoCreateTime" json:"created_at"`
-	UpdatedAt       time.Time `gorm:"autoUpdateTime" json:"updated_at"`
-
-	// Associations
-	User            User              `gorm:"foreignKey:UserID" json:"-"`
-	Plugin          Plugin            `gorm:"foreignKey:PluginID" json:"plugin"`
-	PlaylistItems   []PlaylistItem    `gorm:"foreignKey:UserPluginID;constraint:OnDelete:CASCADE" json:"-"`
-	RenderedContent []RenderedContent `gorm:"foreignKey:UserPluginID;constraint:OnDelete:CASCADE" json:"-"`
-}
-
-func (up *UserPlugin) BeforeCreate(tx *gorm.DB) error {
-	if up.ID == uuid.Nil {
-		up.ID = uuid.New()
-	}
-	return nil
+// PrivatePluginWebhookData represents webhook data storage for private plugin instances
+type PrivatePluginWebhookData struct {
+	ID                 string                 `json:"id" gorm:"primaryKey"`
+	PluginInstanceID   string                 `json:"plugin_instance_id" gorm:"index;not null"` // Changed from plugin_id to plugin_instance_id
+	MergedData         datatypes.JSON         `json:"merged_data"`    // Final merged data ready for templates
+	RawData            datatypes.JSON         `json:"raw_data"`       // Original webhook payload
+	MergeStrategy      string                 `json:"merge_strategy" gorm:"size:20;default:'default'"`
+	ReceivedAt         time.Time              `json:"received_at"`
+	ContentType        string                 `json:"content_type"`
+	ContentSize        int                    `json:"content_size"`
+	SourceIP           string                 `json:"source_ip"`
 }
 
 // Playlist represents a collection of plugins for a specific device
@@ -319,7 +287,9 @@ func (pl *Playlist) BeforeCreate(tx *gorm.DB) error {
 type PlaylistItem struct {
 	ID               uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
 	PlaylistID       uuid.UUID `gorm:"type:uuid;not null;index" json:"playlist_id"`
-	UserPluginID     uuid.UUID `gorm:"type:uuid;not null;index" json:"user_plugin_id"`
+	
+	PluginInstanceID uuid.UUID `gorm:"type:uuid;not null;index" json:"plugin_instance_id"`
+	
 	OrderIndex       int       `gorm:"not null" json:"order_index"`
 	IsVisible        bool      `gorm:"default:true" json:"is_visible"`
 	Importance       bool      `gorm:"default:false" json:"importance"` // false=normal, true=important
@@ -328,9 +298,9 @@ type PlaylistItem struct {
 	UpdatedAt        time.Time `json:"updated_at"`
 
 	// Associations
-	Playlist   Playlist   `gorm:"foreignKey:PlaylistID" json:"-"`
-	UserPlugin UserPlugin `gorm:"foreignKey:UserPluginID" json:"user_plugin"`
-	Schedules  []Schedule `gorm:"foreignKey:PlaylistItemID;constraint:OnDelete:CASCADE" json:"schedules"`
+	Playlist       Playlist       `gorm:"foreignKey:PlaylistID" json:"-"`
+	PluginInstance PluginInstance `gorm:"foreignKey:PluginInstanceID" json:"plugin_instance"`
+	Schedules      []Schedule     `gorm:"foreignKey:PlaylistItemID;constraint:OnDelete:CASCADE" json:"schedules"`
 }
 
 func (pi *PlaylistItem) BeforeCreate(tx *gorm.DB) error {
@@ -360,6 +330,92 @@ type Schedule struct {
 func (s *Schedule) BeforeCreate(tx *gorm.DB) error {
 	if s.ID == uuid.Nil {
 		s.ID = uuid.New()
+	}
+	return nil
+}
+
+// PluginDefinition represents a unified plugin definition (system, private, or public)
+type PluginDefinition struct {
+	ID         uuid.UUID  `gorm:"type:uuid;primaryKey" json:"id"`
+	PluginType string     `gorm:"size:20;not null" json:"plugin_type"` // "system", "private", "public"
+	OwnerID    *uuid.UUID `gorm:"type:uuid;index" json:"owner_id"`     // NULL for system plugins, user_id for private/public
+	
+	// Core fields
+	Identifier         string `gorm:"size:255;not null" json:"identifier"`          // Type string for system, UUID for private
+	Name              string `gorm:"size:255;not null" json:"name"`
+	Description       string `gorm:"type:text" json:"description"`
+	Version           string `gorm:"size:50" json:"version"`
+	Author            string `gorm:"size:255" json:"author"`
+	ConfigSchema      string `gorm:"type:text" json:"config_schema"` // JSON schema for settings
+	RequiresProcessing bool   `gorm:"default:false" json:"requires_processing"`
+	
+	// Private/Public plugin specific fields (NULL for system plugins)
+	MarkupFull      *string        `gorm:"type:text" json:"markup_full,omitempty"`
+	MarkupHalfVert  *string        `gorm:"type:text" json:"markup_half_vert,omitempty"`
+	MarkupHalfHoriz *string        `gorm:"type:text" json:"markup_half_horiz,omitempty"`
+	MarkupQuadrant  *string        `gorm:"type:text" json:"markup_quadrant,omitempty"`
+	SharedMarkup    *string        `gorm:"type:text" json:"shared_markup,omitempty"`
+	DataStrategy    *string        `gorm:"size:50" json:"data_strategy,omitempty"`      // webhook, polling, static
+	PollingConfig   datatypes.JSON `json:"polling_config,omitempty"`   // URLs, headers, body, intervals, etc.
+	FormFields      datatypes.JSON `json:"form_fields"`                // YAML form field definitions converted to JSON schema
+	
+	// Publishing (for future public plugins)
+	IsPublished bool       `gorm:"default:false" json:"is_published"`
+	PublishedAt *time.Time `json:"published_at,omitempty"`
+	
+	// Screen options (for private plugins)
+	RemoveBleedMargin *bool          `gorm:"default:false" json:"remove_bleed_margin,omitempty"` // Nullable for backward compatibility
+	EnableDarkMode    *bool          `gorm:"default:false" json:"enable_dark_mode,omitempty"`    // Nullable for backward compatibility
+	SampleData        datatypes.JSON `json:"sample_data,omitempty"`                              // JSON sample data for preview/testing
+	
+	// Schema versioning for form field changes
+	SchemaVersion int `gorm:"default:1" json:"schema_version"` // Increments when FormFields change
+	
+	// Meta
+	IsActive  bool      `gorm:"default:true" json:"is_active"`
+	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updated_at"`
+	
+	// Associations
+	Owner     *User            `gorm:"foreignKey:OwnerID" json:"owner,omitempty"`
+	Instances []PluginInstance `gorm:"foreignKey:PluginDefinitionID;constraint:OnDelete:CASCADE" json:"-"`
+}
+
+func (pd *PluginDefinition) BeforeCreate(tx *gorm.DB) error {
+	if pd.ID == uuid.Nil {
+		pd.ID = uuid.New()
+	}
+	return nil
+}
+
+// PluginInstance represents a user's instance of any plugin type with specific settings
+type PluginInstance struct {
+	ID                 uuid.UUID      `gorm:"type:uuid;primaryKey" json:"id"`
+	UserID             uuid.UUID      `gorm:"type:uuid;not null;index" json:"user_id"`
+	PluginDefinitionID uuid.UUID      `gorm:"type:uuid;not null;index" json:"plugin_definition_id"`
+	
+	Name            string         `gorm:"size:255;not null" json:"name"`        // User-defined name for this instance
+	Settings        datatypes.JSON `gorm:"type:text" json:"settings"`           // JSON settings specific to this instance
+	RefreshInterval int           `gorm:"default:3600" json:"refresh_interval"` // Refresh interval in seconds
+	IsActive        bool          `gorm:"default:true" json:"is_active"`
+	
+	// Schema version tracking for config update detection
+	LastSchemaVersion   int  `gorm:"default:1" json:"last_schema_version"`      // Schema version this instance was last updated against
+	NeedsConfigUpdate   bool `gorm:"default:false" json:"needs_config_update"`  // Flag when parent plugin schema changes
+	
+	CreatedAt       time.Time     `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt       time.Time     `gorm:"autoUpdateTime" json:"updated_at"`
+	
+	// Associations
+	User             User              `gorm:"foreignKey:UserID" json:"-"`
+	PluginDefinition PluginDefinition  `gorm:"foreignKey:PluginDefinitionID" json:"plugin_definition"`
+	PlaylistItems    []PlaylistItem    `gorm:"foreignKey:PluginInstanceID;constraint:OnDelete:CASCADE" json:"-"`
+	RenderedContent  []RenderedContent `gorm:"foreignKey:PluginInstanceID;constraint:OnDelete:CASCADE" json:"-"`
+}
+
+func (pi *PluginInstance) BeforeCreate(tx *gorm.DB) error {
+	if pi.ID == uuid.Nil {
+		pi.ID = uuid.New()
 	}
 	return nil
 }
@@ -442,18 +498,27 @@ type DeviceModel struct {
 
 // RenderedContent represents a cached rendered image for a plugin
 type RenderedContent struct {
-	ID           uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
-	UserPluginID uuid.UUID `gorm:"type:uuid;not null;index" json:"user_plugin_id"`
+	ID               uuid.UUID  `gorm:"type:uuid;primaryKey" json:"id"`
+	PluginInstanceID uuid.UUID  `gorm:"type:uuid;not null;index" json:"plugin_instance_id"`
+	DeviceID         *uuid.UUID `gorm:"type:uuid;index" json:"device_id,omitempty"` // Nullable for backward compatibility
+	
 	Width        int       `gorm:"not null" json:"width"`
 	Height       int       `gorm:"not null" json:"height"`
 	BitDepth     int       `gorm:"not null" json:"bit_depth"`
 	ImagePath    string    `gorm:"size:1000;not null" json:"image_path"`
 	FileSize     int64     `json:"file_size"`
+	ContentHash  *string   `gorm:"size:64" json:"content_hash,omitempty"`
 	RenderedAt   time.Time `gorm:"not null;index" json:"rendered_at"`
 	CreatedAt    time.Time `json:"created_at"`
-
-	// Associations
-	UserPlugin UserPlugin `gorm:"foreignKey:UserPluginID" json:"-"`
+	
+	// Enhanced content lifecycle tracking
+	LastCheckedAt  *time.Time `gorm:"index" json:"last_checked_at,omitempty"` // Track hash comparisons even when not saving
+	PreviousHash   *string    `gorm:"size:64" json:"previous_hash,omitempty"`  // Store previous content hash for debugging
+	RenderAttempts int        `gorm:"default:0" json:"render_attempts"`        // Track render failures
+	
+	// Associations  
+	PluginInstance PluginInstance `gorm:"foreignKey:PluginInstanceID" json:"-"`
+	Device         *Device        `gorm:"foreignKey:DeviceID" json:"-"`
 }
 
 func (rc *RenderedContent) BeforeCreate(tx *gorm.DB) error {
@@ -466,18 +531,21 @@ func (rc *RenderedContent) BeforeCreate(tx *gorm.DB) error {
 // RenderQueue represents pending render jobs for plugins
 type RenderQueue struct {
 	ID           uuid.UUID  `gorm:"type:uuid;primaryKey" json:"id"`
-	UserPluginID uuid.UUID  `gorm:"type:uuid;not null;index" json:"user_plugin_id"`
-	Priority     int        `gorm:"default:0;index" json:"priority"` // Higher number = higher priority
-	ScheduledFor time.Time  `gorm:"not null;index" json:"scheduled_for"`
-	Status       string     `gorm:"size:50;default:pending;index" json:"status"` // pending, processing, completed, failed
-	Attempts     int        `gorm:"default:0" json:"attempts"`
-	LastAttempt  *time.Time `json:"last_attempt,omitempty"`
-	ErrorMessage string     `gorm:"type:text" json:"error_message,omitempty"`
-	CreatedAt    time.Time  `json:"created_at"`
-	UpdatedAt    time.Time  `json:"updated_at"`
+	
+	PluginInstanceID uuid.UUID `gorm:"type:uuid;not null;index" json:"plugin_instance_id"`
+	
+	Priority         int        `gorm:"default:0;index" json:"priority"` // Higher number = higher priority
+	ScheduledFor     time.Time  `gorm:"not null;index" json:"scheduled_for"`
+	Status           string     `gorm:"size:50;default:pending;index" json:"status"` // pending, processing, completed, failed
+	IndependentRender bool       `gorm:"default:false" json:"independent_render"` // true = don't reschedule after completion
+	Attempts         int        `gorm:"default:0" json:"attempts"`
+	LastAttempt      *time.Time `json:"last_attempt,omitempty"`
+	ErrorMessage     string     `gorm:"type:text" json:"error_message,omitempty"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
 
 	// Associations
-	UserPlugin UserPlugin `gorm:"foreignKey:UserPluginID" json:"-"`
+	PluginInstance PluginInstance `gorm:"foreignKey:PluginInstanceID" json:"-"`
 }
 
 func (rq *RenderQueue) BeforeCreate(tx *gorm.DB) error {
@@ -500,8 +568,13 @@ func GetAllModels() []interface{} {
 		&RestoreExtractionJob{},
 		&DeviceModel{}, // Must come before Device due to foreign key reference
 		&Device{},
-		&Plugin{},
-		&UserPlugin{},
+		
+		&PrivatePluginWebhookData{}, // Webhook data for plugin instances
+		
+		// New unified plugin models
+		&PluginDefinition{}, // Must come after User due to foreign key reference
+		&PluginInstance{},   // Must come after PluginDefinition and User
+		
 		&Playlist{},
 		&PlaylistItem{},
 		&Schedule{},

@@ -330,9 +330,9 @@ func mapDeviceModelName(deviceModel string) string {
 	return deviceModel
 }
 
-// UpdateLastPlaylistIndex updates the last shown playlist item index for rotation
-func (ds *DeviceService) UpdateLastPlaylistIndex(deviceID uuid.UUID, index int) error {
-	result := ds.db.Model(&Device{}).Where("id = ?", deviceID).Update("last_playlist_index", index)
+// UpdateLastPlaylistItemID updates the last shown playlist item UUID for stable rotation
+func (ds *DeviceService) UpdateLastPlaylistItemID(deviceID uuid.UUID, playlistItemID uuid.UUID) error {
+	result := ds.db.Model(&Device{}).Where("id = ?", deviceID).Update("last_playlist_item_id", playlistItemID)
 	if result.Error != nil {
 		return result.Error
 	}

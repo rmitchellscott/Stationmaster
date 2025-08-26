@@ -70,6 +70,8 @@ import {
   CheckCircle,
   FileText,
   ChevronDown,
+  ChevronUp,
+  ChevronsUpDown,
 } from "lucide-react";
 
 interface DeviceModel {
@@ -131,6 +133,15 @@ interface DeviceLog {
   created_at: string;
 }
 
+// Sort types for devices table
+type DeviceSortColumn = 'name' | 'status' | 'firmware' | 'battery' | 'signal' | 'last_seen' | 'created';
+type SortOrder = 'asc' | 'desc';
+
+interface DeviceSortState {
+  column: DeviceSortColumn;
+  order: SortOrder;
+}
+
 interface DeviceManagementContentProps {
   onUpdate?: () => void;
 }
@@ -139,6 +150,23 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
   const { t } = useTranslation();
   const { user } = useAuth();
   const [devices, setDevices] = useState<Device[]>([]);
+  
+  // Devices table sorting state with localStorage persistence
+  const [deviceSortState, setDeviceSortState] = useState<DeviceSortState>(() => {
+    try {
+      const saved = localStorage.getItem('userSettingsDevicesTableSort');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.column && ['name', 'status', 'firmware', 'battery', 'signal', 'last_seen', 'created'].includes(parsed.column) &&
+            parsed.order && ['asc', 'desc'].includes(parsed.order)) {
+          return parsed;
+        }
+      }
+    } catch (e) {
+      // Invalid localStorage data, fall back to default
+    }
+    return { column: 'name', order: 'asc' };
+  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -195,6 +223,74 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
   const [mirrorSourceFriendlyId, setMirrorSourceFriendlyId] = useState("");
   const [mirrorLoading, setMirrorLoading] = useState(false);
   const [syncLoading, setSyncLoading] = useState(false);
+  
+  // Sort handler
+  const handleDeviceSort = (column: DeviceSortColumn) => {
+    setDeviceSortState(prevState => ({
+      column,
+      order: prevState.column === column && prevState.order === 'asc' ? 'desc' : 'asc'
+    }));
+  };
+  
+  // Save sort state to localStorage whenever it changes
+  useEffect(() => {
+    try {
+      localStorage.setItem('userSettingsDevicesTableSort', JSON.stringify(deviceSortState));
+    } catch (e) {
+      // Ignore localStorage errors
+    }
+  }, [deviceSortState]);
+  
+  // Sorted devices array
+  const sortedDevices = React.useMemo(() => {
+    const sorted = [...devices].sort((a, b) => {
+      let aValue: any;
+      let bValue: any;
+
+      switch (deviceSortState.column) {
+        case 'name':
+          aValue = (a.name || 'Unnamed Device')?.toLowerCase() || '';
+          bValue = (b.name || 'Unnamed Device')?.toLowerCase() || '';
+          break;
+        case 'status':
+          aValue = getDeviceStatus(a) === 'online' ? 3 : (getDeviceStatus(a) === 'recently_online' ? 2 : (getDeviceStatus(a) === 'offline' ? 1 : 0));
+          bValue = getDeviceStatus(b) === 'online' ? 3 : (getDeviceStatus(b) === 'recently_online' ? 2 : (getDeviceStatus(b) === 'offline' ? 1 : 0));
+          break;
+        case 'firmware':
+          aValue = a.firmware_version?.toLowerCase() || '';
+          bValue = b.firmware_version?.toLowerCase() || '';
+          break;
+        case 'battery':
+          aValue = a.battery_voltage || 0;
+          bValue = b.battery_voltage || 0;
+          break;
+        case 'signal':
+          aValue = a.rssi || -999;
+          bValue = b.rssi || -999;
+          break;
+        case 'last_seen':
+          aValue = a.last_seen ? new Date(a.last_seen).getTime() : 0;
+          bValue = b.last_seen ? new Date(b.last_seen).getTime() : 0;
+          break;
+        case 'created':
+          aValue = new Date(a.created_at).getTime();
+          bValue = new Date(b.created_at).getTime();
+          break;
+        default:
+          return 0;
+      }
+
+      if (aValue < bValue) {
+        return deviceSortState.order === 'asc' ? -1 : 1;
+      }
+      if (aValue > bValue) {
+        return deviceSortState.order === 'asc' ? 1 : -1;
+      }
+      return 0;
+    });
+
+    return sorted;
+  }, [devices, deviceSortState]);
 
   useEffect(() => {
     fetchDevices();
@@ -809,18 +905,130 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Device</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="hidden sm:table-cell">Firmware</TableHead>
-                    <TableHead className="hidden sm:table-cell">Battery</TableHead>
-                    <TableHead className="hidden sm:table-cell">Signal</TableHead>
-                    <TableHead className="hidden lg:table-cell">Last Seen</TableHead>
-                    <TableHead className="hidden lg:table-cell">Created</TableHead>
+                    <TableHead 
+                      className="cursor-pointer hover:bg-muted/50 select-none"
+                      onClick={() => handleDeviceSort('name')}
+                    >
+                      <div className="flex items-center gap-1">
+                        Device
+                        {deviceSortState.column === 'name' ? (
+                          deviceSortState.order === 'asc' ? (
+                            <ChevronUp className="h-4 w-4" />
+                          ) : (
+                            <ChevronDown className="h-4 w-4" />
+                          )
+                        ) : (
+                          <ChevronsUpDown className="h-4 w-4 opacity-50" />
+                        )}
+                      </div>
+                    </TableHead>
+                    <TableHead 
+                      className="cursor-pointer hover:bg-muted/50 select-none"
+                      onClick={() => handleDeviceSort('status')}
+                    >
+                      <div className="flex items-center gap-1">
+                        Status
+                        {deviceSortState.column === 'status' ? (
+                          deviceSortState.order === 'asc' ? (
+                            <ChevronUp className="h-4 w-4" />
+                          ) : (
+                            <ChevronDown className="h-4 w-4" />
+                          )
+                        ) : (
+                          <ChevronsUpDown className="h-4 w-4 opacity-50" />
+                        )}
+                      </div>
+                    </TableHead>
+                    <TableHead 
+                      className="hidden sm:table-cell cursor-pointer hover:bg-muted/50 select-none"
+                      onClick={() => handleDeviceSort('firmware')}
+                    >
+                      <div className="flex items-center gap-1">
+                        Firmware
+                        {deviceSortState.column === 'firmware' ? (
+                          deviceSortState.order === 'asc' ? (
+                            <ChevronUp className="h-4 w-4" />
+                          ) : (
+                            <ChevronDown className="h-4 w-4" />
+                          )
+                        ) : (
+                          <ChevronsUpDown className="h-4 w-4 opacity-50" />
+                        )}
+                      </div>
+                    </TableHead>
+                    <TableHead 
+                      className="hidden sm:table-cell cursor-pointer hover:bg-muted/50 select-none"
+                      onClick={() => handleDeviceSort('battery')}
+                    >
+                      <div className="flex items-center gap-1">
+                        Battery
+                        {deviceSortState.column === 'battery' ? (
+                          deviceSortState.order === 'asc' ? (
+                            <ChevronUp className="h-4 w-4" />
+                          ) : (
+                            <ChevronDown className="h-4 w-4" />
+                          )
+                        ) : (
+                          <ChevronsUpDown className="h-4 w-4 opacity-50" />
+                        )}
+                      </div>
+                    </TableHead>
+                    <TableHead 
+                      className="hidden sm:table-cell cursor-pointer hover:bg-muted/50 select-none"
+                      onClick={() => handleDeviceSort('signal')}
+                    >
+                      <div className="flex items-center gap-1">
+                        Signal
+                        {deviceSortState.column === 'signal' ? (
+                          deviceSortState.order === 'asc' ? (
+                            <ChevronUp className="h-4 w-4" />
+                          ) : (
+                            <ChevronDown className="h-4 w-4" />
+                          )
+                        ) : (
+                          <ChevronsUpDown className="h-4 w-4 opacity-50" />
+                        )}
+                      </div>
+                    </TableHead>
+                    <TableHead 
+                      className="hidden lg:table-cell cursor-pointer hover:bg-muted/50 select-none"
+                      onClick={() => handleDeviceSort('last_seen')}
+                    >
+                      <div className="flex items-center gap-1">
+                        Last Seen
+                        {deviceSortState.column === 'last_seen' ? (
+                          deviceSortState.order === 'asc' ? (
+                            <ChevronUp className="h-4 w-4" />
+                          ) : (
+                            <ChevronDown className="h-4 w-4" />
+                          )
+                        ) : (
+                          <ChevronsUpDown className="h-4 w-4 opacity-50" />
+                        )}
+                      </div>
+                    </TableHead>
+                    <TableHead 
+                      className="hidden lg:table-cell cursor-pointer hover:bg-muted/50 select-none"
+                      onClick={() => handleDeviceSort('created')}
+                    >
+                      <div className="flex items-center gap-1">
+                        Created
+                        {deviceSortState.column === 'created' ? (
+                          deviceSortState.order === 'asc' ? (
+                            <ChevronUp className="h-4 w-4" />
+                          ) : (
+                            <ChevronDown className="h-4 w-4" />
+                          )
+                        ) : (
+                          <ChevronsUpDown className="h-4 w-4 opacity-50" />
+                        )}
+                      </div>
+                    </TableHead>
                     <TableHead>Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {devices.map((device) => (
+                  {sortedDevices.map((device) => (
                     <TableRow key={device.id}>
                       <TableCell>
                         <div>

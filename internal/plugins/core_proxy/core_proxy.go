@@ -34,7 +34,7 @@ func (p *CoreProxyPlugin) Description() string {
 
 // Author returns the plugin author
 func (p *CoreProxyPlugin) Author() string {
-	return "Stationmaster Team"
+	return "Stationmaster"
 }
 
 // Version returns the plugin version

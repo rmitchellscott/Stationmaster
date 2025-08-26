@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/rmitchellscott/stationmaster/internal/database"
+	"github.com/rmitchellscott/stationmaster/internal/logging"
 	"gorm.io/gorm"
 )
 
@@ -136,14 +137,14 @@ func (i *Importer) importTable(jsonFile, tableName string, options ImportOptions
 	}
 
 	if len(records) == 0 {
-		fmt.Printf("[IMPORT] Skipping empty table: %s\n", tableName)
+		logging.InfoWithComponent(logging.ComponentImport, "Skipping empty table", "table", tableName)
 		return nil
 	}
 
 	// Get the model for this table
 	model := getModelForTable(tableName)
 	if model == nil {
-		fmt.Printf("[IMPORT] Warning: Unknown table %s, skipping\n", tableName)
+		logging.WarnWithComponent(logging.ComponentImport, "Unknown table, skipping", "table", tableName)
 		return nil
 	}
 
@@ -176,7 +177,7 @@ func (i *Importer) importTable(jsonFile, tableName string, options ImportOptions
 		}
 	}
 
-	fmt.Printf("[IMPORT] Imported %d records into %s\n", len(records), tableName)
+	logging.InfoWithComponent(logging.ComponentImport, "Imported records into table", "count", len(records), "table", tableName)
 	return nil
 }
 
@@ -193,7 +194,7 @@ func (i *Importer) clearDatabase() error {
 		if err := i.db.Unscoped().Where("1 = 1").Delete(model).Error; err != nil {
 			return fmt.Errorf("failed to clear table %s: %w", tableName, err)
 		}
-		fmt.Printf("[IMPORT] Cleared table: %s\n", tableName)
+		logging.InfoWithComponent(logging.ComponentImport, "Cleared table", "table", tableName)
 	}
 
 	return nil

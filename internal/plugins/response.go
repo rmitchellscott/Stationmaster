@@ -125,3 +125,42 @@ func GetRefreshRate(response PluginResponse) (int, bool) {
 	
 	return 0, false
 }
+
+// CreateHTMLResponse creates a response containing HTML data
+func CreateHTMLResponse(html string) PluginResponse {
+	return gin.H{
+		"type":    "html",
+		"content": html,
+	}
+}
+
+// IsHTMLResponse checks if a response is an HTML response
+func IsHTMLResponse(response PluginResponse) bool {
+	if responseType, ok := response["type"].(string); ok {
+		return responseType == "html"
+	}
+	return false
+}
+
+// GetHTMLContent extracts HTML content from a response
+func GetHTMLContent(response PluginResponse) (string, bool) {
+	if content, ok := response["content"].(string); ok {
+		return content, true
+	}
+	return "", false
+}
+
+// CreateNoChangeResponse creates a response indicating no data change occurred
+func CreateNoChangeResponse(message string) PluginResponse {
+	return gin.H{
+		"no_change": true,
+		"message":   message,
+		"timestamp": time.Now().UTC(),
+	}
+}
+
+// IsNoChangeResponse checks if a response indicates no change
+func IsNoChangeResponse(response PluginResponse) bool {
+	noChange, ok := response["no_change"].(bool)
+	return ok && noChange
+}

@@ -119,7 +119,7 @@ export function DeviceSelector({
 
   return (
     <div className="space-y-2">
-      <label className="text-sm font-medium">TRMNL</label>
+      <label className="text-sm font-medium">Device</label>
       <Select value={selectedDeviceId || ""} onValueChange={onDeviceChange}>
         <SelectTrigger className="w-full">
           <SelectValue>

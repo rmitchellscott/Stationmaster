@@ -4,12 +4,20 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+
+	"github.com/rmitchellscott/stationmaster/internal/database"
 )
 
 // registry holds all registered plugins
 var (
 	registry = make(map[string]Plugin)
 	mutex    sync.RWMutex
+)
+
+// privatePluginFactory holds the factory function for creating private plugins
+var (
+	privatePluginFactory func(*database.PluginDefinition, *database.PluginInstance) Plugin
+	privateFactoryMutex  sync.RWMutex
 )
 
 // Register adds a plugin to the registry
@@ -98,4 +106,18 @@ func Exists(pluginType string) bool {
 	
 	_, exists := registry[pluginType]
 	return exists
+}
+
+// RegisterPrivatePluginFactory registers a factory function for creating private plugins
+func RegisterPrivatePluginFactory(factory func(*database.PluginDefinition, *database.PluginInstance) Plugin) {
+	privateFactoryMutex.Lock()
+	defer privateFactoryMutex.Unlock()
+	privatePluginFactory = factory
+}
+
+// GetPrivatePluginFactory returns the registered private plugin factory function
+func GetPrivatePluginFactory() func(*database.PluginDefinition, *database.PluginInstance) Plugin {
+	privateFactoryMutex.RLock()
+	defer privateFactoryMutex.RUnlock()
+	return privatePluginFactory
 }

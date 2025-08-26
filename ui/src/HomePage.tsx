@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useAuth } from "@/components/AuthProvider";
 import { LoginForm } from "@/components/LoginForm";
 import { PluginManagement } from "@/components/PluginManagement";
@@ -37,16 +38,29 @@ const storeDeviceId = (deviceId: string | null) => {
 export default function HomePage() {
   const { isAuthenticated, isLoading, login, authConfigured, user } = useAuth();
   const { t } = useTranslation();
+  const [searchParams, setSearchParams] = useSearchParams();
   
   // State
   const [devices, setDevices] = useState<Device[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [userPlugins, setUserPlugins] = useState([]);
-  const [userPluginsLoading, setUserPluginsLoading] = useState(false);
+  const [pluginInstances, setPluginInstances] = useState([]);
+  const [pluginInstancesLoading, setPluginInstancesLoading] = useState(false);
   const [playlistItems, setPlaylistItems] = useState([]);
   const [playlistItemsLoading, setPlaylistItemsLoading] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(true);
+
+  // Get active tab from URL query parameters
+  const activeTab = searchParams.get('tab') || 'plugins';
+
+  // Handle tab change by updating URL query parameters
+  const handleTabChange = (tab: string) => {
+    const newSearchParams = new URLSearchParams(searchParams);
+    newSearchParams.set('tab', tab);
+    // Remove subtab when changing main tab to avoid confusion
+    newSearchParams.delete('subtab');
+    setSearchParams(newSearchParams);
+  };
 
   // Fetch devices
   const fetchDevices = async () => {
@@ -106,20 +120,20 @@ export default function HomePage() {
   };
 
   // Fetch user plugins
-  const fetchUserPlugins = async () => {
+  const fetchPluginInstances = async () => {
     try {
-      setUserPluginsLoading(true);
-      const response = await fetch("/api/user-plugins", {
+      setPluginInstancesLoading(true);
+      const response = await fetch("/api/plugin-instances", {
         credentials: "include",
       });
       if (response.ok) {
         const data = await response.json();
-        setUserPlugins(data.user_plugins || []);
+        setPluginInstances(data.plugin_instances || []);
       }
     } catch (error) {
-      console.error("Failed to fetch user plugins:", error);
+      console.error("Failed to fetch plugin instances:", error);
     } finally {
-      setUserPluginsLoading(false);
+      setPluginInstancesLoading(false);
     }
   };
 
@@ -227,7 +241,7 @@ export default function HomePage() {
   useEffect(() => {
     if (isAuthenticated) {
       fetchDevices();
-      fetchUserPlugins();
+      fetchPluginInstances();
     }
   }, [isAuthenticated]);
 
@@ -348,7 +362,7 @@ export default function HomePage() {
             <CardTitle className="text-2xl">Dashboard</CardTitle>
           </CardHeader>
           <CardContent>
-            <Tabs defaultValue="plugins" className="w-full">
+            <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
               <TabsList className="grid w-full grid-cols-3">
                 <TabsTrigger value="plugins">
                   <Puzzle className="h-4 w-4 mr-2" />
@@ -367,7 +381,7 @@ export default function HomePage() {
               <TabsContent value="plugins" className="mt-6">
                 <PluginManagement 
                   selectedDeviceId={selectedDeviceId || ""}
-                  onUpdate={fetchUserPlugins}
+                  onUpdate={fetchPluginInstances}
                 />
               </TabsContent>
               

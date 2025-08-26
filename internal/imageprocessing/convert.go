@@ -107,3 +107,57 @@ func GetColorLevels(bitDepth int) int {
 		return 256
 	}
 }
+
+// QuantizeToGrayscalePalette converts an image to grayscale and quantizes it to the target bit depth
+// without dithering, returning a paletted image ready for PNG encoding
+func QuantizeToGrayscalePalette(img image.Image, bitDepth int) *image.Paletted {
+	if img == nil {
+		return nil
+	}
+
+	// Convert to grayscale first
+	grayscale := ToGrayscale(img)
+	
+	// Create the palette for this bit depth
+	levels := GetColorLevels(bitDepth)
+	palette := make(color.Palette, levels)
+	
+	if levels == 2 {
+		palette[0] = color.Gray{Y: 0}   // Black
+		palette[1] = color.Gray{Y: 255} // White
+	} else {
+		// Create evenly distributed grayscale levels
+		for i := 0; i < levels; i++ {
+			value := uint8((i * 255) / (levels - 1))
+			palette[i] = color.Gray{Y: value}
+		}
+	}
+	
+	// Create paletted image
+	bounds := grayscale.Bounds()
+	paletted := image.NewPaletted(bounds, palette)
+	
+	// Quantize each pixel using hard thresholds (no dithering)
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			grayColor := grayscale.At(x, y)
+			gray := grayColor.(color.Gray)
+			
+			// Quantize the gray value using existing QuantizeColor function
+			quantized := QuantizeColor(gray.Y, bitDepth)
+			
+			// Find the closest palette index for this quantized value
+			var paletteIndex uint8
+			for i, paletteColor := range palette {
+				if paletteGray, ok := paletteColor.(color.Gray); ok && paletteGray.Y == quantized {
+					paletteIndex = uint8(i)
+					break
+				}
+			}
+			
+			paletted.SetColorIndex(x, y, paletteIndex)
+		}
+	}
+	
+	return paletted
+}

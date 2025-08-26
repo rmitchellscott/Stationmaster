@@ -21,6 +21,13 @@ A Bring Your Own Server (BYOS) solution for TRMNL with a Go backend and static R
   - Firmware management and updates
   - Device scheduling and configuration
   
+- 🔌 **Private Plugin System**
+  - Custom liquid templates with multi-layout support
+  - Webhook, polling, and merge data strategies
+  - Built-in Monaco editor with syntax highlighting
+  - Live preview with layout selection
+  - Secure template validation and sandboxing
+  
 - 🎨 **Modern UI**
   - React + TypeScript frontend
   - Tailwind CSS styling
@@ -174,6 +181,17 @@ npm run dev
 | `FIRMWARE_STORAGE_DIR` | `/data/firmware` | Directory for firmware storage |
 | `FIRMWARE_AUTO_DOWNLOAD` | `true` | Automatically download new firmware |
 
+### Private Plugin Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PRIVATE_PLUGINS_ENABLED` | `true` | Enable private plugin system |
+| `PLUGIN_WEBHOOK_TIMEOUT` | `30s` | Timeout for webhook data submissions |
+| `PLUGIN_POLLING_INTERVAL` | `5m` | Default polling interval for external APIs |
+| `PLUGIN_MAX_DATA_SIZE` | `2048` | Maximum data size in bytes for webhooks |
+| `PLUGIN_TEMPLATE_TIMEOUT` | `10s` | Template rendering timeout |
+| `PLUGIN_SANDBOX_ENABLED` | `true` | Enable template security sandboxing |
+
 ### Logging & Debugging
 
 | Variable | Default | Description |
@@ -232,6 +250,17 @@ DATABASE_URL=postgres://user:password@host/dbname?sslmode=disable
 - `POST /api/devices` - Add device
 - `PUT /api/devices/:id` - Update device
 - `DELETE /api/devices/:id` - Delete device
+
+### Private Plugin System
+
+- `GET /api/private-plugins` - List private plugins
+- `POST /api/private-plugins` - Create private plugin
+- `PUT /api/private-plugins/:id` - Update private plugin
+- `DELETE /api/private-plugins/:id` - Delete private plugin
+- `POST /api/private-plugins/:id/webhook` - Submit webhook data
+- `GET /api/private-plugins/:id/render/:layout` - Render plugin template
+
+For detailed documentation, see [docs/PRIVATE_PLUGINS.md](docs/PRIVATE_PLUGINS.md)
 
 ## Building from Source
 

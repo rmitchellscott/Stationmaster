@@ -512,12 +512,25 @@ func DeviceEventsHandler(c *gin.Context) {
 		return
 	}
 
-	// Send initial device status
-	playlistService := database.NewPlaylistService(db)
-	activeItems, err := playlistService.GetActivePlaylistItemsForTime(deviceID, time.Now())
-	if err == nil && len(activeItems) > 0 {
-		currentIndex := device.LastPlaylistIndex
-		if currentIndex >= 0 && currentIndex < len(activeItems) {
+	// Send initial device status - just use what database says is current
+	if device.LastPlaylistItemID != nil {
+		playlistService := database.NewPlaylistService(db)
+		
+		// Get the current item directly by UUID (single source of truth)
+		currentItem, err := playlistService.GetPlaylistItemByID(*device.LastPlaylistItemID)
+		if err == nil && currentItem != nil {
+			// Get active items for context and index calculation
+			activeItems, _ := playlistService.GetActivePlaylistItemsForTime(deviceID, time.Now())
+			
+			// Calculate index in active items for frontend compatibility
+			currentIndex := -1
+			for i, item := range activeItems {
+				if item.ID == currentItem.ID {
+					currentIndex = i
+					break
+				}
+			}
+			
 			// Get user timezone for sleep calculation
 			userTimezone := "UTC"
 			if user.Timezone != "" {
@@ -531,8 +544,8 @@ func DeviceEventsHandler(c *gin.Context) {
 				Type: "playlist_index_changed",
 				Data: map[string]interface{}{
 					"device_id":     deviceID.String(),
-					"current_index": currentIndex,
-					"current_item":  activeItems[currentIndex],
+					"current_index": currentIndex, // -1 if not in active items (e.g., hidden)
+					"current_item":  *currentItem,  // Always the actual current item
 					"active_items":  activeItems,
 					"timestamp":     time.Now().UTC(),
 					"sleep_config": map[string]interface{}{
@@ -635,13 +648,26 @@ func DeviceActiveItemsHandler(c *gin.Context) {
 	var currentIndex int = -1
 	var currentlyShowing *database.PlaylistItem = nil
 
-	if len(activeItems) > 0 {
-		// Use the device's last playlist index to determine currently showing
-		if device.LastPlaylistIndex >= 0 && device.LastPlaylistIndex < len(activeItems) {
-			currentIndex = device.LastPlaylistIndex
-			currentlyShowing = &activeItems[currentIndex]
+	if len(activeItems) > 0 && device.LastPlaylistItemID != nil {
+		// Find the current item by UUID
+		for i, item := range activeItems {
+			if item.ID == *device.LastPlaylistItemID {
+				currentIndex = i
+				currentlyShowing = &activeItems[i]
+				break
+			}
 		}
 	}
+
+	// Get user timezone for sleep calculations
+	userTimezone := "UTC"
+	if user.Timezone != "" {
+		userTimezone = user.Timezone
+	}
+
+	// Check current sleep state and if sleep screen would be served
+	currentlySleeping := trmnl.IsInSleepPeriod(device, userTimezone)
+	sleepScreenServed := currentlySleeping && device.SleepShowScreen
 
 	// Response
 	response := gin.H{
@@ -652,6 +678,14 @@ func DeviceActiveItemsHandler(c *gin.Context) {
 		"active_items":        activeItems,
 		"total_visible_items": len(visibleItems),
 		"total_active_items":  len(activeItems),
+		"sleep_config": map[string]interface{}{
+			"enabled":               device.SleepEnabled,
+			"start_time":            device.SleepStartTime,
+			"end_time":              device.SleepEndTime,
+			"show_screen":           device.SleepShowScreen,
+			"currently_sleeping":    currentlySleeping,
+			"sleep_screen_served":   sleepScreenServed,
+		},
 	}
 
 	c.JSON(http.StatusOK, response)

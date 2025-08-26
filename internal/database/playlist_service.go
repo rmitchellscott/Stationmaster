@@ -96,15 +96,15 @@ func (pls *PlaylistService) DeletePlaylist(playlistID uuid.UUID) error {
 	})
 }
 
-// AddItemToPlaylist adds a user plugin to a playlist
-func (pls *PlaylistService) AddItemToPlaylist(playlistID, userPluginID uuid.UUID, importance bool, durationOverride *int) (*PlaylistItem, error) {
+// AddItemToPlaylist adds a plugin instance to a playlist
+func (pls *PlaylistService) AddItemToPlaylist(playlistID, pluginInstanceID uuid.UUID, importance bool, durationOverride *int) (*PlaylistItem, error) {
 	// Get the next order index
 	var maxOrder int
 	pls.db.Model(&PlaylistItem{}).Where("playlist_id = ?", playlistID).Select("COALESCE(MAX(order_index), 0)").Scan(&maxOrder)
 
 	playlistItem := &PlaylistItem{
 		PlaylistID:       playlistID,
-		UserPluginID:     userPluginID,
+		PluginInstanceID: pluginInstanceID,
 		OrderIndex:       maxOrder + 1,
 		IsVisible:        true,
 		Importance:       importance,
@@ -121,7 +121,7 @@ func (pls *PlaylistService) AddItemToPlaylist(playlistID, userPluginID uuid.UUID
 // GetPlaylistItems returns all items in a playlist with their associated data
 func (pls *PlaylistService) GetPlaylistItems(playlistID uuid.UUID) ([]PlaylistItem, error) {
 	var items []PlaylistItem
-	err := pls.db.Preload("UserPlugin").Preload("UserPlugin.Plugin").Preload("Schedules").
+	err := pls.db.Preload("PluginInstance").Preload("PluginInstance.PluginDefinition").Preload("Schedules").
 		Where("playlist_id = ?", playlistID).
 		Order("order_index ASC").
 		Find(&items).Error
@@ -132,7 +132,7 @@ func (pls *PlaylistService) GetPlaylistItems(playlistID uuid.UUID) ([]PlaylistIt
 // GetPlaylistItemByID returns a playlist item by its ID
 func (pls *PlaylistService) GetPlaylistItemByID(itemID uuid.UUID) (*PlaylistItem, error) {
 	var item PlaylistItem
-	err := pls.db.Preload("UserPlugin").Preload("UserPlugin.Plugin").Preload("Schedules").
+	err := pls.db.Preload("PluginInstance").Preload("PluginInstance.PluginDefinition").Preload("Schedules").
 		First(&item, "id = ?", itemID).Error
 	if err != nil {
 		return nil, err
@@ -409,6 +409,11 @@ func (pls *PlaylistService) GetActivePlaylistItemsForTime(deviceID uuid.UUID, cu
 		if !item.IsVisible {
 			continue
 		}
+		
+		// Skip items that need config updates - they shouldn't be served to devices
+		if item.PluginInstance.NeedsConfigUpdate {
+			continue
+		}
 
 		// If no schedules, item is always active
 		if len(item.Schedules) == 0 {
@@ -548,12 +553,12 @@ func (pls *PlaylistService) CopyPlaylistItems(sourceDeviceID, targetDeviceID uui
 
 			// Copy each playlist item to the target default playlist
 			for itemIndex, sourceItem := range sourceItems {
-				logging.Debug("[MIRROR] Copying item", "current", itemIndex+1, "total", len(sourceItems), "user_plugin_id", sourceItem.UserPluginID, "is_visible", sourceItem.IsVisible, "order_index", sourceItem.OrderIndex)
+				logging.Debug("[MIRROR] Copying item", "current", itemIndex+1, "total", len(sourceItems), "plugin_instance_id", sourceItem.PluginInstanceID, "is_visible", sourceItem.IsVisible, "order_index", sourceItem.OrderIndex)
 
 				// Create item with minimum required fields to avoid foreign key constraint errors
 				targetItem := PlaylistItem{
-					PlaylistID:   targetPlaylist.ID,
-					UserPluginID: sourceItem.UserPluginID,
+					PlaylistID:       targetPlaylist.ID,
+					PluginInstanceID: sourceItem.PluginInstanceID,
 				}
 				if err := tx.Create(&targetItem).Error; err != nil {
 					logging.Error("[MIRROR] Error creating target item with required fields", "error", err)
@@ -647,4 +652,19 @@ func (pls *PlaylistService) ClearMirroredPlaylists(deviceID uuid.UUID) error {
 
 		return nil
 	})
+}
+
+// GetDevicesUsingPluginInstance returns all devices that have the given plugin instance in their playlists
+func (pls *PlaylistService) GetDevicesUsingPluginInstance(pluginInstanceID uuid.UUID) ([]Device, error) {
+	var devices []Device
+	
+	// Find all playlists that have items with this plugin instance
+	err := pls.db.Distinct().
+		Preload("DeviceModel").
+		Joins("JOIN playlists ON devices.id = playlists.device_id").
+		Joins("JOIN playlist_items ON playlists.id = playlist_items.playlist_id").
+		Where("playlist_items.plugin_instance_id = ? AND devices.is_active = ?", pluginInstanceID, true).
+		Find(&devices).Error
+	
+	return devices, err
 }

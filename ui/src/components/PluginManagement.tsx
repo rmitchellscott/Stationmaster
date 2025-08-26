@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
   Dialog,
@@ -48,10 +49,17 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Separator } from "@/components/ui/separator";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   Puzzle,
   Edit,
   Trash2,
+  Copy,
   Settings as SettingsIcon,
   AlertTriangle,
   CheckCircle,
@@ -60,6 +68,10 @@ import {
   ChevronDown,
   ChevronsUpDown,
 } from "lucide-react";
+import { PrivatePluginList } from "./PrivatePluginList";
+import { PluginPreview } from "./PluginPreview";
+import { LiquidEditor } from "./LiquidEditor";
+import { PrivatePluginHelp } from "./PrivatePluginHelp";
 
 interface Plugin {
   id: string;
@@ -71,11 +83,12 @@ interface Plugin {
   author: string;
   is_active: boolean;
   requires_processing: boolean;
+  data_strategy?: string;
   created_at: string;
   updated_at: string;
 }
 
-interface UserPlugin {
+interface PluginInstance {
   id: string;
   user_id: string;
   plugin_id: string;
@@ -87,6 +100,8 @@ interface UserPlugin {
   updated_at: string;
   plugin: Plugin;
   is_used_in_playlists: boolean;
+  needs_config_update: boolean;
+  last_schema_version: number;
 }
 
 interface RefreshRateOption {
@@ -109,8 +124,10 @@ interface SortState {
 }
 
 export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagementProps) {
+  const navigate = useNavigate();
   const { t } = useTranslation();
-  const [userPlugins, setUserPlugins] = useState<UserPlugin[]>([]);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [pluginInstances, setPluginInstances] = useState<PluginInstance[]>([]);
   const [plugins, setPlugins] = useState<Plugin[]>([]);
   const [refreshRateOptions, setRefreshRateOptions] = useState<RefreshRateOption[]>([]);
   const [loading, setLoading] = useState(false);
@@ -148,7 +165,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
 
   // Edit plugin dialog
   const [showEditDialog, setShowEditDialog] = useState(false);
-  const [editUserPlugin, setEditUserPlugin] = useState<UserPlugin | null>(null);
+  const [editPluginInstance, setEditPluginInstance] = useState<PluginInstance | null>(null);
   const [editInstanceName, setEditInstanceName] = useState("");
   const [editInstanceSettings, setEditInstanceSettings] = useState<Record<string, any>>({});
   const [editInstanceRefreshRate, setEditInstanceRefreshRate] = useState<number>(86400);
@@ -158,24 +175,63 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
   // Edit dialog specific alerts
   const [editDialogError, setEditDialogError] = useState<string | null>(null);
   const [editDialogSuccess, setEditDialogSuccess] = useState<string | null>(null);
+  
+  // Schema diff state
+  const [schemaDiff, setSchemaDiff] = useState<any>(null);
+  const [schemaDiffLoading, setSchemaDiffLoading] = useState(false);
 
   // Delete confirmation dialog
   const [deletePluginDialog, setDeletePluginDialog] = useState<{
     isOpen: boolean;
-    plugin: UserPlugin | null;
+    plugin: PluginInstance | null;
   }>({ isOpen: false, plugin: null });
 
-  const fetchUserPlugins = async () => {
+  // Private plugin management state
+  const [previewingPrivatePlugin, setPreviewingPrivatePlugin] = useState<any | null>(null);
+
+  // Pending edit state for handling navigation timing issues
+  const [pendingEditInstanceId, setPendingEditInstanceId] = useState<string | null>(null);
+
+  // Get active subtab from URL query parameters
+  const activeTab = (searchParams.get('subtab') as 'instances' | 'private') || 'instances';
+
+  // Handle subtab change by updating URL query parameters
+  const handleSubTabChange = (subtab: string) => {
+    const newSearchParams = new URLSearchParams(searchParams);
+    newSearchParams.set('subtab', subtab);
+    // Ensure main tab is set to plugins
+    newSearchParams.set('tab', 'plugins');
+    setSearchParams(newSearchParams);
+  };
+
+  // Helper function to generate instance webhook URL
+  const generateInstanceWebhookURL = (instanceId: string): string => {
+    return `${window.location.origin}/api/webhooks/instance/${instanceId}`;
+  };
+
+  // Helper function to copy webhook URL to clipboard
+  const copyWebhookUrl = async (instanceId: string) => {
+    try {
+      const webhookURL = generateInstanceWebhookURL(instanceId);
+      await navigator.clipboard.writeText(webhookURL);
+      setSuccessMessage("Webhook URL copied to clipboard!");
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (error) {
+      setError("Failed to copy webhook URL");
+    }
+  };
+
+  const fetchPluginInstances = async () => {
     try {
       setLoading(true);
-      const response = await fetch("/api/user-plugins", {
+      const response = await fetch("/api/plugin-instances", {
         credentials: "include",
       });
       if (response.ok) {
         const data = await response.json();
-        setUserPlugins(data.user_plugins || []);
+        setPluginInstances(data.plugin_instances || []);
       } else {
-        setError("Failed to fetch user plugins");
+        setError("Failed to fetch plugin instances");
       }
     } catch (error) {
       setError("Network error occurred");
@@ -186,7 +242,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
 
   const fetchPlugins = async () => {
     try {
-      const response = await fetch("/api/plugins", {
+      const response = await fetch("/api/plugin-definitions", {
         credentials: "include",
       });
       if (response.ok) {
@@ -200,7 +256,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
 
   const fetchRefreshRateOptions = async () => {
     try {
-      const response = await fetch("/api/plugins/refresh-rate-options", {
+      const response = await fetch("/api/plugin-definitions/refresh-rate-options", {
         credentials: "include",
       });
       if (response.ok) {
@@ -219,7 +275,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
       .replace(/validation failed: /, '');
   };
 
-  const createUserPlugin = async () => {
+  const createPluginInstance = async () => {
     if (!selectedPlugin || !instanceName.trim()) {
       setCreateDialogError("Please provide a name for the plugin instance");
       return;
@@ -230,7 +286,8 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
       setCreateDialogError(null);
 
       const requestBody: any = {
-        plugin_type: selectedPlugin.type,
+        definition_id: selectedPlugin.id,
+        definition_type: selectedPlugin.type, // "system" or "private"
         name: instanceName.trim(),
         settings: instanceSettings,
       };
@@ -240,7 +297,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
         requestBody.refresh_interval = instanceRefreshRate;
       }
 
-      const response = await fetch("/api/user-plugins", {
+      const response = await fetch("/api/plugin-instances", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -257,7 +314,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
         setInstanceSettings({});
         setInstanceRefreshRate(86400);
         setCreateDialogError(null);
-        await fetchUserPlugins();
+        await fetchPluginInstances();
         onUpdate?.();
       } else {
         const errorData = await response.json();
@@ -272,24 +329,52 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
   };
 
   const hasPluginInstanceChanges = () => {
-    if (!editUserPlugin) return false;
+    if (!editPluginInstance) return false;
     
     // Parse original settings
     let originalSettings = {};
     try {
-      originalSettings = editUserPlugin.settings ? JSON.parse(editUserPlugin.settings) : {};
+      originalSettings = editPluginInstance.settings ? JSON.parse(editPluginInstance.settings) : {};
     } catch (e) {
       originalSettings = {};
     }
     
+    // Check for refresh rate changes (only for plugins that require processing)
+    const hasRefreshRateChanged = editPluginInstance.plugin?.requires_processing && 
+      editInstanceRefreshRate !== editPluginInstance.refresh_interval;
+    
     return (
-      editInstanceName.trim() !== editUserPlugin.name ||
-      JSON.stringify(editInstanceSettings) !== JSON.stringify(originalSettings)
+      editInstanceName.trim() !== editPluginInstance.name ||
+      JSON.stringify(editInstanceSettings) !== JSON.stringify(originalSettings) ||
+      hasRefreshRateChanged
     );
   };
 
+  // Fetch schema diff for an instance that needs config updates
+  const fetchSchemaDiff = async (instanceId: string) => {
+    setSchemaDiffLoading(true);
+    setSchemaDiff(null);
+    
+    try {
+      const response = await fetch(`/api/plugin-instances/${instanceId}/schema-diff`, {
+        credentials: "include",
+      });
+      
+      if (response.ok) {
+        const diff = await response.json();
+        setSchemaDiff(diff);
+      } else {
+        console.error("Failed to fetch schema diff");
+      }
+    } catch (error) {
+      console.error("Error fetching schema diff:", error);
+    } finally {
+      setSchemaDiffLoading(false);
+    }
+  };
+
   const updatePluginInstance = async () => {
-    if (!editUserPlugin || !editInstanceName.trim()) {
+    if (!editPluginInstance || !editInstanceName.trim()) {
       setError("Please provide a name for the plugin instance");
       return;
     }
@@ -304,11 +389,11 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
       };
 
       // Only include refresh_interval for plugins that require processing
-      if (editUserPlugin.plugin?.requires_processing) {
+      if (editPluginInstance.plugin?.requires_processing) {
         requestBody.refresh_interval = editInstanceRefreshRate;
       }
 
-      const response = await fetch(`/api/user-plugins/${editUserPlugin.id}`, {
+      const response = await fetch(`/api/plugin-instances/${editPluginInstance.id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -320,11 +405,11 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
       if (response.ok) {
         setSuccessMessage("Plugin instance updated successfully!");
         setShowEditDialog(false);
-        setEditUserPlugin(null);
+        setEditPluginInstance(null);
         setEditInstanceName("");
         setEditInstanceSettings({});
         setEditInstanceRefreshRate(86400);
-        await fetchUserPlugins();
+        await fetchPluginInstances();
         onUpdate?.();
       } else {
         const errorData = await response.json();
@@ -338,8 +423,8 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
     }
   };
 
-  const forceRefreshUserPlugin = async () => {
-    if (!editUserPlugin) {
+  const forceRefreshPluginInstance = async () => {
+    if (!editPluginInstance) {
       setEditDialogError("No plugin selected");
       return;
     }
@@ -349,13 +434,13 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
       setEditDialogError(null);
       setEditDialogSuccess(null);
 
-      const response = await fetch(`/api/user-plugins/${editUserPlugin.id}/force-refresh`, {
+      const response = await fetch(`/api/plugin-instances/${editPluginInstance.id}/force-refresh`, {
         method: "POST",
         credentials: "include",
       });
 
       if (response.ok) {
-        setEditDialogSuccess("Plugin refresh triggered successfully! Content will be re-rendered on next request.");
+        setEditDialogSuccess("Content refresh started! Your plugin will update shortly.");
       } else {
         const errorData = await response.json();
         setEditDialogError(errorData.error || "Failed to force refresh plugin");
@@ -367,16 +452,16 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
     }
   };
 
-  const deleteUserPlugin = async (userPluginId: string) => {
+  const deletePluginInstance = async (userPluginId: string) => {
     try {
       setError(null);
-      const response = await fetch(`/api/user-plugins/${userPluginId}`, {
+      const response = await fetch(`/api/plugin-instances/${userPluginId}`, {
         method: "DELETE",
         credentials: "include",
       });
 
       if (response.ok) {
-        await fetchUserPlugins();
+        await fetchPluginInstances();
         onUpdate?.();
       } else {
         const errorData = await response.json();
@@ -388,7 +473,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
   };
 
   useEffect(() => {
-    fetchUserPlugins();
+    fetchPluginInstances();
     fetchPlugins();
     fetchRefreshRateOptions();
   }, [selectedDeviceId]);
@@ -423,6 +508,81 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
     }
   }, [sortState]);
 
+  // Helper function to open edit dialog for an instance
+  const openEditDialog = (instanceToEdit: PluginInstance) => {
+    setEditPluginInstance(instanceToEdit);
+    setEditInstanceName(instanceToEdit.name);
+    
+    // Parse settings from JSON string to object
+    let parsedSettings = {};
+    try {
+      if (instanceToEdit.settings && typeof instanceToEdit.settings === 'string') {
+        parsedSettings = JSON.parse(instanceToEdit.settings);
+      } else if (instanceToEdit.settings && typeof instanceToEdit.settings === 'object') {
+        parsedSettings = instanceToEdit.settings;
+      }
+    } catch (e) {
+      console.error("Error parsing plugin settings:", e);
+      parsedSettings = {};
+    }
+    
+    setEditInstanceSettings(parsedSettings);
+    setEditInstanceRefreshRate(instanceToEdit.refresh_interval || 86400);
+    
+    // Clear dialog-specific alerts when opening
+    setEditDialogError(null);
+    setEditDialogSuccess(null);
+    
+    // Fetch schema diff if instance needs config update
+    if (instanceToEdit.needs_config_update) {
+      fetchSchemaDiff(instanceToEdit.id);
+    } else {
+      setSchemaDiff(null);
+    }
+    
+    setShowEditDialog(true);
+  };
+
+  // Handle auto-opening edit dialog from URL parameter - Check for edit parameter
+  useEffect(() => {
+    const editInstanceId = searchParams.get('edit');
+    
+    if (editInstanceId) {
+      if (pluginInstances.length > 0) {
+        // Instances are loaded, try to find and open the edit dialog
+        const instanceToEdit = pluginInstances.find(instance => instance.id === editInstanceId);
+        if (instanceToEdit) {
+          openEditDialog(instanceToEdit);
+          setPendingEditInstanceId(null); // Clear pending since we handled it
+          
+          // Clear the URL parameter
+          const newSearchParams = new URLSearchParams(searchParams);
+          newSearchParams.delete('edit');
+          setSearchParams(newSearchParams);
+        }
+      } else {
+        // Instances not loaded yet, store the pending edit ID
+        setPendingEditInstanceId(editInstanceId);
+      }
+    }
+  }, [searchParams, pluginInstances, setSearchParams]);
+
+  // Handle pending edit when plugin instances load
+  useEffect(() => {
+    if (pendingEditInstanceId && pluginInstances.length > 0) {
+      const instanceToEdit = pluginInstances.find(instance => instance.id === pendingEditInstanceId);
+      if (instanceToEdit) {
+        openEditDialog(instanceToEdit);
+        setPendingEditInstanceId(null);
+        
+        // Clear the URL parameter
+        const newSearchParams = new URLSearchParams(searchParams);
+        newSearchParams.delete('edit');
+        setSearchParams(newSearchParams);
+      }
+    }
+  }, [pluginInstances, pendingEditInstanceId, searchParams, setSearchParams]);
+
   // Sort function
   const handleSort = (column: SortColumn) => {
     setSortState(prevState => ({
@@ -431,9 +591,9 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
     }));
   };
 
-  // Sort the userPlugins array based on current sort state
-  const sortedUserPlugins = React.useMemo(() => {
-    const sorted = [...userPlugins].sort((a, b) => {
+  // Sort the pluginInstances array based on current sort state
+  const sortedPluginInstances = React.useMemo(() => {
+    const sorted = [...pluginInstances].sort((a, b) => {
       let aValue: any;
       let bValue: any;
 
@@ -447,8 +607,9 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
           bValue = b.plugin?.name?.toLowerCase() || '';
           break;
         case 'status':
-          aValue = a.is_used_in_playlists ? 1 : 0; // Active first
-          bValue = b.is_used_in_playlists ? 1 : 0;
+          // Priority system: Update Config (3) > Active (2) > Unused (1)
+          aValue = a.needs_config_update ? 3 : (a.is_used_in_playlists ? 2 : 1);
+          bValue = b.needs_config_update ? 3 : (b.is_used_in_playlists ? 2 : 1);
           break;
         case 'created':
           aValue = new Date(a.created_at).getTime();
@@ -468,7 +629,31 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
     });
 
     return sorted;
-  }, [userPlugins, sortState]);
+  }, [pluginInstances, sortState]);
+
+  // Private plugin handlers
+  const handleCreatePrivatePlugin = () => {
+    navigate('/plugins/private/edit');
+  };
+
+  const handleEditPrivatePlugin = (plugin: any) => {
+    navigate(`/plugins/private/edit?pluginId=${plugin.id}`);
+  };
+
+  const handlePreviewPrivatePlugin = (plugin: any) => {
+    setPreviewingPrivatePlugin(plugin);
+  };
+
+  // Helper function to check if a plugin has configuration fields
+  const hasConfigurationFields = (plugin: Plugin): boolean => {
+    try {
+      const schema = JSON.parse(plugin.config_schema);
+      const properties = schema.properties || {};
+      return Object.keys(properties).length > 0;
+    } catch (e) {
+      return false;
+    }
+  };
 
   const renderSettingsForm = (plugin: Plugin, settings: Record<string, any>, onChange: (key: string, value: any) => void) => {
     let schema;
@@ -485,6 +670,33 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
         {Object.keys(properties).map((key) => {
           const prop = properties[key];
           const value = settings[key] || prop.default || "";
+
+          // Handle enum (select dropdown) FIRST - before string type
+          if (prop.enum && Array.isArray(prop.enum)) {
+            const enumNames = prop.enumNames && Array.isArray(prop.enumNames) ? prop.enumNames : prop.enum;
+            return (
+              <div key={key}>
+                <Label htmlFor={key}>{prop.title || key}</Label>
+                <Select value={value} onValueChange={(val) => onChange(key, val)}>
+                  <SelectTrigger className="mt-2">
+                    <SelectValue placeholder={prop.placeholder || "Select an option"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {prop.enum.map((option, index) => (
+                      <SelectItem key={option} value={option}>
+                        {enumNames[index] || option}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {prop.description && (
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {prop.description}
+                  </p>
+                )}
+              </div>
+            );
+          }
 
           if (prop.type === "string") {
             // Handle different string formats
@@ -630,31 +842,6 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
             );
           }
 
-          // Handle enum (select dropdown)
-          if (prop.enum && Array.isArray(prop.enum)) {
-            return (
-              <div key={key}>
-                <Label htmlFor={key}>{prop.title || key}</Label>
-                <Select value={value} onValueChange={(val) => onChange(key, val)}>
-                  <SelectTrigger className="mt-2">
-                    <SelectValue placeholder={prop.placeholder || "Select an option"} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {prop.enum.map((option) => (
-                      <SelectItem key={option} value={option}>
-                        {option}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {prop.description && (
-                  <p className="text-sm text-muted-foreground mt-1">
-                    {prop.description}
-                  </p>
-                )}
-              </div>
-            );
-          }
 
           if (prop.type === "integer" || prop.type === "number") {
             const numValue = typeof value === 'number' ? value : (prop.default || 0);
@@ -723,6 +910,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
     );
   };
 
+
   return (
     <div className="space-y-4">
       {error && (
@@ -741,21 +929,37 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
 
       <div className="flex justify-between items-center">
         <div>
-          <h3 className="text-lg font-semibold">Plugin Instances</h3>
+          <h3 className="text-lg font-semibold">Plugin Management</h3>
           <p className="text-muted-foreground">
-            Manage your plugin instances for the selected device
+            Manage plugin instances and create private plugins
           </p>
         </div>
-        <Button onClick={() => setShowAddDialog(true)}>
-          Add Plugin
-        </Button>
       </div>
 
-      {loading ? (
-        <div className="flex items-center justify-center py-8">
-          <div className="text-muted-foreground">Loading plugins...</div>
-        </div>
-      ) : userPlugins.length === 0 ? (
+      <Tabs value={activeTab} onValueChange={handleSubTabChange}>
+        <TabsList>
+          <TabsTrigger value="instances">Plugin Instances</TabsTrigger>
+          <TabsTrigger value="private">Private Plugins</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="instances" className="space-y-4">
+          <div className="flex justify-between items-center">
+            <div>
+              <h4 className="font-semibold">Plugin Instances</h4>
+              <p className="text-sm text-muted-foreground">
+                Manage your plugin instances for the selected device
+              </p>
+            </div>
+            <Button onClick={() => setShowAddDialog(true)}>
+              Add Plugin Instance
+            </Button>
+          </div>
+
+          {loading ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="text-muted-foreground">Loading plugins...</div>
+            </div>
+          ) : pluginInstances.length === 0 ? (
         <Card>
           <CardContent className="text-center py-8">
             <Puzzle className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
@@ -846,38 +1050,134 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {sortedUserPlugins.map((userPlugin) => (
-                  <TableRow key={userPlugin.id}>
+                {sortedPluginInstances.map((userPlugin) => (
+                  <TableRow 
+                    key={userPlugin.id}
+                    className=""
+                  >
                     <TableCell className="font-medium">
                       <div>
                         <div>{userPlugin.name}</div>
-                        <div className="text-sm text-muted-foreground lg:hidden">
-                          {userPlugin.plugin?.name || "Unknown Plugin"} • {userPlugin.is_used_in_playlists ? "Active" : "Unused"}
+                        <div className="text-sm lg:hidden flex items-center gap-2">
+                          <span className="text-muted-foreground">{userPlugin.plugin?.name || "Unknown Plugin"}</span>
+                          {userPlugin.needs_config_update ? (
+                            <Badge 
+                              variant="destructive" 
+                              className="text-xs cursor-pointer hover:bg-destructive/80"
+                              onClick={() => {
+                                // Same click logic as desktop version
+                                setEditPluginInstance(userPlugin);
+                                setEditInstanceName(userPlugin.name);
+                                
+                                // Parse settings from JSON string to object
+                                let parsedSettings = {};
+                                try {
+                                  if (userPlugin.settings && typeof userPlugin.settings === 'string') {
+                                    parsedSettings = JSON.parse(userPlugin.settings);
+                                  } else if (userPlugin.settings && typeof userPlugin.settings === 'object') {
+                                    parsedSettings = userPlugin.settings;
+                                  }
+                                } catch (e) {
+                                  console.error("Error parsing plugin settings:", e);
+                                  parsedSettings = {};
+                                }
+                                
+                                setEditInstanceSettings(parsedSettings);
+                                setEditInstanceRefreshRate(userPlugin.refresh_interval || 86400);
+                                
+                                // Clear dialog-specific alerts when opening
+                                setEditDialogError(null);
+                                setEditDialogSuccess(null);
+                                
+                                // Fetch schema diff if instance needs config update
+                                fetchSchemaDiff(userPlugin.id);
+                                
+                                setShowEditDialog(true);
+                              }}
+                            >
+                              Update Config
+                            </Badge>
+                          ) : (
+                            <span className="text-muted-foreground">• {userPlugin.is_used_in_playlists ? "Active" : "Unused"}</span>
+                          )}
                         </div>
                       </div>
                     </TableCell>
                     <TableCell className="hidden lg:table-cell">
-                      <div className="font-medium">
+                      <div>
                         {userPlugin.plugin?.name || "Unknown Plugin"}
                       </div>
                     </TableCell>
                     <TableCell className="hidden md:table-cell">
-                      {userPlugin.is_used_in_playlists ? (
-                        <Badge variant="outline">Active</Badge>
-                      ) : (
-                        <Badge variant="secondary">Unused</Badge>
-                      )}
+                      <div className="flex gap-1 flex-wrap">
+                        {userPlugin.needs_config_update ? (
+                          <Badge 
+                            variant="destructive" 
+                            className="cursor-pointer hover:bg-destructive/80"
+                            onClick={() => {
+                              // Open edit dialog for this instance
+                              setEditPluginInstance(userPlugin);
+                              setEditInstanceName(userPlugin.name);
+                              
+                              // Parse settings from JSON string to object
+                              let parsedSettings = {};
+                              try {
+                                if (userPlugin.settings && typeof userPlugin.settings === 'string') {
+                                  parsedSettings = JSON.parse(userPlugin.settings);
+                                } else if (userPlugin.settings && typeof userPlugin.settings === 'object') {
+                                  parsedSettings = userPlugin.settings;
+                                }
+                              } catch (e) {
+                                console.error("Error parsing plugin settings:", e);
+                                parsedSettings = {};
+                              }
+                              
+                              setEditInstanceSettings(parsedSettings);
+                              setEditInstanceRefreshRate(userPlugin.refresh_interval || 86400);
+                              
+                              // Clear dialog-specific alerts when opening
+                              setEditDialogError(null);
+                              setEditDialogSuccess(null);
+                              
+                              // Fetch schema diff if instance needs config update
+                              fetchSchemaDiff(userPlugin.id);
+                              
+                              setShowEditDialog(true);
+                            }}
+                          >
+                            Update Config
+                          </Badge>
+                        ) : userPlugin.is_used_in_playlists ? (
+                          <Badge variant="outline">Active</Badge>
+                        ) : (
+                          <Badge variant="secondary">Unused</Badge>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell className="hidden lg:table-cell">
                       {new Date(userPlugin.created_at).toLocaleDateString()}
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center gap-2 justify-end">
+                        {userPlugin.plugin?.data_strategy === 'webhook' && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => copyWebhookUrl(userPlugin.id)}
+                              >
+                                <Copy className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Copy Webhook URL</TooltipContent>
+                          </Tooltip>
+                        )}
                         <Button
                           size="sm"
                           variant="outline"
                           onClick={() => {
-                            setEditUserPlugin(userPlugin);
+                            setEditPluginInstance(userPlugin);
                             setEditInstanceName(userPlugin.name);
                             
                             // Parse settings from JSON string to object
@@ -899,6 +1199,13 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                             // Clear dialog-specific alerts when opening
                             setEditDialogError(null);
                             setEditDialogSuccess(null);
+                            
+                            // Fetch schema diff if instance needs config update
+                            if (userPlugin.needs_config_update) {
+                              fetchSchemaDiff(userPlugin.id);
+                            } else {
+                              setSchemaDiff(null);
+                            }
                             
                             setShowEditDialog(true);
                           }}
@@ -973,9 +1280,21 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                           <CardHeader className="pb-2">
                             <CardTitle className="flex items-start justify-between gap-2">
                               <div className="min-w-0 flex-1">
-                                <div className="text-base font-semibold truncate">{plugin.name}</div>
+                                <div className="flex items-center gap-2 mb-1">
+                                  <div className="text-base font-semibold truncate">{plugin.name}</div>
+                                  <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs ${
+                                    plugin.type === 'system' 
+                                      ? 'bg-blue-100 text-blue-800' 
+                                      : 'bg-purple-100 text-purple-800'
+                                  }`}>
+                                    {plugin.type === 'system' ? 'System' : 'Private'}
+                                  </span>
+                                </div>
                                 <div className="text-xs text-muted-foreground">
                                   v{plugin.version} by {plugin.author}
+                                  {plugin.instance_count !== undefined && (
+                                    <span className="ml-2">• {plugin.instance_count} instance{plugin.instance_count !== 1 ? 's' : ''}</span>
+                                  )}
                                 </div>
                               </div>
                             </CardTitle>
@@ -989,7 +1308,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                             <Button
                               onClick={() => {
                                 setSelectedPlugin(plugin);
-                                setInstanceName(`My ${plugin.name}`);
+                                setInstanceName(plugin.name);
                                 setCreateDialogError(null);
                                 
                                 try {
@@ -1056,7 +1375,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                     <Label htmlFor="instanceName" className="text-sm">Instance Name</Label>
                     <Input
                       id="instanceName"
-                      placeholder={`My ${selectedPlugin.name}`}
+                      placeholder={selectedPlugin.name}
                       value={instanceName}
                       onChange={(e) => setInstanceName(e.target.value)}
                       className="mt-1"
@@ -1084,14 +1403,16 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                     </div>
                   )}
 
-                  <div>
-                    <Label className="text-sm">Plugin Configuration</Label>
-                    <div className="mt-1">
-                      {renderSettingsForm(selectedPlugin, instanceSettings, (key, value) => {
-                        setInstanceSettings(prev => ({ ...prev, [key]: value }));
-                      })}
+                  {hasConfigurationFields(selectedPlugin) && (
+                    <div>
+                      <Label className="text-sm">Plugin Configuration</Label>
+                      <div className="mt-1">
+                        {renderSettingsForm(selectedPlugin, instanceSettings, (key, value) => {
+                          setInstanceSettings(prev => ({ ...prev, [key]: value }));
+                        })}
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </>
               )}
             </div>
@@ -1113,7 +1434,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
             </Button>
             {selectedPlugin && (
               <Button
-                onClick={createUserPlugin}
+                onClick={createPluginInstance}
                 disabled={!instanceName.trim() || createLoading}
               >
                 {createLoading ? "Creating..." : "Create Instance"}
@@ -1133,15 +1454,27 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
         }
       }}>
         <DialogContent 
-          className="sm:max-w-2xl max-h-[80vh] overflow-y-auto"
+          className="sm:max-w-2xl max-h-[80vh] overflow-y-auto mobile-dialog-content !top-[0vh] !translate-y-0 sm:!top-[6vh]"
           onOpenAutoFocus={(e) => e.preventDefault()}
         >
           <DialogHeader>
             <DialogTitle>Edit Plugin Instance</DialogTitle>
             <DialogDescription>
-              Update the settings for "{editUserPlugin?.name}".
+              Update the settings for "{editPluginInstance?.name}".
             </DialogDescription>
           </DialogHeader>
+          
+          {/* Schema diff warning banner */}
+          {editPluginInstance?.needs_config_update && schemaDiff?.needs_update && (
+            <Alert variant="destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>
+                <strong>Configuration Update Required</strong>
+                <br />
+                {schemaDiff.message || "This plugin's form has changed. Please review and update your settings."}
+              </AlertDescription>
+            </Alert>
+          )}
 
           <div className="space-y-6">
             {editDialogError && (
@@ -1169,7 +1502,29 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
               />
             </div>
 
-            {editUserPlugin?.plugin?.requires_processing && (
+            {editPluginInstance?.plugin?.data_strategy === 'webhook' && (
+              <div>
+                <Label>Webhook URL</Label>
+                <div className="flex gap-2 mt-2">
+                  <Input
+                    value={generateInstanceWebhookURL(editPluginInstance.id)}
+                    readOnly
+                    className="font-mono text-sm"
+                  />
+                  <Button
+                    variant="outline"
+                    onClick={() => copyWebhookUrl(editPluginInstance.id)}
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </div>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Use this URL to send webhook data to your plugin instance.
+                </p>
+              </div>
+            )}
+
+            {editPluginInstance?.plugin?.requires_processing && (
               <div>
                 <Label htmlFor="edit-instance-refresh-rate">Refresh Rate</Label>
                 <div className="flex gap-2 mt-2">
@@ -1190,7 +1545,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                   </Select>
                   <Button
                     variant="outline"
-                    onClick={forceRefreshUserPlugin}
+                    onClick={forceRefreshPluginInstance}
                     disabled={forceRefreshLoading}
                     className="gap-2"
                   >
@@ -1201,7 +1556,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
               </div>
             )}
 
-            {editUserPlugin?.plugin && (
+            {editPluginInstance?.plugin && hasConfigurationFields(editPluginInstance.plugin) && (
               <>
                 <Separator />
                 <Card>
@@ -1213,7 +1568,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                   </CardHeader>
                   <CardContent className="pt-0">
                     {renderSettingsForm(
-                      editUserPlugin.plugin,
+                      editPluginInstance.plugin,
                       editInstanceSettings,
                       (key: string, value: any) => {
                         setEditInstanceSettings(prev => ({ ...prev, [key]: value }));
@@ -1283,7 +1638,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
               variant="destructive"
               onClick={async () => {
                 if (deletePluginDialog.plugin) {
-                  await deleteUserPlugin(deletePluginDialog.plugin.id);
+                  await deletePluginInstance(deletePluginDialog.plugin.id);
                   setDeletePluginDialog({ isOpen: false, plugin: null });
                 }
               }}
@@ -1293,6 +1648,26 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+        </TabsContent>
+
+        <TabsContent value="private" className="space-y-4">
+          <PrivatePluginList
+            onCreatePlugin={handleCreatePrivatePlugin}
+            onEditPlugin={handleEditPrivatePlugin}
+            onPreviewPlugin={handlePreviewPrivatePlugin}
+          />
+        </TabsContent>
+      </Tabs>
+
+
+      {/* Private Plugin Preview Dialog */}
+      {/* {previewingPrivatePlugin && (
+        <PluginPreview
+          plugin={previewingPrivatePlugin}
+          isOpen={Boolean(previewingPrivatePlugin)}
+          onClose={() => setPreviewingPrivatePlugin(null)}
+        />
+      )} */}
     </div>
   );
 }

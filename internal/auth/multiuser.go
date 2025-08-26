@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/rmitchellscott/stationmaster/internal/config"
 	"github.com/rmitchellscott/stationmaster/internal/database"
+	"github.com/rmitchellscott/stationmaster/internal/logging"
 	"github.com/rmitchellscott/stationmaster/internal/smtp"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -41,7 +42,10 @@ type UserResponse struct {
 	ID                  uuid.UUID  `json:"id"`
 	Username            string     `json:"username"`
 	Email               string     `json:"email"`
+	FirstName           string     `json:"first_name,omitempty"`
+	LastName            string     `json:"last_name,omitempty"`
 	Timezone            string     `json:"timezone"`
+	Locale              string     `json:"locale"`
 	IsAdmin             bool       `json:"is_admin"`
 	IsActive            bool       `json:"is_active"`
 	OnboardingCompleted bool       `json:"onboarding_completed"`
@@ -115,7 +119,7 @@ func PublicRegisterHandler(c *gin.Context) {
 	if firstUser {
 		go func() {
 			if err := database.MigrateSingleUserData(database.DB, newUser.ID); err != nil {
-				fmt.Printf("Warning: failed to migrate single-user data: %v\n", err)
+				logging.WarnWithComponent(logging.ComponentAuth, "Failed to migrate single-user data", "error", err)
 			}
 		}()
 	}
@@ -124,7 +128,7 @@ func PublicRegisterHandler(c *gin.Context) {
 	if smtp.IsSMTPConfigured() && !config.GetBool("DISABLE_WELCOME_EMAIL", false) {
 		if err := smtp.SendWelcomeEmail(newUser.Email, newUser.Username); err != nil {
 			// Log error but don't fail user creation
-			fmt.Printf("Failed to send welcome email: %v\n", err)
+			logging.WarnWithComponent(logging.ComponentAuth, "Failed to send welcome email", "error", err)
 		}
 	}
 
@@ -185,7 +189,7 @@ func RegisterHandler(c *gin.Context) {
 	if smtp.IsSMTPConfigured() && !config.GetBool("DISABLE_WELCOME_EMAIL", false) {
 		if err := smtp.SendWelcomeEmail(newUser.Email, newUser.Username); err != nil {
 			// Log error but don't fail user creation
-			fmt.Printf("Failed to send welcome email: %v\n", err)
+			logging.WarnWithComponent(logging.ComponentAuth, "Failed to send welcome email", "error", err)
 		}
 	}
 
@@ -194,7 +198,10 @@ func RegisterHandler(c *gin.Context) {
 		ID:                  newUser.ID,
 		Username:            newUser.Username,
 		Email:               newUser.Email,
+		FirstName:           newUser.FirstName,
+		LastName:            newUser.LastName,
 		Timezone:            newUser.Timezone,
+		Locale:              newUser.Locale,
 		IsAdmin:             newUser.IsAdmin,
 		IsActive:            newUser.IsActive,
 		OnboardingCompleted: newUser.OnboardingCompleted,
@@ -294,7 +301,10 @@ func MultiUserLoginHandler(c *gin.Context) {
 			ID:                  user.ID,
 			Username:            user.Username,
 			Email:               user.Email,
+			FirstName:           user.FirstName,
+			LastName:            user.LastName,
 			Timezone:            user.Timezone,
+			Locale:              user.Locale,
 			IsAdmin:             user.IsAdmin,
 			IsActive:            user.IsActive,
 			OnboardingCompleted: user.OnboardingCompleted,
@@ -334,7 +344,7 @@ func PasswordResetHandler(c *gin.Context) {
 		if err == nil {
 			if err := smtp.SendPasswordResetEmail(user.Email, user.Username, token); err != nil {
 				// Log error but don't reveal it to user
-				fmt.Printf("Failed to send password reset email: %v\n", err)
+				logging.WarnWithComponent(logging.ComponentAuth, "Failed to send password reset email", "error", err)
 			}
 		}
 	}
@@ -396,7 +406,10 @@ func GetCurrentUserHandler(c *gin.Context) {
 		ID:                  user.ID,
 		Username:            user.Username,
 		Email:               user.Email,
+		FirstName:           user.FirstName,
+		LastName:            user.LastName,
 		Timezone:            user.Timezone,
+		Locale:              user.Locale,
 		IsAdmin:             user.IsAdmin,
 		IsActive:            user.IsActive,
 		OnboardingCompleted: user.OnboardingCompleted,
@@ -467,7 +480,10 @@ func MultiUserCheckAuthHandler(c *gin.Context) {
 			ID:                  user.ID,
 			Username:            user.Username,
 			Email:               user.Email,
+			FirstName:           user.FirstName,
+			LastName:            user.LastName,
 			Timezone:            user.Timezone,
+			Locale:              user.Locale,
 			IsAdmin:             user.IsAdmin,
 			IsActive:            user.IsActive,
 			OnboardingCompleted: user.OnboardingCompleted,

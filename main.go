@@ -17,6 +17,7 @@ import (
 	// third-party
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 
 	// internal
@@ -24,11 +25,14 @@ import (
 	"github.com/rmitchellscott/stationmaster/internal/config"
 	"github.com/rmitchellscott/stationmaster/internal/database"
 	"github.com/rmitchellscott/stationmaster/internal/handlers"
+	"github.com/rmitchellscott/stationmaster/internal/locales"
 	"github.com/rmitchellscott/stationmaster/internal/logging"
+	"github.com/rmitchellscott/stationmaster/internal/middleware"
+	"github.com/rmitchellscott/stationmaster/internal/plugins"
+	_ "github.com/rmitchellscott/stationmaster/internal/plugins/private" // Register private plugin factory
 	"github.com/rmitchellscott/stationmaster/internal/pollers"
 	"github.com/rmitchellscott/stationmaster/internal/rendering"
 	"github.com/rmitchellscott/stationmaster/internal/sse"
-	"github.com/rmitchellscott/stationmaster/internal/sync"
 	"github.com/rmitchellscott/stationmaster/internal/trmnl"
 
 	"github.com/rmitchellscott/stationmaster/internal/version"
@@ -46,6 +50,33 @@ import (
 //go:embed ui/dist
 //go:embed ui/dist/assets
 var embeddedUI embed.FS
+
+// Global render poller for handlers to schedule renders
+var globalRenderPoller *pollers.RenderPoller
+
+// ScheduleRender schedules an immediate render for plugin instances using the global render poller
+func ScheduleRender(pluginInstanceIDs []uuid.UUID) {
+	if globalRenderPoller == nil {
+		logging.Warn("[RENDER] Global render poller not available")
+		return
+	}
+	
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	
+	for _, instanceID := range pluginInstanceIDs {
+		if err := globalRenderPoller.ScheduleImmediateRender(ctx, instanceID.String()); err != nil {
+			logging.Error("[RENDER] Failed to schedule immediate render", "instance_id", instanceID, "error", err)
+		} else {
+			logging.Info("[RENDER] Scheduled immediate render", "instance_id", instanceID)
+		}
+	}
+}
+
+// Initialize the global render scheduler function for handlers
+func init() {
+	handlers.SetRenderScheduler(ScheduleRender)
+}
 
 func main() {
 	_ = godotenv.Load()
@@ -86,11 +117,9 @@ func main() {
 	// Register pollers
 	db := database.GetDB()
 	
-	// Sync plugin registry with database
-	if err := sync.SyncPluginRegistry(db); err != nil {
-		logging.Warn("Failed to sync plugin registry", "error", err)
-		// Don't fail startup, but log the warning
-	}
+	
+	// Initialize plugin factory
+	plugins.InitPluginFactory(db)
 	
 	// Initialize plugin processor with database
 	if err := trmnl.InitPluginProcessor(db); err != nil {
@@ -120,6 +149,9 @@ func main() {
 		logging.Error("[STARTUP] Failed to create render poller", "error", err)
 		os.Exit(1)
 	}
+	
+	// Set global reference for handlers to use
+	globalRenderPoller = renderPoller
 
 	pollerManager.Register(firmwarePoller)
 	pollerManager.Register(modelPoller)
@@ -188,6 +220,18 @@ func main() {
 	}
 	router.Use(cors.New(corsConfig))
 
+	// Initialize locale manager for TRMNL i18n compatibility
+	localeManager, err := locales.NewLocaleManager()
+	if err != nil {
+		logging.ErrorWithComponent(logging.ComponentStartup, "Failed to initialize locale manager", "error", err)
+		os.Exit(1)
+	}
+	logging.InfoWithComponent(logging.ComponentStartup, "Locale manager initialized", 
+		"locales", len(localeManager.GetAvailableLocales()))
+
+	// Register public locale API routes (needed by browserless for template rendering)
+	handlers.RegisterLocaleRoutes(router, localeManager)
+
 	// Public auth endpoints
 	router.POST("/api/auth/login", auth.MultiUserLoginHandler)
 	router.POST("/api/auth/logout", auth.LogoutHandler)
@@ -211,6 +255,13 @@ func main() {
 	router.GET("/api/trmnl/firmware/:version/download", trmnl.FirmwareDownloadHandler)
 	router.POST("/api/trmnl/firmware/update-complete", trmnl.FirmwareUpdateCompleteHandler)
 
+	// Private plugin instance webhook endpoints (public - instance ID-based authentication with rate limiting)
+	rateLimiter := middleware.NewWebhookRateLimiter(database.GetDB())
+	router.POST("/api/webhooks/instance/:id", 
+		rateLimiter.RequestSizeLimit(),
+		rateLimiter.RateLimit(),
+		handlers.WebhookHandler,
+	)
 
 	// Public firmware downloads (no authentication required)
 	// Custom handler to serve firmware files - supports both proxy and download modes
@@ -382,11 +433,6 @@ func main() {
 		admin.GET("/devices/stats", handlers.GetDeviceStatsHandler)       // GET /api/admin/devices/stats - get device statistics
 		admin.DELETE("/devices/:id/unlink", handlers.UnlinkDeviceHandler) // DELETE /api/admin/devices/:id/unlink - unlink device
 
-		// Admin plugin management
-		admin.POST("/plugins", handlers.CreatePluginHandler)        // POST /api/admin/plugins - create system plugin
-		admin.PUT("/plugins/:id", handlers.UpdatePluginHandler)     // PUT /api/admin/plugins/:id - update system plugin
-		admin.DELETE("/plugins/:id", handlers.DeletePluginHandler)  // DELETE /api/admin/plugins/:id - delete system plugin
-		admin.GET("/plugins/stats", handlers.GetPluginStatsHandler) // GET /api/admin/plugins/stats - get plugin statistics
 
 		// Firmware management endpoints
 		admin.GET("/firmware/versions", handlers.GetFirmwareVersionsHandler)              // GET /api/admin/firmware/versions - list firmware versions
@@ -422,28 +468,32 @@ func main() {
 		devices.DELETE("/:id/unmirror", handlers.UnmirrorDeviceHandler)     // DELETE /api/devices/:id/unmirror - stop mirroring
 	}
 
-	// Plugin management endpoints
-	plugins := protected.Group("/plugins")
+
+	// Unified plugin system endpoints
+	pluginDefs := protected.Group("/plugin-definitions")
 	{
-		plugins.GET("", handlers.GetPluginsHandler) // GET /api/plugins - list available plugins
-		plugins.GET("/info", handlers.GetPluginInfoHandler) // GET /api/plugins/info - get detailed plugin information
-		plugins.GET("/types", handlers.GetAvailablePluginTypesHandler) // GET /api/plugins/types - get available plugin types
-		plugins.GET("/types/:type", handlers.GetPluginByTypeHandler) // GET /api/plugins/types/:type - get specific plugin info
-		plugins.POST("/validate", handlers.ValidatePluginSettingsHandler) // POST /api/plugins/validate - validate plugin settings
-		plugins.GET("/refresh-rate-options", handlers.GetRefreshRateOptionsHandler) // GET /api/plugins/refresh-rate-options - get refresh rate options
-		plugins.GET("/registry/stats", handlers.GetPluginRegistryStatsHandler) // GET /api/plugins/registry/stats - registry statistics
+		pluginDefs.GET("", handlers.GetAvailablePluginDefinitionsHandler) // GET /api/plugin-definitions - list all available plugin definitions (system + private)
+		pluginDefs.POST("", handlers.CreatePluginDefinitionHandler) // POST /api/plugin-definitions - create new plugin definition (private only)
+		pluginDefs.GET("/:id", handlers.GetPluginDefinitionHandler) // GET /api/plugin-definitions/:id - get single plugin definition
+		pluginDefs.PUT("/:id", handlers.UpdatePluginDefinitionHandler) // PUT /api/plugin-definitions/:id - update plugin definition
+		pluginDefs.DELETE("/:id", handlers.DeletePluginDefinitionHandler) // DELETE /api/plugin-definitions/:id - delete plugin definition
+		pluginDefs.POST("/validate", handlers.ValidatePluginDefinitionHandler) // POST /api/plugin-definitions/validate - validate plugin templates
+		pluginDefs.POST("/test", handlers.TestPluginDefinitionHandler) // POST /api/plugin-definitions/test - test plugin template rendering
+		pluginDefs.GET("/refresh-rate-options", handlers.GetRefreshRateOptionsHandler) // GET /api/plugin-definitions/refresh-rate-options - get available refresh rates
+		pluginDefs.POST("/validate-settings", handlers.ValidatePluginSettingsHandler) // POST /api/plugin-definitions/validate-settings - validate plugin settings
+		pluginDefs.GET("/types", handlers.GetAvailablePluginTypesHandler) // GET /api/plugin-definitions/types - get available plugin types
+		pluginDefs.POST("/debug/validate-yaml", handlers.ValidateTRMNLYAMLHandler) // POST /api/plugin-definitions/debug/validate-yaml - validate TRMNL YAML format
+		pluginDefs.POST("/debug/test-conversion", handlers.TestTRMNLConversionHandler) // POST /api/plugin-definitions/debug/test-conversion - test bidirectional TRMNL conversion
 	}
 
-	// User plugin management endpoints
-	userPlugins := protected.Group("/user-plugins")
-	{
-		userPlugins.GET("", handlers.GetUserPluginsHandler)          // GET /api/user-plugins - list user's plugin instances
-		userPlugins.POST("", handlers.CreateUserPluginHandler)       // POST /api/user-plugins - create plugin instance
-		userPlugins.GET("/:id", handlers.GetUserPluginHandler)           // GET /api/user-plugins/:id - get plugin instance
-		userPlugins.PUT("/:id", handlers.UpdateUserPluginHandler)        // PUT /api/user-plugins/:id - update plugin instance
-		userPlugins.POST("/:id/force-refresh", handlers.ForceRefreshUserPluginHandler) // POST /api/user-plugins/:id/force-refresh - force re-render
-		userPlugins.DELETE("/:id", handlers.DeleteUserPluginHandler)     // DELETE /api/user-plugins/:id - delete plugin instance
-	}
+	protected.GET("/plugin-instances", handlers.GetPluginInstancesHandler) // GET /api/plugin-instances - list user's plugin instances
+	protected.POST("/plugin-instances", handlers.CreatePluginInstanceFromDefinitionHandler) // POST /api/plugin-instances - create plugin instance from definition
+	protected.PUT("/plugin-instances/:id", handlers.UpdatePluginInstanceHandler) // PUT /api/plugin-instances/:id - update plugin instance
+	protected.DELETE("/plugin-instances/:id", handlers.DeletePluginInstanceHandler) // DELETE /api/plugin-instances/:id - delete plugin instance
+	protected.POST("/plugin-instances/:id/force-refresh", handlers.ForceRefreshPluginInstanceHandler) // POST /api/plugin-instances/:id/force-refresh - force refresh plugin instance
+	protected.GET("/plugin-instances/:id/schema-diff", handlers.GetPluginInstanceSchemaDiffHandler) // GET /api/plugin-instances/:id/schema-diff - get schema differences for instance
+
+
 
 	// Playlist management endpoints
 	playlists := protected.Group("/playlists")

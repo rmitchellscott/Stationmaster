@@ -32,7 +32,7 @@ func (p *AliasPlugin) Description() string {
 
 // Author returns the plugin author
 func (p *AliasPlugin) Author() string {
-	return "Stationmaster Team"
+	return "Stationmaster"
 }
 
 // Version returns the plugin version

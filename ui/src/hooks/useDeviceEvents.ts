@@ -11,6 +11,7 @@ export interface SleepConfig {
   end_time: string;
   show_screen: boolean;
   currently_sleeping: boolean;
+  sleep_screen_served: boolean;
 }
 
 export interface PlaylistIndexChangeEvent {
@@ -75,6 +76,30 @@ export function useDeviceEvents(deviceId: string): DeviceEventsHookResult {
     }));
   }, []);
 
+  // Fetch initial device state to populate sleep config before SSE connection
+  const fetchInitialState = useCallback(async () => {
+    if (!deviceId) return;
+
+    try {
+      const response = await fetch(`/api/devices/${deviceId}/active-items`, {
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setState(prev => ({
+          ...prev,
+          currentIndex: data.current_index || null,
+          currentItem: data.currently_showing || null,
+          activeItems: data.active_items || [],
+          sleepConfig: data.sleep_config || null,
+        }));
+      }
+    } catch (error) {
+      // Silently fail - SSE will provide updates when available
+    }
+  }, [deviceId]);
+
   const connect = useCallback(() => {
     if (!deviceId || isManuallyDisconnectedRef.current) {
       return;
@@ -84,6 +109,9 @@ export function useDeviceEvents(deviceId: string): DeviceEventsHookResult {
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
     }
+
+    // Fetch initial state first
+    fetchInitialState();
 
     try {
       const eventSource = new EventSource(`/api/devices/${deviceId}/events`, {
@@ -156,7 +184,7 @@ export function useDeviceEvents(deviceId: string): DeviceEventsHookResult {
         error: 'Failed to establish connection',
       }));
     }
-  }, [deviceId]);
+  }, [deviceId, fetchInitialState]);
 
   const reconnect = useCallback(() => {
     isManuallyDisconnectedRef.current = false;

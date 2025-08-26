@@ -7,13 +7,12 @@ import { ConfigProvider } from '@/components/ConfigProvider';
 import { Layout } from '@/components/Layout';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { UserSettingsPage } from '@/components/UserSettingsPage';
+import { PrivatePluginEditorPage } from '@/components/PrivatePluginEditorPage';
 import { AdminPage } from '@/components/AdminPage';
-import { AdminPanel } from '@/components/AdminPanel';
 import { PasswordReset } from '@/components/PasswordReset';
 import { RegisterForm } from '@/components/RegisterForm';
 
 function AppContent() {
-  const [showAdminPanel, setShowAdminPanel] = useState(false);
   
   return (
     <>
@@ -34,6 +33,11 @@ function AppContent() {
               <UserSettingsPage />
             </ProtectedRoute>
           } />
+          <Route path="plugins/private/edit" element={
+            <ProtectedRoute>
+              <PrivatePluginEditorPage />
+            </ProtectedRoute>
+          } />
           <Route path="admin" element={
             <ProtectedRoute requireAdmin>
               <AdminPage />
@@ -41,12 +45,6 @@ function AppContent() {
           } />
         </Route>
       </Routes>
-      
-      {/* Global modals */}
-      <AdminPanel 
-        isOpen={showAdminPanel} 
-        onClose={() => setShowAdminPanel(false)} 
-      />
     </>
   );
 }

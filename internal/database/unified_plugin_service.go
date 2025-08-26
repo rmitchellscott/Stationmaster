@@ -538,3 +538,155 @@ func (s *UnifiedPluginService) CleanupOrphanedData() error {
 	return nil
 }
 
+// Mashup Child Operations
+
+// AddMashupChild adds a child plugin instance to a mashup
+func (s *UnifiedPluginService) AddMashupChild(mashupInstanceID, childInstanceID uuid.UUID, gridPosition string) error {
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		// Verify the mashup instance exists and is a mashup type
+		var mashupInstance PluginInstance
+		if err := tx.Preload("PluginDefinition").First(&mashupInstance, "id = ? AND is_active = ?", mashupInstanceID, true).Error; err != nil {
+			return fmt.Errorf("mashup instance not found: %w", err)
+		}
+		
+		if mashupInstance.PluginDefinition.PluginType != "mashup" {
+			return fmt.Errorf("plugin instance is not a mashup")
+		}
+		
+		// Verify the child instance exists and is a private plugin
+		var childInstance PluginInstance
+		if err := tx.Preload("PluginDefinition").First(&childInstance, "id = ? AND is_active = ?", childInstanceID, true).Error; err != nil {
+			return fmt.Errorf("child plugin instance not found: %w", err)
+		}
+		
+		if childInstance.PluginDefinition.PluginType != "private" {
+			return fmt.Errorf("only private plugins can be used as mashup children")
+		}
+		
+		// Ensure the users match
+		if mashupInstance.UserID != childInstance.UserID {
+			return fmt.Errorf("mashup and child plugin must belong to the same user")
+		}
+		
+		// Check if position is already occupied
+		var existingChild MashupChild
+		result := tx.Where("mashup_instance_id = ? AND grid_position = ?", mashupInstanceID, gridPosition).First(&existingChild)
+		if result.Error == nil {
+			return fmt.Errorf("grid position '%s' is already occupied", gridPosition)
+		} else if result.Error != gorm.ErrRecordNotFound {
+			return fmt.Errorf("failed to check grid position: %w", result.Error)
+		}
+		
+		// Create the mashup child relationship
+		mashupChild := &MashupChild{
+			MashupInstanceID: mashupInstanceID,
+			ChildInstanceID:  childInstanceID,
+			GridPosition:     gridPosition,
+		}
+		
+		if err := tx.Create(mashupChild).Error; err != nil {
+			return fmt.Errorf("failed to create mashup child: %w", err)
+		}
+		
+		// Update mashup instance refresh rate based on children
+		if err := s.updateMashupRefreshRate(tx, mashupInstanceID); err != nil {
+			return fmt.Errorf("failed to update mashup refresh rate: %w", err)
+		}
+		
+		return nil
+	})
+}
+
+// RemoveMashupChild removes a child plugin instance from a mashup
+func (s *UnifiedPluginService) RemoveMashupChild(mashupInstanceID, childInstanceID uuid.UUID) error {
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		// Delete the mashup child relationship
+		result := tx.Where("mashup_instance_id = ? AND child_instance_id = ?", mashupInstanceID, childInstanceID).Delete(&MashupChild{})
+		if result.Error != nil {
+			return fmt.Errorf("failed to remove mashup child: %w", result.Error)
+		}
+		
+		if result.RowsAffected == 0 {
+			return fmt.Errorf("mashup child relationship not found")
+		}
+		
+		// Update mashup instance refresh rate based on remaining children
+		if err := s.updateMashupRefreshRate(tx, mashupInstanceID); err != nil {
+			return fmt.Errorf("failed to update mashup refresh rate: %w", err)
+		}
+		
+		return nil
+	})
+}
+
+// UpdateMashupChildPosition updates the grid position of a child plugin in a mashup
+func (s *UnifiedPluginService) UpdateMashupChildPosition(mashupInstanceID, childInstanceID uuid.UUID, newPosition string) error {
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		// Check if new position is already occupied by a different child
+		var existingChild MashupChild
+		result := tx.Where("mashup_instance_id = ? AND grid_position = ? AND child_instance_id != ?", 
+			mashupInstanceID, newPosition, childInstanceID).First(&existingChild)
+		if result.Error == nil {
+			return fmt.Errorf("grid position '%s' is already occupied", newPosition)
+		} else if result.Error != gorm.ErrRecordNotFound {
+			return fmt.Errorf("failed to check grid position: %w", result.Error)
+		}
+		
+		// Update the position
+		result = tx.Model(&MashupChild{}).
+			Where("mashup_instance_id = ? AND child_instance_id = ?", mashupInstanceID, childInstanceID).
+			Update("grid_position", newPosition)
+		
+		if result.Error != nil {
+			return fmt.Errorf("failed to update child position: %w", result.Error)
+		}
+		
+		if result.RowsAffected == 0 {
+			return fmt.Errorf("mashup child relationship not found")
+		}
+		
+		return nil
+	})
+}
+
+// GetMashupChildren retrieves all child plugin instances for a mashup
+func (s *UnifiedPluginService) GetMashupChildren(mashupInstanceID uuid.UUID) ([]MashupChild, error) {
+	var children []MashupChild
+	err := s.db.Preload("ChildInstance").
+		Preload("ChildInstance.PluginDefinition").
+		Where("mashup_instance_id = ?", mashupInstanceID).
+		Order("grid_position").
+		Find(&children).Error
+	
+	return children, err
+}
+
+// updateMashupRefreshRate updates a mashup's refresh rate based on its children's rates
+func (s *UnifiedPluginService) updateMashupRefreshRate(tx *gorm.DB, mashupInstanceID uuid.UUID) error {
+	// Get all child instances for this mashup
+	var children []MashupChild
+	if err := tx.Preload("ChildInstance").Where("mashup_instance_id = ?", mashupInstanceID).Find(&children).Error; err != nil {
+		return fmt.Errorf("failed to get mashup children: %w", err)
+	}
+	
+	// Calculate minimum refresh rate (fastest refresh)
+	minRefreshRate := 86400 // Default to daily if no children
+	
+	if len(children) > 0 {
+		for _, child := range children {
+			if child.ChildInstance.RefreshInterval < minRefreshRate {
+				minRefreshRate = child.ChildInstance.RefreshInterval
+			}
+		}
+	}
+	
+	// Update the mashup instance refresh rate
+	if err := tx.Model(&PluginInstance{}).
+		Where("id = ?", mashupInstanceID).
+		Update("refresh_interval", minRefreshRate).Error; err != nil {
+		return fmt.Errorf("failed to update mashup refresh rate: %w", err)
+	}
+	
+	return nil
+}
+

@@ -359,6 +359,10 @@ type PluginDefinition struct {
 	PollingConfig   datatypes.JSON `json:"polling_config,omitempty"`   // URLs, headers, body, intervals, etc.
 	FormFields      datatypes.JSON `json:"form_fields"`                // YAML form field definitions converted to JSON schema
 	
+	// Mashup specific fields (NULL for non-mashup plugins)
+	MashupLayout    *string        `gorm:"size:20" json:"mashup_layout,omitempty"`     // "1L1R", "2T1B", "2x2", etc.
+	MashupConfig    datatypes.JSON `json:"mashup_config,omitempty"`     // Grid positioning and configuration details
+	
 	// Publishing (for future public plugins)
 	IsPublished bool       `gorm:"default:false" json:"is_published"`
 	PublishedAt *time.Time `json:"published_at,omitempty"`
@@ -411,11 +415,34 @@ type PluginInstance struct {
 	PluginDefinition PluginDefinition  `gorm:"foreignKey:PluginDefinitionID" json:"plugin_definition"`
 	PlaylistItems    []PlaylistItem    `gorm:"foreignKey:PluginInstanceID;constraint:OnDelete:CASCADE" json:"-"`
 	RenderedContent  []RenderedContent `gorm:"foreignKey:PluginInstanceID;constraint:OnDelete:CASCADE" json:"-"`
+	MashupChildren   []MashupChild     `gorm:"foreignKey:MashupInstanceID;constraint:OnDelete:CASCADE" json:"mashup_children,omitempty"`
 }
 
 func (pi *PluginInstance) BeforeCreate(tx *gorm.DB) error {
 	if pi.ID == uuid.Nil {
 		pi.ID = uuid.New()
+	}
+	return nil
+}
+
+// MashupChild represents a child plugin instance within a mashup
+type MashupChild struct {
+	ID                uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
+	MashupInstanceID  uuid.UUID `gorm:"type:uuid;not null;index" json:"mashup_instance_id"`
+	ChildInstanceID   uuid.UUID `gorm:"type:uuid;not null;index" json:"child_instance_id"`
+	GridPosition      string    `gorm:"size:20;not null" json:"grid_position"`          // "left", "right", "top-left", "bottom", etc.
+	GridSpan          string    `gorm:"size:10" json:"grid_span,omitempty"`             // "1x1", "2x1", etc. for advanced layouts
+	CreatedAt         time.Time `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt         time.Time `gorm:"autoUpdateTime" json:"updated_at"`
+
+	// Associations
+	MashupInstance PluginInstance `gorm:"foreignKey:MashupInstanceID;constraint:OnDelete:CASCADE" json:"-"`
+	ChildInstance  PluginInstance `gorm:"foreignKey:ChildInstanceID;constraint:OnDelete:CASCADE" json:"child_instance"`
+}
+
+func (mc *MashupChild) BeforeCreate(tx *gorm.DB) error {
+	if mc.ID == uuid.Nil {
+		mc.ID = uuid.New()
 	}
 	return nil
 }
@@ -574,6 +601,7 @@ func GetAllModels() []interface{} {
 		// New unified plugin models
 		&PluginDefinition{}, // Must come after User due to foreign key reference
 		&PluginInstance{},   // Must come after PluginDefinition and User
+		&MashupChild{},      // Must come after PluginInstance due to foreign key references
 		
 		&Playlist{},
 		&PlaylistItem{},

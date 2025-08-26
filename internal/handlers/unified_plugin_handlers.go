@@ -77,8 +77,8 @@ func GetAvailablePluginDefinitionsHandler(c *gin.Context) {
 	if pluginType != "" {
 		query = query.Where("plugin_type = ?", pluginType)
 	} else {
-		// Default: only get private plugins (don't mix with system)
-		query = query.Where("plugin_type = ?", "private")
+		// Default: get private and mashup plugins (don't mix with system)
+		query = query.Where("plugin_type IN (?)", []string{"private", "mashup"})
 	}
 	
 	err := query.Find(&privatePlugins).Error
@@ -1368,4 +1368,303 @@ func GetPluginInstanceSchemaDiffHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, diff)
+}
+
+// Mashup Management Endpoints
+
+// CreateMashupDefinitionHandler creates a new mashup plugin definition
+func CreateMashupDefinitionHandler(c *gin.Context) {
+	user, ok := auth.RequireUser(c)
+	if !ok {
+		return
+	}
+
+	var request struct {
+		Name         string `json:"name" binding:"required"`
+		Description  string `json:"description"`
+		MashupLayout string `json:"mashup_layout" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request format: " + err.Error()})
+		return
+	}
+
+	// Create mashup plugin definition
+	db := database.GetDB()
+	pluginService := database.NewUnifiedPluginService(db)
+	
+	definition := &database.PluginDefinition{
+		Name:              request.Name,
+		Description:       request.Description,
+		Identifier:        fmt.Sprintf("mashup_%s_%d", user.ID.String()[:8], time.Now().Unix()),
+		PluginType:        "mashup",
+		Version:           "1.0.0",
+		Author:            user.Username,
+		IsActive:          true,
+		RequiresProcessing: true,
+		OwnerID:           &user.ID,
+		MashupLayout:      &request.MashupLayout,
+	}
+
+	if err := pluginService.CreatePluginDefinition(definition); err != nil {
+		logging.Error("Failed to create mashup definition", "error", err, "user_id", user.ID)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create mashup definition"})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"id":      definition.ID.String(),
+		"message": "Mashup definition created successfully",
+	})
+}
+
+// AddMashupChildHandler adds a child plugin instance to a mashup
+func AddMashupChildHandler(c *gin.Context) {
+	user, ok := auth.RequireUser(c)
+	if !ok {
+		return
+	}
+
+	mashupInstanceID := c.Param("id")
+	if mashupInstanceID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Mashup instance ID is required"})
+		return
+	}
+
+	var request struct {
+		ChildInstanceID string `json:"child_instance_id" binding:"required"`
+		GridPosition    string `json:"grid_position" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request format: " + err.Error()})
+		return
+	}
+
+	// Parse UUIDs
+	mashupUUID, err := uuid.Parse(mashupInstanceID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid mashup instance ID"})
+		return
+	}
+
+	childUUID, err := uuid.Parse(request.ChildInstanceID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid child instance ID"})
+		return
+	}
+
+	// Verify user owns the mashup instance
+	db := database.GetDB()
+	pluginService := database.NewUnifiedPluginService(db)
+	mashupInstance, err := pluginService.GetPluginInstanceByID(mashupUUID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Mashup instance not found"})
+		return
+	}
+
+	if mashupInstance.UserID != user.ID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
+		return
+	}
+
+	// Add child to mashup
+	if err := pluginService.AddMashupChild(mashupUUID, childUUID, request.GridPosition); err != nil {
+		logging.Error("Failed to add mashup child", "error", err, "mashup_id", mashupInstanceID, "child_id", request.ChildInstanceID)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Child plugin added to mashup successfully"})
+}
+
+// RemoveMashupChildHandler removes a child plugin instance from a mashup
+func RemoveMashupChildHandler(c *gin.Context) {
+	user, ok := auth.RequireUser(c)
+	if !ok {
+		return
+	}
+
+	mashupInstanceID := c.Param("id")
+	childInstanceID := c.Param("childId")
+
+	if mashupInstanceID == "" || childInstanceID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Both mashup and child instance IDs are required"})
+		return
+	}
+
+	// Parse UUIDs
+	mashupUUID, err := uuid.Parse(mashupInstanceID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid mashup instance ID"})
+		return
+	}
+
+	childUUID, err := uuid.Parse(childInstanceID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid child instance ID"})
+		return
+	}
+
+	// Verify user owns the mashup instance
+	db := database.GetDB()
+	pluginService := database.NewUnifiedPluginService(db)
+	mashupInstance, err := pluginService.GetPluginInstanceByID(mashupUUID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Mashup instance not found"})
+		return
+	}
+
+	if mashupInstance.UserID != user.ID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
+		return
+	}
+
+	// Remove child from mashup
+	if err := pluginService.RemoveMashupChild(mashupUUID, childUUID); err != nil {
+		logging.Error("Failed to remove mashup child", "error", err, "mashup_id", mashupInstanceID, "child_id", childInstanceID)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Child plugin removed from mashup successfully"})
+}
+
+// UpdateMashupChildPositionHandler updates the grid position of a child plugin in a mashup
+func UpdateMashupChildPositionHandler(c *gin.Context) {
+	user, ok := auth.RequireUser(c)
+	if !ok {
+		return
+	}
+
+	mashupInstanceID := c.Param("id")
+	childInstanceID := c.Param("childId")
+
+	if mashupInstanceID == "" || childInstanceID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Both mashup and child instance IDs are required"})
+		return
+	}
+
+	var request struct {
+		GridPosition string `json:"grid_position" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request format: " + err.Error()})
+		return
+	}
+
+	// Parse UUIDs
+	mashupUUID, err := uuid.Parse(mashupInstanceID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid mashup instance ID"})
+		return
+	}
+
+	childUUID, err := uuid.Parse(childInstanceID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid child instance ID"})
+		return
+	}
+
+	// Verify user owns the mashup instance
+	db := database.GetDB()
+	pluginService := database.NewUnifiedPluginService(db)
+	mashupInstance, err := pluginService.GetPluginInstanceByID(mashupUUID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Mashup instance not found"})
+		return
+	}
+
+	if mashupInstance.UserID != user.ID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
+		return
+	}
+
+	// Update child position
+	if err := pluginService.UpdateMashupChildPosition(mashupUUID, childUUID, request.GridPosition); err != nil {
+		logging.Error("Failed to update mashup child position", "error", err, "mashup_id", mashupInstanceID, "child_id", childInstanceID)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Child plugin position updated successfully"})
+}
+
+// GetMashupChildrenHandler retrieves all child plugin instances for a mashup
+func GetMashupChildrenHandler(c *gin.Context) {
+	user, ok := auth.RequireUser(c)
+	if !ok {
+		return
+	}
+
+	mashupInstanceID := c.Param("id")
+	if mashupInstanceID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Mashup instance ID is required"})
+		return
+	}
+
+	// Parse UUID
+	mashupUUID, err := uuid.Parse(mashupInstanceID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid mashup instance ID"})
+		return
+	}
+
+	// Verify user owns the mashup instance
+	db := database.GetDB()
+	pluginService := database.NewUnifiedPluginService(db)
+	mashupInstance, err := pluginService.GetPluginInstanceByID(mashupUUID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Mashup instance not found"})
+		return
+	}
+
+	if mashupInstance.UserID != user.ID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
+		return
+	}
+
+	// Get children
+	children, err := pluginService.GetMashupChildren(mashupUUID)
+	if err != nil {
+		logging.Error("Failed to get mashup children", "error", err, "mashup_id", mashupInstanceID)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get mashup children"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"children": children})
+}
+
+// GetAvailableMashupLayoutsHandler returns available mashup layout types
+func GetAvailableMashupLayoutsHandler(c *gin.Context) {
+	layouts := []map[string]interface{}{
+		{
+			"id":          "1L1R",
+			"name":        "Left & Right",
+			"description": "Two plugins side by side",
+			"positions":   []string{"left", "right"},
+		},
+		{
+			"id":          "2T1B",
+			"name":        "Two Top, One Bottom",
+			"description": "Two plugins on top, one on bottom",
+			"positions":   []string{"top-left", "top-right", "bottom"},
+		},
+		{
+			"id":          "1T2B",
+			"name":        "One Top, Two Bottom",
+			"description": "One plugin on top, two on bottom",
+			"positions":   []string{"top", "bottom-left", "bottom-right"},
+		},
+		{
+			"id":          "2x2",
+			"name":        "Four Quadrants",
+			"description": "Four plugins in a 2x2 grid",
+			"positions":   []string{"top-left", "top-right", "bottom-left", "bottom-right"},
+		},
+	}
+
+	c.JSON(http.StatusOK, gin.H{"layouts": layouts})
 }

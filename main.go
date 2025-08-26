@@ -41,6 +41,7 @@ import (
 	_ "github.com/rmitchellscott/stationmaster/internal/plugins/alias"
 	_ "github.com/rmitchellscott/stationmaster/internal/plugins/core_proxy"
 	_ "github.com/rmitchellscott/stationmaster/internal/plugins/image_display"
+	_ "github.com/rmitchellscott/stationmaster/internal/plugins/mashup"
 	_ "github.com/rmitchellscott/stationmaster/internal/plugins/redirect"
 	_ "github.com/rmitchellscott/stationmaster/internal/plugins/screenshot"
 )
@@ -492,6 +493,19 @@ func main() {
 	protected.DELETE("/plugin-instances/:id", handlers.DeletePluginInstanceHandler) // DELETE /api/plugin-instances/:id - delete plugin instance
 	protected.POST("/plugin-instances/:id/force-refresh", handlers.ForceRefreshPluginInstanceHandler) // POST /api/plugin-instances/:id/force-refresh - force refresh plugin instance
 	protected.GET("/plugin-instances/:id/schema-diff", handlers.GetPluginInstanceSchemaDiffHandler) // GET /api/plugin-instances/:id/schema-diff - get schema differences for instance
+
+	// Mashup management endpoints
+	mashups := protected.Group("/mashups")
+	{
+		mashups.POST("", handlers.CreateMashupDefinitionHandler)                                         // POST /api/mashups - create new mashup definition
+		mashups.GET("/layouts", handlers.GetAvailableMashupLayoutsHandler)                               // GET /api/mashups/layouts - get available layout types
+	}
+	
+	// Mashup instance child management endpoints
+	protected.POST("/plugin-instances/:id/children", handlers.AddMashupChildHandler)                     // POST /api/plugin-instances/:id/children - add child plugin to mashup
+	protected.DELETE("/plugin-instances/:id/children/:childId", handlers.RemoveMashupChildHandler)       // DELETE /api/plugin-instances/:id/children/:childId - remove child plugin from mashup
+	protected.PUT("/plugin-instances/:id/children/:childId/position", handlers.UpdateMashupChildPositionHandler) // PUT /api/plugin-instances/:id/children/:childId/position - update child position
+	protected.GET("/plugin-instances/:id/children", handlers.GetMashupChildrenHandler)                   // GET /api/plugin-instances/:id/children - get mashup children
 
 
 

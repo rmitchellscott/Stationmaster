@@ -67,11 +67,15 @@ import {
   ChevronUp,
   ChevronDown,
   ChevronsUpDown,
+  Grid2x2,
 } from "lucide-react";
 import { PrivatePluginList } from "./PrivatePluginList";
 import { PluginPreview } from "./PluginPreview";
 import { LiquidEditor } from "./LiquidEditor";
 import { PrivatePluginHelp } from "./PrivatePluginHelp";
+import { MashupList } from "./MashupList";
+import { MashupCreator } from "./MashupCreator";
+import { MashupEditor } from "./MashupEditor";
 
 interface Plugin {
   id: string;
@@ -133,6 +137,11 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  // Mashup management state
+  const [showMashupCreator, setShowMashupCreator] = useState(false);
+  const [mashupRefreshTrigger, setMashupRefreshTrigger] = useState(0);
+  const [editingMashupInstance, setEditingMashupInstance] = useState<any>(null);
 
   // Sorting state with localStorage persistence
   const [sortState, setSortState] = useState<SortState>(() => {
@@ -644,6 +653,17 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
     setPreviewingPrivatePlugin(plugin);
   };
 
+  // Mashup handlers
+  const handleCreateMashup = () => {
+    setShowMashupCreator(true);
+  };
+
+  const handleMashupCreated = (mashupId: string) => {
+    setMashupRefreshTrigger(prev => prev + 1);
+    setSuccessMessage("Mashup created successfully!");
+    setTimeout(() => setSuccessMessage(null), 3000);
+  };
+
   // Helper function to check if a plugin has configuration fields
   const hasConfigurationFields = (plugin: Plugin): boolean => {
     try {
@@ -940,6 +960,10 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
         <TabsList>
           <TabsTrigger value="instances">Plugin Instances</TabsTrigger>
           <TabsTrigger value="private">Private Plugins</TabsTrigger>
+          <TabsTrigger value="mashups" className="flex items-center gap-2">
+            <Grid2x2 className="h-4 w-4" />
+            Mashups
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="instances" className="space-y-4">
@@ -1657,6 +1681,13 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
             onPreviewPlugin={handlePreviewPrivatePlugin}
           />
         </TabsContent>
+
+        <TabsContent value="mashups" className="space-y-4">
+          <MashupList
+            onCreateMashup={handleCreateMashup}
+            refreshTrigger={mashupRefreshTrigger}
+          />
+        </TabsContent>
       </Tabs>
 
 
@@ -1668,6 +1699,20 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
           onClose={() => setPreviewingPrivatePlugin(null)}
         />
       )} */}
+
+      {/* Mashup Creator Dialog */}
+      <MashupCreator
+        isOpen={showMashupCreator}
+        onClose={() => setShowMashupCreator(false)}
+        onSuccess={handleMashupCreated}
+      />
+
+      {/* Mashup Editor Dialog */}
+      <MashupEditor
+        isOpen={editingMashupInstance !== null}
+        onClose={() => setEditingMashupInstance(null)}
+        mashupInstance={editingMashupInstance}
+      />
     </div>
   );
 }

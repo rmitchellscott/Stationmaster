@@ -41,6 +41,8 @@ func (f *UnifiedPluginFactory) CreatePlugin(def *database.PluginDefinition, inst
 		return f.createSystemPlugin(def, inst)
 	case "private":
 		return f.createPrivatePlugin(def, inst)
+	case "mashup":
+		return f.createMashupPlugin(def, inst)
 	case "public":
 		// Future implementation
 		return nil, fmt.Errorf("public plugins not yet implemented")
@@ -74,6 +76,18 @@ func (f *UnifiedPluginFactory) createPrivatePlugin(def *database.PluginDefinitio
 	return factory(def, inst), nil
 }
 
+// createMashupPlugin creates a mashup plugin instance
+func (f *UnifiedPluginFactory) createMashupPlugin(def *database.PluginDefinition, inst *database.PluginInstance) (Plugin, error) {
+	// Get the mashup plugin from the registry
+	plugin, exists := f.registry["mashup"]
+	if !exists {
+		return nil, fmt.Errorf("mashup plugin not found in registry")
+	}
+	
+	// Mashup plugins use the registered system plugin instance
+	return plugin, nil
+}
+
 // RefreshSystemPlugins updates the system plugin registry
 func (f *UnifiedPluginFactory) RefreshSystemPlugins() {
 	f.registry = GetAll()
@@ -99,6 +113,8 @@ func (f *UnifiedPluginFactory) ValidateDefinition(def *database.PluginDefinition
 		return f.validateSystemDefinition(def)
 	case "private":
 		return f.validatePrivateDefinition(def)
+	case "mashup":
+		return f.validateMashupDefinition(def)
 	case "public":
 		// Future implementation
 		return fmt.Errorf("public plugins not yet implemented")
@@ -151,6 +167,35 @@ func (f *UnifiedPluginFactory) validatePrivateDefinition(def *database.PluginDef
 		(def.MarkupHalfHoriz == nil || *def.MarkupHalfHoriz == "") &&
 		(def.MarkupQuadrant == nil || *def.MarkupQuadrant == "") {
 		return fmt.Errorf("private plugins must have at least one layout template")
+	}
+	
+	return nil
+}
+
+// validateMashupDefinition validates a mashup plugin definition
+func (f *UnifiedPluginFactory) validateMashupDefinition(def *database.PluginDefinition) error {
+	if def.OwnerID == nil {
+		return fmt.Errorf("mashup plugins must have an owner")
+	}
+	
+	if def.MashupLayout == nil || *def.MashupLayout == "" {
+		return fmt.Errorf("mashup plugins must have a layout")
+	}
+	
+	// Validate layout type
+	validLayouts := map[string]bool{
+		"1L1R":      true,
+		"1left1right": true,
+		"2T1B":      true,
+		"2top1bottom": true,
+		"1T2B":      true,
+		"1top2bottom": true,
+		"2x2":       true,
+		"quad":      true,
+	}
+	
+	if !validLayouts[*def.MashupLayout] {
+		return fmt.Errorf("invalid mashup layout: %s", *def.MashupLayout)
 	}
 	
 	return nil

@@ -472,20 +472,12 @@ func ExportPrivatePluginHandler(c *gin.Context) {
 	}
 
 	db := database.GetDB()
-	service := database.NewPrivatePluginService(db)
-
-	// Get the private plugin first to check ownership
-	plugin, err := service.GetPrivatePluginByID(id, user.ID)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Private plugin not found"})
-		return
-	}
-
-	// Get the corresponding PluginDefinition from the unified system
 	unifiedService := database.NewUnifiedPluginService(db)
+	
+	// Get the PluginDefinition from the unified system
 	def, err := unifiedService.GetPluginDefinitionByID(id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve plugin definition", "details": err.Error()})
+		c.JSON(http.StatusNotFound, gin.H{"error": "Private plugin not found"})
 		return
 	}
 
@@ -506,7 +498,7 @@ func ExportPrivatePluginHandler(c *gin.Context) {
 	}
 
 	// Generate filename
-	filename := zipService.GenerateExportFilename(plugin.Name)
+	filename := zipService.GenerateExportFilename(def.Name)
 
 	// Set response headers for file download
 	c.Header("Content-Type", "application/zip")

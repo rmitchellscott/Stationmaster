@@ -16,4 +16,9 @@ const (
 	ComponentSync           = "sync"
 	ComponentRenderer       = "renderer"
 	ComponentPlugins        = "plugins"
+	ComponentRestore        = "restore"
+	ComponentBackup         = "backup"
+	ComponentExport         = "export"
+	ComponentImport         = "import"
+	ComponentPlaylist       = "playlist"
 )

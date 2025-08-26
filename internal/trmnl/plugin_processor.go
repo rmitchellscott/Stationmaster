@@ -402,7 +402,7 @@ func (pp *PluginProcessor) processActivePlugins(device *database.Device, activeI
 		return gin.H{
 			"image_url": getImageURLForDevice(device),
 			"filename":  fmt.Sprintf("no_plugin_%s", time.Now().Format("20060102150405")),
-		}, &item, fmt.Errorf(errorMsg)
+		}, &item, fmt.Errorf("%s", errorMsg)
 	}
 
 	// Get the plugin instance
@@ -493,7 +493,7 @@ func (pp *PluginProcessor) processCurrentPlugin(device *database.Device, activeI
 		return gin.H{
 			"image_url": getImageURLForDevice(device),
 			"filename":  fmt.Sprintf("no_plugin_%s", time.Now().Format("20060102150405")),
-		}, fmt.Errorf(errorMsg)
+		}, fmt.Errorf("%s", errorMsg)
 	}
 
 	// Get the plugin instance

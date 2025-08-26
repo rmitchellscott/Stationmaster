@@ -160,7 +160,7 @@ func (r *PrivatePluginRenderer) RenderToClientSideHTML(opts RenderOptions) (stri
                     if (isNaN(date.getTime())) return dateValue;
                     
                     // Convert strftime format to Intl.DateTimeFormat options
-                    const options = convertStrftimeToIntlOptions(format || '%Y-%m-%d');
+                    const options = convertStrftimeToIntlOptions(format || '%%Y-%%m-%%d');
                     return new Intl.DateTimeFormat(locale, options).format(date);
                 } catch (e) {
                     console.warn('l_date filter error:', e);
@@ -311,27 +311,27 @@ func (r *PrivatePluginRenderer) RenderToClientSideHTML(opts RenderOptions) (stri
             // Convert common strftime patterns to Intl.DateTimeFormat options
             const options = {};
             
-            if (format.includes('%A')) options.weekday = 'long';
-            else if (format.includes('%a')) options.weekday = 'short';
+            if (format.includes('%%A')) options.weekday = 'long';
+            else if (format.includes('%%a')) options.weekday = 'short';
             
-            if (format.includes('%B')) options.month = 'long';
-            else if (format.includes('%b')) options.month = 'short';
-            else if (format.includes('%m')) options.month = '2-digit';
+            if (format.includes('%%B')) options.month = 'long';
+            else if (format.includes('%%b')) options.month = 'short';
+            else if (format.includes('%%m')) options.month = '2-digit';
             
-            if (format.includes('%d')) options.day = '2-digit';
-            else if (format.includes('%e')) options.day = 'numeric';
+            if (format.includes('%%d')) options.day = '2-digit';
+            else if (format.includes('%%e')) options.day = 'numeric';
             
-            if (format.includes('%Y')) options.year = 'numeric';
-            else if (format.includes('%y')) options.year = '2-digit';
+            if (format.includes('%%Y')) options.year = 'numeric';
+            else if (format.includes('%%y')) options.year = '2-digit';
             
-            if (format.includes('%H')) options.hour = '2-digit';
-            else if (format.includes('%I')) {
+            if (format.includes('%%H')) options.hour = '2-digit';
+            else if (format.includes('%%I')) {
                 options.hour = '2-digit';
                 options.hour12 = true;
             }
             
-            if (format.includes('%M')) options.minute = '2-digit';
-            if (format.includes('%S')) options.second = '2-digit';
+            if (format.includes('%%M')) options.minute = '2-digit';
+            if (format.includes('%%S')) options.second = '2-digit';
             
             return options;
         }

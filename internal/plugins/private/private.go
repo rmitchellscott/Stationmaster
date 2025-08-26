@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/rmitchellscott/stationmaster/internal/database"
+	"github.com/rmitchellscott/stationmaster/internal/logging"
 	"github.com/rmitchellscott/stationmaster/internal/plugins"
 	"github.com/rmitchellscott/stationmaster/internal/rendering"
 	"github.com/rmitchellscott/stationmaster/internal/utils"
@@ -127,9 +128,9 @@ func (p *PrivatePlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespon
 		} else {
 			// Log error but don't fail - allow template to render with form data only
 			if err != nil {
-				fmt.Printf("Warning: Failed to fetch polling data for plugin %s: %v\n", p.definition.ID, err)
+				logging.WarnWithComponent(logging.ComponentPlugins, "Failed to fetch polling data for plugin", "plugin_id", p.definition.ID, "error", err)
 			} else if len(polledResult.Errors) > 0 {
-				fmt.Printf("Warning: Polling errors for plugin %s: %v\n", p.definition.ID, polledResult.Errors)
+				logging.WarnWithComponent(logging.ComponentPlugins, "Polling errors for plugin", "plugin_id", p.definition.ID, "errors", polledResult.Errors)
 			}
 		}
 	case dataStrategy != nil && *dataStrategy == "webhook":
@@ -138,7 +139,7 @@ func (p *PrivatePlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespon
 			webhookService := database.NewWebhookService(database.GetDB())
 			webhookData, err := webhookService.GetWebhookDataTemplate(p.instance.ID.String())
 			if err != nil {
-				fmt.Printf("Warning: Failed to fetch webhook data for plugin instance %s: %v\n", p.instance.ID, err)
+				logging.WarnWithComponent(logging.ComponentPlugins, "Failed to fetch webhook data for plugin instance", "instance_id", p.instance.ID, "error", err)
 			} else if webhookData != nil {
 				// Merge webhook data into template data
 				for key, value := range webhookData {

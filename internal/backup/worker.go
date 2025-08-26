@@ -13,6 +13,7 @@ import (
 	"github.com/rmitchellscott/stationmaster/internal/config"
 	"github.com/rmitchellscott/stationmaster/internal/database"
 	"github.com/rmitchellscott/stationmaster/internal/export"
+	"github.com/rmitchellscott/stationmaster/internal/logging"
 	"github.com/rmitchellscott/stationmaster/internal/storage"
 	"gorm.io/gorm"
 )
@@ -96,7 +97,7 @@ func (w *Worker) processPendingJobs() {
 
 		// Auto-shutdown after 6 empty polls (30 seconds with 5s interval)
 		if emptyPolls >= 6 {
-			fmt.Printf("[BACKUP] Backup worker shutting down after %d empty polls\n", emptyPolls)
+			logging.InfoWithComponent(logging.ComponentBackup, "Backup worker shutting down after empty polls", "empty_polls", emptyPolls)
 			w.Stop()
 			return
 		}
@@ -257,7 +258,7 @@ func CleanupExpiredBackups(db *gorm.DB) error {
 	for _, job := range expiredJobs {
 		if job.FilePath != "" {
 			if err := backend.Delete(ctx, job.FilePath); err != nil {
-				fmt.Printf("[BACKUP] Warning: failed to delete backup %s: %v\n", job.FilePath, err)
+				logging.WarnWithComponent(logging.ComponentBackup, "Failed to delete backup", "file_path", job.FilePath, "error", err)
 			}
 		}
 		db.Delete(&job)
@@ -277,7 +278,7 @@ func DeleteBackupJob(db *gorm.DB, jobID uuid.UUID, adminUserID uuid.UUID) error 
 		ctx := context.Background()
 		backend := storage.GetStorageBackend()
 		if err := backend.Delete(ctx, job.FilePath); err != nil {
-			fmt.Printf("[BACKUP] Warning: failed to delete backup %s: %v\n", job.FilePath, err)
+			logging.WarnWithComponent(logging.ComponentBackup, "Failed to delete backup", "file_path", job.FilePath, "error", err)
 		}
 	}
 
@@ -298,7 +299,7 @@ func EnsureWorkerRunning(db *gorm.DB) {
 	// Create and start new worker
 	globalWorker = NewWorker(db)
 	globalWorker.Start()
-	fmt.Printf("[BACKUP] Backup worker started on-demand\n")
+	logging.InfoWithComponent(logging.ComponentBackup, "Backup worker started on-demand")
 }
 
 // IsRunning returns true if the worker is currently running

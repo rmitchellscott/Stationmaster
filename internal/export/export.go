@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/rmitchellscott/stationmaster/internal/database"
+	"github.com/rmitchellscott/stationmaster/internal/logging"
 	"gorm.io/gorm"
 )
 
@@ -157,13 +158,13 @@ func (e *Exporter) exportDatabase(dbDir string, metadata *ExportMetadata, option
 
 	// Count all users (not just exported ones)
 	if err := e.db.Model(&database.User{}).Count(&userCount).Error; err != nil {
-		fmt.Printf("[WARNING] Failed to count users for metadata: %v\n", err)
+		logging.WarnWithComponent(logging.ComponentExport, "Failed to count users for metadata", "error", err)
 	}
 	metadata.TotalUsers = int(userCount)
 
 	// Count all API keys
 	if err := e.db.Model(&database.APIKey{}).Count(&apiKeyCount).Error; err != nil {
-		fmt.Printf("[WARNING] Failed to count API keys for metadata: %v\n", err)
+		logging.WarnWithComponent(logging.ComponentExport, "Failed to count API keys for metadata", "error", err)
 	}
 	metadata.TotalAPIKeys = int(apiKeyCount)
 
@@ -270,7 +271,7 @@ func createTarGz(sourceDir, outputPath string) error {
 		if err := addFileToTar(tarWriter, metadataPath, "metadata.json"); err != nil {
 			return fmt.Errorf("failed to add metadata.json: %w", err)
 		}
-		fmt.Printf("[EXPORT] Added metadata.json as first file in archive\n")
+		logging.InfoWithComponent(logging.ComponentExport, "Added metadata.json as first file in archive")
 	}
 
 	// Walk through source directory

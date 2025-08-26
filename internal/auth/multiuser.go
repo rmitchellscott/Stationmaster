@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/rmitchellscott/stationmaster/internal/config"
 	"github.com/rmitchellscott/stationmaster/internal/database"
+	"github.com/rmitchellscott/stationmaster/internal/logging"
 	"github.com/rmitchellscott/stationmaster/internal/smtp"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -118,7 +119,7 @@ func PublicRegisterHandler(c *gin.Context) {
 	if firstUser {
 		go func() {
 			if err := database.MigrateSingleUserData(database.DB, newUser.ID); err != nil {
-				fmt.Printf("Warning: failed to migrate single-user data: %v\n", err)
+				logging.WarnWithComponent(logging.ComponentAuth, "Failed to migrate single-user data", "error", err)
 			}
 		}()
 	}
@@ -127,7 +128,7 @@ func PublicRegisterHandler(c *gin.Context) {
 	if smtp.IsSMTPConfigured() && !config.GetBool("DISABLE_WELCOME_EMAIL", false) {
 		if err := smtp.SendWelcomeEmail(newUser.Email, newUser.Username); err != nil {
 			// Log error but don't fail user creation
-			fmt.Printf("Failed to send welcome email: %v\n", err)
+			logging.WarnWithComponent(logging.ComponentAuth, "Failed to send welcome email", "error", err)
 		}
 	}
 
@@ -188,7 +189,7 @@ func RegisterHandler(c *gin.Context) {
 	if smtp.IsSMTPConfigured() && !config.GetBool("DISABLE_WELCOME_EMAIL", false) {
 		if err := smtp.SendWelcomeEmail(newUser.Email, newUser.Username); err != nil {
 			// Log error but don't fail user creation
-			fmt.Printf("Failed to send welcome email: %v\n", err)
+			logging.WarnWithComponent(logging.ComponentAuth, "Failed to send welcome email", "error", err)
 		}
 	}
 
@@ -343,7 +344,7 @@ func PasswordResetHandler(c *gin.Context) {
 		if err == nil {
 			if err := smtp.SendPasswordResetEmail(user.Email, user.Username, token); err != nil {
 				// Log error but don't reveal it to user
-				fmt.Printf("Failed to send password reset email: %v\n", err)
+				logging.WarnWithComponent(logging.ComponentAuth, "Failed to send password reset email", "error", err)
 			}
 		}
 	}

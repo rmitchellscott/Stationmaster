@@ -644,6 +644,16 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
     setPreviewingPrivatePlugin(plugin);
   };
 
+  // Helper function to check if a plugin has configuration fields
+  const hasConfigurationFields = (plugin: Plugin): boolean => {
+    try {
+      const schema = JSON.parse(plugin.config_schema);
+      const properties = schema.properties || {};
+      return Object.keys(properties).length > 0;
+    } catch (e) {
+      return false;
+    }
+  };
 
   const renderSettingsForm = (plugin: Plugin, settings: Record<string, any>, onChange: (key: string, value: any) => void) => {
     let schema;
@@ -1393,14 +1403,16 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                     </div>
                   )}
 
-                  <div>
-                    <Label className="text-sm">Plugin Configuration</Label>
-                    <div className="mt-1">
-                      {renderSettingsForm(selectedPlugin, instanceSettings, (key, value) => {
-                        setInstanceSettings(prev => ({ ...prev, [key]: value }));
-                      })}
+                  {hasConfigurationFields(selectedPlugin) && (
+                    <div>
+                      <Label className="text-sm">Plugin Configuration</Label>
+                      <div className="mt-1">
+                        {renderSettingsForm(selectedPlugin, instanceSettings, (key, value) => {
+                          setInstanceSettings(prev => ({ ...prev, [key]: value }));
+                        })}
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </>
               )}
             </div>
@@ -1544,7 +1556,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
               </div>
             )}
 
-            {editPluginInstance?.plugin && (
+            {editPluginInstance?.plugin && hasConfigurationFields(editPluginInstance.plugin) && (
               <>
                 <Separator />
                 <Card>

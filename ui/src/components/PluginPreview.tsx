@@ -211,7 +211,7 @@ export function PluginPreview({ plugin, isOpen, onClose }: PluginPreviewProps) {
       const testPlugin = {
         ...plugin,
         polling_config: plugin.polling_config || {},
-        form_fields: plugin.form_fields || {},
+        form_fields: plugin.form_fields || null,
       };
 
       // Call the test API endpoint

@@ -345,10 +345,16 @@ export function PrivatePluginCreator({
         };
       }
 
-      // Always include form fields YAML (empty string clears existing form fields)
-      submitData.form_fields = {
-        yaml: formFieldsYAML.trim()
-      };
+      // Include form fields only if there's actual YAML content
+      // Send null for empty forms to be consistent with backend normalization
+      const trimmedYAML = formFieldsYAML.trim();
+      if (trimmedYAML) {
+        submitData.form_fields = {
+          yaml: trimmedYAML
+        };
+      } else {
+        submitData.form_fields = null;
+      }
 
       onSave(submitData);
       

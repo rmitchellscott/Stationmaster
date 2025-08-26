@@ -259,10 +259,7 @@ func (s *TRMNLZipService) ConvertZipDataToPluginDefinition(zipData *ZipExportDat
 	def.Author = "Imported from TRMNL"
 	
 	// Preserve the description extracted from YAML custom fields (about_plugin with field_type: author_bio)
-	// If no description was extracted, provide a default one
-	if def.Description == "" {
-		def.Description = fmt.Sprintf("Imported private plugin: %s", def.Name)
-	}
+	// If no description was extracted, leave it empty
 
 	// Default processing requirements
 	requiresProcessing := true

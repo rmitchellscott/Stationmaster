@@ -108,16 +108,69 @@ func ValidatePollingConfig(config interface{}) error {
 	return nil
 }
 
+// NormalizeFormFields normalizes form fields to a canonical representation
+// All empty form field representations are normalized to nil for consistency
+func NormalizeFormFields(formFields interface{}) interface{} {
+	if formFields == nil {
+		return nil
+	}
+
+	// Handle string case
+	if v, ok := formFields.(string); ok {
+		if v == "" {
+			return nil
+		}
+		// Non-empty strings are invalid for form fields
+		return formFields
+	}
+
+	// Handle map case
+	formFieldsMap, ok := formFields.(map[string]interface{})
+	if !ok {
+		// Try to convert via JSON marshaling for other types
+		jsonData, err := json.Marshal(formFields)
+		if err != nil {
+			return formFields // Return as-is if can't convert
+		}
+		if err := json.Unmarshal(jsonData, &formFieldsMap); err != nil {
+			return formFields // Return as-is if can't convert
+		}
+	}
+
+	// Handle empty object case
+	if len(formFieldsMap) == 0 {
+		return nil
+	}
+
+	// Handle {"yaml": ""} or {"yaml": null} case
+	if len(formFieldsMap) == 1 {
+		if yamlValue, exists := formFieldsMap["yaml"]; exists {
+			if yamlValue == nil {
+				return nil
+			}
+			if yamlStr, ok := yamlValue.(string); ok && yamlStr == "" {
+				return nil
+			}
+		}
+	}
+
+	// Return normalized map for non-empty cases
+	return formFieldsMap
+}
+
 // ValidateFormFields validates the form fields configuration and converts YAML to JSON schema
 func ValidateFormFields(formFields interface{}) (string, error) {
-	if formFields == nil {
+	// Normalize first to handle all empty cases consistently
+	normalized := NormalizeFormFields(formFields)
+	
+	if normalized == nil {
 		return `{"type": "object", "properties": {}}`, nil
 	}
 
 	// Convert to map if it's not already
 	var formFieldsMap map[string]interface{}
 	
-	switch v := formFields.(type) {
+	switch v := normalized.(type) {
 	case map[string]interface{}:
 		formFieldsMap = v
 	case string:
@@ -127,7 +180,7 @@ func ValidateFormFields(formFields interface{}) (string, error) {
 		return "", fmt.Errorf("form fields should be an object, not a string")
 	default:
 		// Try to convert via JSON marshaling
-		jsonData, err := json.Marshal(formFields)
+		jsonData, err := json.Marshal(normalized)
 		if err != nil {
 			return "", fmt.Errorf("invalid form fields format: %w", err)
 		}
@@ -318,20 +371,76 @@ func generateFieldSchema(field FormField) map[string]interface{} {
 }
 
 // CompareFormFieldSchemas compares two form field configurations and returns true if they differ
+// This function normalizes both inputs before comparison to handle equivalent empty representations
 func CompareFormFieldSchemas(oldFormFields, newFormFields []byte) bool {
-	// If one is nil and the other isn't, they're different
-	if (oldFormFields == nil) != (newFormFields == nil) {
-		return true
+	// Parse and normalize both inputs
+	var oldParsed, newParsed interface{}
+	
+	// Handle old form fields
+	if oldFormFields != nil {
+		if err := json.Unmarshal(oldFormFields, &oldParsed); err != nil {
+			// If we can't parse old data, fall back to byte comparison
+			return !areEquivalentBytes(oldFormFields, newFormFields)
+		}
 	}
 	
-	// If both are nil, they're the same
-	if oldFormFields == nil && newFormFields == nil {
+	// Handle new form fields  
+	if newFormFields != nil {
+		if err := json.Unmarshal(newFormFields, &newParsed); err != nil {
+			// If we can't parse new data, fall back to byte comparison
+			return !areEquivalentBytes(oldFormFields, newFormFields)
+		}
+	}
+	
+	// Normalize both
+	oldNormalized := NormalizeFormFields(oldParsed)
+	newNormalized := NormalizeFormFields(newParsed)
+	
+	// If both are nil after normalization, they're equivalent
+	if oldNormalized == nil && newNormalized == nil {
 		return false
 	}
 	
-	// Compare content hashes for efficient comparison
-	oldHash := sha256.Sum256(oldFormFields)
-	newHash := sha256.Sum256(newFormFields)
+	// If only one is nil, they're different
+	if (oldNormalized == nil) != (newNormalized == nil) {
+		return true
+	}
+	
+	// Convert back to JSON and compare hashes
+	oldJSON, err := json.Marshal(oldNormalized)
+	if err != nil {
+		// Fall back to original comparison if marshaling fails
+		return !areEquivalentBytes(oldFormFields, newFormFields)
+	}
+	
+	newJSON, err := json.Marshal(newNormalized)
+	if err != nil {
+		// Fall back to original comparison if marshaling fails
+		return !areEquivalentBytes(oldFormFields, newFormFields)
+	}
+	
+	// Compare normalized JSON hashes
+	oldHash := sha256.Sum256(oldJSON)
+	newHash := sha256.Sum256(newJSON)
 	
 	return hex.EncodeToString(oldHash[:]) != hex.EncodeToString(newHash[:])
+}
+
+// areEquivalentBytes compares two byte slices for equality (fallback method)
+func areEquivalentBytes(a, b []byte) bool {
+	if (a == nil) != (b == nil) {
+		return false
+	}
+	if a == nil && b == nil {
+		return true
+	}
+	if len(a) != len(b) {
+		return false
+	}
+	for i, v := range a {
+		if v != b[i] {
+			return false
+		}
+	}
+	return true
 }

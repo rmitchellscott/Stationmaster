@@ -93,11 +93,16 @@ func CreatePrivatePluginHandler(c *gin.Context) {
 	}
 
 	if req.FormFields != nil {
-		formFieldsJSON, err = json.Marshal(req.FormFields)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid form fields config"})
-			return
+		// Normalize form fields before storage to ensure consistency
+		normalizedFormFields := NormalizeFormFields(req.FormFields)
+		if normalizedFormFields != nil {
+			formFieldsJSON, err = json.Marshal(normalizedFormFields)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid form fields config"})
+				return
+			}
 		}
+		// If normalized to nil, leave formFieldsJSON as nil (empty byte slice)
 	}
 
 	// Validate templates before creating
@@ -267,11 +272,16 @@ func UpdatePrivatePluginHandler(c *gin.Context) {
 	}
 
 	if req.FormFields != nil {
-		formFieldsJSON, err = json.Marshal(req.FormFields)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid form fields config"})
-			return
+		// Normalize form fields before storage to ensure consistency
+		normalizedFormFields := NormalizeFormFields(req.FormFields)
+		if normalizedFormFields != nil {
+			formFieldsJSON, err = json.Marshal(normalizedFormFields)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid form fields config"})
+				return
+			}
 		}
+		// If normalized to nil, leave formFieldsJSON as nil (empty byte slice)
 	}
 
 	// Validate templates before updating

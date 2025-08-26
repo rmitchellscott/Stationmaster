@@ -109,6 +109,17 @@ func (s *UnifiedPluginService) DeletePluginDefinition(id uuid.UUID, ownerID *uui
 				}
 			}
 			
+			// Get playlist item IDs that will be deleted
+			var playlistItemIDs []uuid.UUID
+			if err := tx.Model(&PlaylistItem{}).Where("plugin_instance_id = ?", instance.ID).Pluck("id", &playlistItemIDs).Error; err != nil {
+				return fmt.Errorf("failed to get playlist item IDs for instance %s: %w", instance.ID, err)
+			}
+			
+			// Advance devices that reference these playlist items to their next valid item
+			if err := s.advanceDevicesFromPlaylistItems(tx, playlistItemIDs); err != nil {
+				return fmt.Errorf("failed to advance devices from deleted items for instance %s: %w", instance.ID, err)
+			}
+			
 			// Delete playlist items that reference this plugin instance
 			if err := tx.Where("plugin_instance_id = ?", instance.ID).Delete(&PlaylistItem{}).Error; err != nil {
 				return fmt.Errorf("failed to delete playlist items for instance %s: %w", instance.ID, err)
@@ -229,6 +240,77 @@ func (s *UnifiedPluginService) UpdatePluginInstanceSettings(instanceID uuid.UUID
 		Update("settings", settingsJSON).Error
 }
 
+// advanceDevicesFromPlaylistItems advances devices that reference the given playlist items to their next valid item
+func (s *UnifiedPluginService) advanceDevicesFromPlaylistItems(tx *gorm.DB, playlistItemIDs []uuid.UUID) error {
+	if len(playlistItemIDs) == 0 {
+		return nil
+	}
+	
+	// Find devices that reference any of the playlist items being deleted
+	var affectedDevices []Device
+	if err := tx.Where("last_playlist_item_id IN (?)", playlistItemIDs).Find(&affectedDevices).Error; err != nil {
+		return fmt.Errorf("failed to find affected devices: %w", err)
+	}
+	
+	if len(affectedDevices) == 0 {
+		return nil // No devices affected
+	}
+	
+	// Process each affected device
+	for _, device := range affectedDevices {
+		// Get all active playlist items for this device (excluding those being deleted)
+		var activeItems []PlaylistItem
+		err := tx.Table("playlist_items pi").
+			Select("pi.*").
+			Joins("JOIN playlists p ON pi.playlist_id = p.id").
+			Where("p.device_id = ? AND p.is_default = ? AND pi.is_visible = ? AND pi.id NOT IN (?)", 
+				device.ID, true, true, playlistItemIDs).
+			Order("pi.order_index ASC").
+			Find(&activeItems).Error
+		
+		if err != nil {
+			return fmt.Errorf("failed to get active items for device %s: %w", device.ID, err)
+		}
+		
+		var nextItemID *uuid.UUID
+		if len(activeItems) > 0 {
+			// Find current item in remaining active items
+			var currentItem *PlaylistItem
+			if device.LastPlaylistItemID != nil {
+				for i := range activeItems {
+					if activeItems[i].ID == *device.LastPlaylistItemID {
+						currentItem = &activeItems[i]
+						break
+					}
+				}
+			}
+			
+			// Find next item using round-robin logic
+			if currentItem != nil {
+				// Find next item after current
+				for i, item := range activeItems {
+					if item.ID == currentItem.ID {
+						nextIndex := (i + 1) % len(activeItems)
+						nextItemID = &activeItems[nextIndex].ID
+						break
+					}
+				}
+			} else {
+				// No current item or current item being deleted, use first available
+				nextItemID = &activeItems[0].ID
+			}
+		}
+		// If no active items remain, nextItemID stays nil (will clear the reference)
+		
+		// Update device's last_playlist_item_id
+		if err := tx.Model(&Device{}).Where("id = ?", device.ID).Update("last_playlist_item_id", nextItemID).Error; err != nil {
+			return fmt.Errorf("failed to update device %s playlist reference: %w", device.ID, err)
+		}
+	}
+	
+	return nil
+}
+
 // DeletePluginInstance permanently deletes a plugin instance and its references
 func (s *UnifiedPluginService) DeletePluginInstance(instanceID, userID uuid.UUID) error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
@@ -252,6 +334,17 @@ func (s *UnifiedPluginService) DeletePluginInstance(instanceID, userID uuid.UUID
 				Update("status", "cancelled").Error; err != nil {
 				return fmt.Errorf("failed to cancel active render jobs: %w", err)
 			}
+		}
+		
+		// Get playlist item IDs that will be deleted
+		var playlistItemIDs []uuid.UUID
+		if err := tx.Model(&PlaylistItem{}).Where("plugin_instance_id = ?", instanceID).Pluck("id", &playlistItemIDs).Error; err != nil {
+			return fmt.Errorf("failed to get playlist item IDs: %w", err)
+		}
+		
+		// Advance devices that reference these playlist items to their next valid item
+		if err := s.advanceDevicesFromPlaylistItems(tx, playlistItemIDs); err != nil {
+			return fmt.Errorf("failed to advance devices from deleted items: %w", err)
 		}
 		
 		// Delete playlist items that reference this plugin instance

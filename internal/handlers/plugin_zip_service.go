@@ -3,6 +3,7 @@ package handlers
 import (
 	"archive/zip"
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -219,14 +220,14 @@ func (s *TRMNLZipService) ConvertZipDataToPluginDefinition(zipData *ZipExportDat
 		"has_half_v", zipData.HalfVertical != "",
 		"has_quadrant", zipData.QuadrantTemplate != "")
 
-	// Parse settings.yml
+	// Parse settings.yml using the TRMNL export service
 	def, err := s.exportService.ParseSettingsYAML(zipData.SettingsYAML)
 	if err != nil {
 		logging.Error("[TRMNL IMPORT] Failed to parse settings.yml", "error", err)
 		return nil, fmt.Errorf("failed to parse settings.yml: %w", err)
 	}
 
-	logging.Info("[TRMNL IMPORT] Successfully parsed settings.yml", "plugin_name", def.Name)
+	logging.Info("[TRMNL IMPORT] Successfully parsed settings.yml", "plugin_name", def.Name, "description", def.Description)
 
 	// Set template content
 	templateCount := 0
@@ -256,16 +257,41 @@ func (s *TRMNLZipService) ConvertZipDataToPluginDefinition(zipData *ZipExportDat
 	// Set plugin metadata
 	def.PluginType = "private"
 	def.Author = "Imported from TRMNL"
-	def.Description = fmt.Sprintf("Imported private plugin: %s", def.Name)
+	
+	// Preserve the description extracted from YAML custom fields (about_plugin with field_type: author_bio)
+	// If no description was extracted, provide a default one
+	if def.Description == "" {
+		def.Description = fmt.Sprintf("Imported private plugin: %s", def.Name)
+	}
 
 	// Default processing requirements
 	requiresProcessing := true
 	def.RequiresProcessing = requiresProcessing
 
+	// Validate form fields if they exist to ensure valid JSON schema
+	if def.FormFields != nil {
+		// Convert form fields to interface{} for validation
+		var formFieldsInterface interface{}
+		if err := json.Unmarshal(def.FormFields, &formFieldsInterface); err != nil {
+			logging.Error("[TRMNL IMPORT] Failed to unmarshal form fields for validation", "error", err)
+			return nil, fmt.Errorf("invalid form fields JSON: %w", err)
+		}
+		
+		// Validate form fields using existing validation logic
+		_, err := ValidateFormFields(formFieldsInterface)
+		if err != nil {
+			logging.Error("[TRMNL IMPORT] Form fields validation failed", "error", err)
+			return nil, fmt.Errorf("form fields validation failed: %w", err)
+		}
+		
+		logging.Info("[TRMNL IMPORT] Form fields validation passed")
+	}
+
 	logging.Info("[TRMNL IMPORT] Successfully converted ZIP data to PluginDefinition", 
 		"plugin_name", def.Name,
 		"plugin_type", def.PluginType,
-		"requires_processing", def.RequiresProcessing)
+		"requires_processing", def.RequiresProcessing,
+		"has_form_fields", def.FormFields != nil)
 
 	return def, nil
 }

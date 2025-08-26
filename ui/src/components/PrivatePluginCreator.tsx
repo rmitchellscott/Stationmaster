@@ -372,56 +372,46 @@ export function PrivatePluginCreator({
     switch (formData.data_strategy) {
       case 'webhook':
         return (
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Webhook className="h-4 w-4" />
-                Webhook Configuration
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <Alert>
-                  <AlertTriangle className="h-4 w-4" />
-                  <AlertDescription>
-                    Webhook URLs are now available after creating plugin instances. 
-                    Go to Plugin Management → Plugin Instances to view webhook URLs for each instance.
-                  </AlertDescription>
-                </Alert>
-              </div>
-            </CardContent>
-          </Card>
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold flex items-center gap-2">
+              <Webhook className="h-4 w-4" />
+              Webhook Configuration
+            </h3>
+            <Alert>
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>
+                Webhook URLs are now available after creating plugin instances. 
+                Go to Plugin Management → Plugin Instances to view webhook URLs for each instance.
+              </AlertDescription>
+            </Alert>
+          </div>
         );
 
       case 'polling':
         return (
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Globe className="h-4 w-4" />
-                Polling Configuration
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {pollingUrls.map((urlConfig, index) => {
-                  const isValidUrl = !urlConfig.url || /^https?:\/\//.test(urlConfig.url);
-                  
-                  return (
-                    <Card key={index}>
-                      <CardHeader className="pb-4">
-                        <div className="flex items-center justify-between">
-                          <CardTitle className="text-base">URL {index + 1}</CardTitle>
-                          <Button 
-                            variant="ghost" 
-                            size="sm"
-                            onClick={() => removePollingURL(index)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </CardHeader>
-                      <CardContent className="space-y-6">
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold flex items-center gap-2">
+              <Globe className="h-4 w-4" />
+              Polling Configuration
+            </h3>
+            {pollingUrls.map((urlConfig, index) => {
+              const isValidUrl = !urlConfig.url || /^https?:\/\//.test(urlConfig.url);
+              
+              return (
+                <Card key={index}>
+                  <CardHeader className="pb-4">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-base">URL {index + 1}</CardTitle>
+                      <Button 
+                        variant="ghost" 
+                        size="sm"
+                        onClick={() => removePollingURL(index)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
                         <div className="space-y-4">
                           <div>
                             <Label htmlFor={`url-${index}`}>URL *</Label>
@@ -487,39 +477,31 @@ export function PrivatePluginCreator({
                             </div>
                           )}
                         </div>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-                <Button variant="outline" onClick={addPollingURL}>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add URL
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            <Button variant="outline" onClick={addPollingURL}>
+              <Plus className="h-4 w-4 mr-2" />
+              Add URL
+            </Button>
+          </div>
         );
 
       case 'static':
         return (
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Database className="h-4 w-4" />
-                Static Configuration
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div>
-                  <Label>Data Source</Label>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Uses only form fields and TRMNL device/user data - no external data sources
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold flex items-center gap-2">
+              <Database className="h-4 w-4" />
+              Static Configuration
+            </h3>
+            <div>
+              <Label>Data Source</Label>
+              <p className="text-sm text-muted-foreground mt-1">
+                Uses only form fields and TRMNL device/user data - no external data sources
+              </p>
+            </div>
+          </div>
         );
 
       default:
@@ -530,11 +512,8 @@ export function PrivatePluginCreator({
   // Main content component
   const renderMainContent = () => (
     <>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-8">
         <div>
-          <h2 className="text-xl font-semibold">
-            {plugin ? 'Edit Private Plugin' : 'Create Private Plugin'}
-          </h2>
           <p className="text-sm text-muted-foreground">
             Create custom plugins using Liquid templates and TRMNL's design framework
           </p>
@@ -550,7 +529,7 @@ export function PrivatePluginCreator({
         </Button>
       </div>
 
-      <div className="space-y-6">
+      <div className="space-y-8">
         {error && (
           <Alert variant="destructive">
             <AlertTriangle className="h-4 w-4" />
@@ -594,75 +573,72 @@ export function PrivatePluginCreator({
         )}
 
         {/* Basic Information */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Basic Information</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
+        <div className="space-y-4">
+          <h3 className="text-lg font-semibold">Basic Information</h3>
+          <div>
+            <Label htmlFor="name">Plugin Name</Label>
+            <Input
+              id="name"
+              value={formData.name}
+              onChange={(e) => handleInputChange('name', e.target.value)}
+              placeholder="My Awesome Plugin"
+              className="mt-2"
+            />
+          </div>
+          <div>
+            <Label htmlFor="description">Description</Label>
+            <Textarea
+              id="description"
+              value={formData.description}
+              onChange={(e) => handleInputChange('description', e.target.value)}
+              placeholder="Describe what your plugin does..."
+              className="mt-2"
+              rows={3}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
             <div>
-              <Label htmlFor="name">Plugin Name</Label>
+              <Label htmlFor="version">Version</Label>
               <Input
-                id="name"
-                value={formData.name}
-                onChange={(e) => handleInputChange('name', e.target.value)}
-                placeholder="My Awesome Plugin"
+                id="version"
+                value={formData.version}
+                onChange={(e) => handleInputChange('version', e.target.value)}
+                placeholder="1.0.0"
                 className="mt-2"
               />
             </div>
             <div>
-              <Label htmlFor="description">Description</Label>
-              <Textarea
-                id="description"
-                value={formData.description}
-                onChange={(e) => handleInputChange('description', e.target.value)}
-                placeholder="Describe what your plugin does..."
-                className="mt-2"
-                rows={3}
-              />
+              <Label htmlFor="data_strategy">Data Strategy</Label>
+              <Select
+                value={formData.data_strategy}
+                onValueChange={(value) => handleInputChange('data_strategy', value as any)}
+              >
+                <SelectTrigger className="mt-2">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="webhook">Webhook</SelectItem>
+                  <SelectItem value="polling">Polling</SelectItem>
+                  <SelectItem value="static">Static</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="version">Version</Label>
-                <Input
-                  id="version"
-                  value={formData.version}
-                  onChange={(e) => handleInputChange('version', e.target.value)}
-                  placeholder="1.0.0"
-                  className="mt-2"
-                />
-              </div>
-              <div>
-                <Label htmlFor="data_strategy">Data Strategy</Label>
-                <Select
-                  value={formData.data_strategy}
-                  onValueChange={(value) => handleInputChange('data_strategy', value as any)}
-                >
-                  <SelectTrigger className="mt-2">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="webhook">Webhook</SelectItem>
-                    <SelectItem value="polling">Polling</SelectItem>
-                    <SelectItem value="static">Static</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
+
+        <Separator />
 
         {/* Data Strategy Configuration */}
         {renderDataStrategyConfig()}
 
+        <Separator />
+
         {/* Layout Templates */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Code2 className="h-4 w-4" />
-              Layout Templates
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
+        <div className="space-y-4">
+          <h3 className="text-lg font-semibold flex items-center gap-2">
+            <Code2 className="h-4 w-4" />
+            Layout Templates
+          </h3>
             <Tabs value={activeLayoutTab} onValueChange={setActiveLayoutTab}>
               <TabsList className="grid w-full grid-cols-5">
                 {layoutTabs.map((tab) => (
@@ -719,79 +695,72 @@ export function PrivatePluginCreator({
                 </TabsContent>
               ))}
             </Tabs>
-          </CardContent>
-        </Card>
+        </div>
+
+        <Separator />
 
         {/* Screen Options */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Screen Options</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="flex items-center justify-between">
-              <div className="space-y-1">
-                <Label htmlFor="remove-bleed-margin">Remove Bleed Margin</Label>
-                <p className="text-sm text-muted-foreground">
-                  Removes default padding and margins, allowing content to extend to screen edges
-                </p>
-              </div>
-              <Switch
-                id="remove-bleed-margin"
-                checked={formData.remove_bleed_margin || false}
-                onCheckedChange={(checked) => handleInputChange('remove_bleed_margin', checked)}
-              />
+        <div className="space-y-6">
+          <h3 className="text-lg font-semibold">Screen Options</h3>
+          <div className="flex items-center justify-between">
+            <div className="space-y-1">
+              <Label htmlFor="remove-bleed-margin">Remove Bleed Margin</Label>
+              <p className="text-sm text-muted-foreground">
+                Removes default padding and margins, allowing content to extend to screen edges
+              </p>
             </div>
-            <div className="flex items-center justify-between">
-              <div className="space-y-1">
-                <Label htmlFor="enable-dark-mode">Enable Dark Mode</Label>
-                <p className="text-sm text-muted-foreground">
-                  Inverts black/white pixels. Will modify entire screen. Add class "image" to img tags as needed.
-                </p>
-              </div>
-              <Switch
-                id="enable-dark-mode"
-                checked={formData.enable_dark_mode || false}
-                onCheckedChange={(checked) => handleInputChange('enable_dark_mode', checked)}
-              />
+            <Switch
+              id="remove-bleed-margin"
+              checked={formData.remove_bleed_margin || false}
+              onCheckedChange={(checked) => handleInputChange('remove_bleed_margin', checked)}
+            />
+          </div>
+          <div className="flex items-center justify-between">
+            <div className="space-y-1">
+              <Label htmlFor="enable-dark-mode">Enable Dark Mode</Label>
+              <p className="text-sm text-muted-foreground">
+                Inverts black/white pixels. Will modify entire screen. Add class "image" to img tags as needed.
+              </p>
             </div>
-          </CardContent>
-        </Card>
+            <Switch
+              id="enable-dark-mode"
+              checked={formData.enable_dark_mode || false}
+              onCheckedChange={(checked) => handleInputChange('enable_dark_mode', checked)}
+            />
+          </div>
+        </div>
+
+        <Separator />
 
         {/* Plugin Settings Form */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Shield className="h-4 w-4" />
-              Plugin Settings Form
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <p className="text-sm text-muted-foreground">
-                Define form fields that users will fill out when configuring instances of your plugin. 
-                These values will be available in your templates as merge variables.
-              </p>
-              
-              {formFieldsErrors.length > 0 && (
-                <Alert variant="destructive">
-                  <AlertTriangle className="h-4 w-4" />
-                  <AlertDescription>
-                    Form fields validation failed. Please fix the errors before saving.
-                  </AlertDescription>
-                </Alert>
-              )}
-              
-              <FormFieldBuilder
-                value={formFieldsYAML}
-                onChange={setFormFieldsYAML}
-                onValidationChange={(isValid: boolean, errors: string[]) => {
-                  setFormFieldsValid(isValid);
-                  setFormFieldsErrors(errors);
-                }}
-              />
-            </div>
-          </CardContent>
-        </Card>
+        <div className="space-y-4">
+          <h3 className="text-lg font-semibold flex items-center gap-2">
+            <Shield className="h-4 w-4" />
+            Plugin Settings Form
+          </h3>
+          <p className="text-sm text-muted-foreground">
+            Define form fields that users will fill out when configuring instances of your plugin. 
+            These values will be available in your templates as merge variables.
+          </p>
+          
+          {formFieldsErrors.length > 0 && (
+            <Alert variant="destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>
+                Form fields validation failed. Please fix the errors before saving.
+              </AlertDescription>
+            </Alert>
+          )}
+          
+          <FormFieldBuilder
+            value={formFieldsYAML}
+            onChange={setFormFieldsYAML}
+            onValidationChange={(isValid: boolean, errors: string[]) => {
+              setFormFieldsValid(isValid);
+              setFormFieldsErrors(errors);
+            }}
+          />
+        </div>
       </div>
 
       {/* Action buttons */}

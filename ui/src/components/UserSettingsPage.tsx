@@ -17,6 +17,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -409,11 +410,8 @@ export function UserSettingsPage() {
               </TabsList>
 
               <TabsContent value="profile" className="mt-6">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>{t("settings.cards.profile_information")}</CardTitle>
-                  </CardHeader>
-              <CardContent className="space-y-4">
+                <div className="space-y-6">
+                  <h3 className="text-lg font-semibold">{t("settings.cards.profile_information")}</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <Label htmlFor="username">{t("settings.labels.username")}</Label>
@@ -653,17 +651,13 @@ export function UserSettingsPage() {
                     {saving ? t('settings.loading_states.saving') : t('settings.buttons.save_changes')}
                   </Button>
                 </div>
-                  </CardContent>
-                </Card>
+                </div>
               </TabsContent>
 
               <TabsContent value="account" className="mt-6">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>{t("settings.cards.change_password")}</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:divide-x lg:divide-border">
+                <div className="space-y-4 lg:pr-6">
+                  <h3 className="text-lg font-semibold">{t("settings.cards.change_password")}</h3>
                   <div>
                     <Label htmlFor="current-password">{t("settings.labels.current_password")}</Label>
                     <Input
@@ -714,16 +708,11 @@ export function UserSettingsPage() {
                       {saving ? t('settings.loading_states.updating') : t('settings.buttons.update_password')}
                     </Button>
                   </div>
-                </CardContent>
-              </Card>
+                </div>
 
-              <Card>
-                <CardHeader>
-                  <CardTitle>
-                    {t("settings.cards.delete_account")}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4 md:flex md:flex-col md:h-full">
+                <div className="space-y-4 flex flex-col h-full lg:pl-6">
+                  <Separator className="lg:hidden mb-4" />
+                  <h3 className="text-lg font-semibold">{t("settings.cards.delete_account")}</h3>
                   <p className="text-sm text-muted-foreground mb-4">
                     {t("settings.messages.delete_warning_intro")}
                   </p>
@@ -740,8 +729,7 @@ export function UserSettingsPage() {
                       {t('settings.buttons.delete_my_account')}
                     </Button>
                   </div>
-                </CardContent>
-                  </Card>
+                </div>
                 </div>
               </TabsContent>
             </Tabs>

@@ -36,6 +36,11 @@ type UnifiedPluginDefinition struct {
 	
 	// Private plugin specific fields
 	InstanceCount      *int   `json:"instance_count,omitempty"` // Number of instances user has created
+	
+	// Mashup plugin specific fields
+	MashupLayout       string `json:"mashup_layout,omitempty"`  // "1L1R", "2T1B", "1T2B", "2x2"
+	CreatedAt          string `json:"created_at,omitempty"`     // ISO date string
+	UpdatedAt          string `json:"updated_at,omitempty"`     // ISO date string
 }
 
 // GetAvailablePluginDefinitionsHandler returns both system and private plugins available to the user
@@ -48,9 +53,13 @@ func GetAvailablePluginDefinitionsHandler(c *gin.Context) {
 
 	var allPlugins []UnifiedPluginDefinition
 
-	// Get system plugins from registry
-	systemPlugins := plugins.GetAllInfo()
-	for _, plugin := range systemPlugins {
+	// Filter by plugin_type query parameter if provided
+	pluginType := c.Query("plugin_type")
+
+	// Get system plugins from registry (only if not filtering for specific non-system types)
+	if pluginType == "" || pluginType == "system" {
+		systemPlugins := plugins.GetAllInfo()
+		for _, plugin := range systemPlugins {
 		unifiedPlugin := UnifiedPluginDefinition{
 			ID:                 plugin.Type, // Use type as ID for system plugins
 			Name:               plugin.Name,
@@ -64,13 +73,11 @@ func GetAvailablePluginDefinitionsHandler(c *gin.Context) {
 			RequiresProcessing: plugin.RequiresProcessing,
 		}
 		allPlugins = append(allPlugins, unifiedPlugin)
+		}
 	}
 
 	// Get user's private plugins from unified plugin_definitions table
 	db := database.GetDB()
-	
-	// Filter by plugin_type query parameter if provided
-	pluginType := c.Query("plugin_type")
 	
 	var privatePlugins []database.PluginDefinition
 	query := db.Where("owner_id = ?", userID)
@@ -101,6 +108,15 @@ func GetAvailablePluginDefinitionsHandler(c *gin.Context) {
 				IsActive:           privatePlugin.IsActive,
 				RequiresProcessing: privatePlugin.RequiresProcessing,
 				InstanceCount:      &instances,
+				CreatedAt:          privatePlugin.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+				UpdatedAt:          privatePlugin.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+			}
+			
+			// Add mashup-specific fields if this is a mashup plugin
+			if privatePlugin.PluginType == "mashup" {
+				if privatePlugin.MashupLayout != nil {
+					unifiedPlugin.MashupLayout = *privatePlugin.MashupLayout
+				}
 			}
 			allPlugins = append(allPlugins, unifiedPlugin)
 		}
@@ -176,6 +192,18 @@ func GetAvailablePluginDefinitionsHandler(c *gin.Context) {
 			}
 		}
 		c.JSON(http.StatusOK, gin.H{"plugins": privatePluginList})
+		return
+	}
+
+	// If requesting only mashup plugins, return just the mashup plugins
+	if pluginType == "mashup" {
+		var mashupPluginList []UnifiedPluginDefinition
+		for _, plugin := range allPlugins {
+			if plugin.PluginType == "mashup" {
+				mashupPluginList = append(mashupPluginList, plugin)
+			}
+		}
+		c.JSON(http.StatusOK, gin.H{"plugins": mashupPluginList})
 		return
 	}
 

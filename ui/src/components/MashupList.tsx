@@ -117,7 +117,7 @@ export const MashupList: React.FC<MashupListProps> = ({
 
       if (response.ok) {
         const data = await response.json();
-        setMashups(data || []);
+        setMashups(data.plugins || []);
       } else {
         setError("Failed to fetch mashups");
       }

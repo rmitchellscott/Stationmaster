@@ -397,11 +397,11 @@ export function PrivatePluginList({
               <TableBody>
                 {plugins.map((plugin) => (
                   <TableRow key={plugin.id}>
-                    <TableCell>
+                    <TableCell className="max-w-xs">
                       <div>
-                        <div className="font-medium">{plugin.name}</div>
+                        <div className="font-medium truncate">{plugin.name}</div>
                         {plugin.description && (
-                          <div className="text-sm text-muted-foreground line-clamp-1">
+                          <div className="text-sm text-muted-foreground truncate" title={plugin.description}>
                             {plugin.description}
                           </div>
                         )}

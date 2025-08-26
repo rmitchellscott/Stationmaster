@@ -267,11 +267,11 @@ func GetPluginInstancesHandler(c *gin.Context) {
 				instance.Plugin.IsActive = true
 				instance.Plugin.RequiresProcessing = pluginInstance.PluginDefinition.RequiresProcessing
 				
-				// Set data strategy (with fallback to "webhook" for backward compatibility)
+				// Set data strategy (no fallback - only set if explicitly defined)
 				if pluginInstance.PluginDefinition.DataStrategy != nil {
 					instance.Plugin.DataStrategy = *pluginInstance.PluginDefinition.DataStrategy
 				} else {
-					instance.Plugin.DataStrategy = "webhook"
+					instance.Plugin.DataStrategy = ""
 				}
 			}
 

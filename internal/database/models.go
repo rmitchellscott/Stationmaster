@@ -247,48 +247,6 @@ func (d *Device) BeforeCreate(tx *gorm.DB) error {
 
 // Plugin represents a system-wide plugin type (managed by admins)
 
-// PrivatePlugin represents a user-created plugin with layout support
-type PrivatePlugin struct {
-	ID              uuid.UUID      `gorm:"type:uuid;primaryKey" json:"id"`
-	UserID          uuid.UUID      `gorm:"type:uuid;not null;index" json:"user_id"`
-	Name            string         `gorm:"size:255;not null" json:"name"`
-	Description     string         `gorm:"type:text" json:"description"`
-	
-	// Layout-specific templates
-	MarkupFull      string         `gorm:"type:text" json:"markup_full"`       // Full screen liquid template
-	MarkupHalfVert  string         `gorm:"type:text" json:"markup_half_vert"`  // Half vertical liquid template
-	MarkupHalfHoriz string         `gorm:"type:text" json:"markup_half_horiz"` // Half horizontal liquid template
-	MarkupQuadrant  string         `gorm:"type:text" json:"markup_quadrant"`   // Quadrant liquid template
-	SharedMarkup    string         `gorm:"type:text" json:"shared_markup"`     // Shared markup prepended to all layouts
-	
-	// Data configuration
-	DataStrategy    string         `gorm:"size:50;not null;default:'webhook'" json:"data_strategy"` // webhook, static, polling
-	PollingConfig   datatypes.JSON `json:"polling_config"`                                         // URLs, headers, body, intervals, etc.
-	FormFields      datatypes.JSON `json:"form_fields"`                                            // YAML form field definitions converted to JSON schema
-	
-	// Publishing
-	IsPublished     bool           `gorm:"default:false" json:"is_published"` // Available as recipe
-	Version         string         `gorm:"size:20;default:'1.0.0'" json:"version"`
-	
-	// Screen options
-	RemoveBleedMargin bool          `gorm:"default:false" json:"remove_bleed_margin"` // Apply screen--no-bleed class
-	EnableDarkMode   bool           `gorm:"default:false" json:"enable_dark_mode"`    // Apply screen--dark-mode class with inversion
-	
-	// Timestamps
-	CreatedAt       time.Time      `json:"created_at"`
-	UpdatedAt       time.Time      `json:"updated_at"`
-	
-	// Associations
-	User            User           `gorm:"foreignKey:UserID" json:"-"`
-}
-
-func (pp *PrivatePlugin) BeforeCreate(tx *gorm.DB) error {
-	if pp.ID == uuid.Nil {
-		pp.ID = uuid.New()
-	}
-	return nil
-}
-
 // PrivatePluginWebhookData represents webhook data storage for private plugin instances
 type PrivatePluginWebhookData struct {
 	ID                 string                 `json:"id" gorm:"primaryKey"`
@@ -611,8 +569,7 @@ func GetAllModels() []interface{} {
 		&DeviceModel{}, // Must come before Device due to foreign key reference
 		&Device{},
 		
-		&PrivatePlugin{}, // Must come after User due to foreign key reference
-		&PrivatePluginWebhookData{}, // Must come after PrivatePlugin
+		&PrivatePluginWebhookData{}, // Webhook data for plugin instances
 		
 		// New unified plugin models
 		&PluginDefinition{}, // Must come after User due to foreign key reference

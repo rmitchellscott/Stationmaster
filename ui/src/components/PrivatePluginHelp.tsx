@@ -77,7 +77,7 @@ export function PrivatePluginHelp({ isOpen, onClose }: PrivatePluginHelpProps) {
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden">
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden mobile-dialog-content !top-[0vh] !translate-y-0 sm:!top-[6vh]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <HelpCircle className="h-5 w-5" />

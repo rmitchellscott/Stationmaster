@@ -1454,7 +1454,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
         }
       }}>
         <DialogContent 
-          className="sm:max-w-2xl max-h-[80vh] overflow-y-auto"
+          className="sm:max-w-2xl max-h-[80vh] overflow-y-auto mobile-dialog-content !top-[0vh] !translate-y-0 sm:!top-[6vh]"
           onOpenAutoFocus={(e) => e.preventDefault()}
         >
           <DialogHeader>

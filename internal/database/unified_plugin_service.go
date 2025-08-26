@@ -426,38 +426,6 @@ func (s *UnifiedPluginService) CreateSystemPluginDefinition(identifier, name, de
 }
 
 
-// MigratePrivatePlugin migrates a legacy PrivatePlugin to PluginDefinition
-func (s *UnifiedPluginService) MigratePrivatePlugin(legacyPlugin *PrivatePlugin) (*PluginDefinition, error) {
-	definition := &PluginDefinition{
-		ID:                 legacyPlugin.ID,
-		PluginType:         "private",
-		OwnerID:            &legacyPlugin.UserID,
-		Identifier:         legacyPlugin.ID.String(),
-		Name:               legacyPlugin.Name,
-		Description:        legacyPlugin.Description,
-		Version:            legacyPlugin.Version,
-		Author:             "Private Plugin User",
-		RequiresProcessing: true,
-		MarkupFull:         &legacyPlugin.MarkupFull,
-		MarkupHalfVert:     &legacyPlugin.MarkupHalfVert,
-		MarkupHalfHoriz:    &legacyPlugin.MarkupHalfHoriz,
-		MarkupQuadrant:     &legacyPlugin.MarkupQuadrant,
-		SharedMarkup:       &legacyPlugin.SharedMarkup,
-		DataStrategy:       &legacyPlugin.DataStrategy,
-		PollingConfig:      legacyPlugin.PollingConfig,
-		FormFields:         legacyPlugin.FormFields,
-		RemoveBleedMargin:  &legacyPlugin.RemoveBleedMargin,
-		EnableDarkMode:     &legacyPlugin.EnableDarkMode,
-		IsPublished:        legacyPlugin.IsPublished,
-		IsActive:           true,
-		CreatedAt:          legacyPlugin.CreatedAt,
-		UpdatedAt:          legacyPlugin.UpdatedAt,
-	}
-	
-	return definition, s.db.Create(definition).Error
-}
-
-
 // Statistics and Analytics
 
 // GetPluginStats returns statistics about plugin usage

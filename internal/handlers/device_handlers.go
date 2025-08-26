@@ -659,6 +659,16 @@ func DeviceActiveItemsHandler(c *gin.Context) {
 		}
 	}
 
+	// Get user timezone for sleep calculations
+	userTimezone := "UTC"
+	if user.Timezone != "" {
+		userTimezone = user.Timezone
+	}
+
+	// Check current sleep state and if sleep screen would be served
+	currentlySleeping := trmnl.IsInSleepPeriod(device, userTimezone)
+	sleepScreenServed := currentlySleeping && device.SleepShowScreen
+
 	// Response
 	response := gin.H{
 		"device_id":           deviceID.String(),
@@ -668,6 +678,14 @@ func DeviceActiveItemsHandler(c *gin.Context) {
 		"active_items":        activeItems,
 		"total_visible_items": len(visibleItems),
 		"total_active_items":  len(activeItems),
+		"sleep_config": map[string]interface{}{
+			"enabled":               device.SleepEnabled,
+			"start_time":            device.SleepStartTime,
+			"end_time":              device.SleepEndTime,
+			"show_screen":           device.SleepShowScreen,
+			"currently_sleeping":    currentlySleeping,
+			"sleep_screen_served":   sleepScreenServed,
+		},
 	}
 
 	c.JSON(http.StatusOK, response)

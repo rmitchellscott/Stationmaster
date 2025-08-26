@@ -53,7 +53,6 @@ type UpdatePrivatePluginRequest struct {
 // PrivatePluginResponse represents the response format for private plugins  
 type PrivatePluginResponse struct {
 	database.PrivatePlugin
-	WebhookToken string `json:"webhook_token"`
 }
 
 // CreatePrivatePluginHandler creates a new private plugin
@@ -159,10 +158,9 @@ func CreatePrivatePluginHandler(c *gin.Context) {
 		fmt.Printf("Warning: Failed to sync private plugin to unified system: %v\n", err)
 	}
 
-	// Return the created plugin with webhook token
+	// Return the created plugin
 	response := PrivatePluginResponse{
 		PrivatePlugin: *plugin,
-		WebhookToken:  plugin.WebhookToken,
 	}
 
 	c.JSON(http.StatusCreated, gin.H{"private_plugin": response})
@@ -184,12 +182,11 @@ func GetPrivatePluginsHandler(c *gin.Context) {
 		return
 	}
 
-	// Convert to response format with webhook tokens
+	// Convert to response format
 	var responses []PrivatePluginResponse
 	for _, plugin := range plugins {
 		responses = append(responses, PrivatePluginResponse{
 			PrivatePlugin: plugin,
-			WebhookToken:  plugin.WebhookToken,
 		})
 	}
 
@@ -221,7 +218,6 @@ func GetPrivatePluginHandler(c *gin.Context) {
 
 	response := PrivatePluginResponse{
 		PrivatePlugin: *plugin,
-		WebhookToken:  plugin.WebhookToken,
 	}
 
 	c.JSON(http.StatusOK, gin.H{"private_plugin": response})
@@ -339,7 +335,6 @@ func UpdatePrivatePluginHandler(c *gin.Context) {
 
 	response := PrivatePluginResponse{
 		PrivatePlugin: *plugin,
-		WebhookToken:  plugin.WebhookToken,
 	}
 
 	c.JSON(http.StatusOK, gin.H{"private_plugin": response})
@@ -370,33 +365,6 @@ func DeletePrivatePluginHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Private plugin deleted successfully"})
 }
 
-// RegenerateWebhookTokenHandler regenerates the webhook token for a private plugin
-func RegenerateWebhookTokenHandler(c *gin.Context) {
-	user, ok := auth.RequireUser(c)
-	if !ok {
-		return
-	}
-
-	idParam := c.Param("id")
-	id, err := uuid.Parse(idParam)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid plugin ID"})
-		return
-	}
-
-	db := database.GetDB()
-	service := database.NewPrivatePluginService(db)
-
-	token, err := service.RegenerateWebhookToken(id, user.ID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to regenerate webhook token", "details": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"webhook_token": token,
-	})
-}
 
 // ValidatePrivatePluginHandler validates a private plugin's templates
 func ValidatePrivatePluginHandler(c *gin.Context) {

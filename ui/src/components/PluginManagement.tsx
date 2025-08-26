@@ -51,9 +51,15 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   Puzzle,
   Edit,
   Trash2,
+  Copy,
   Settings as SettingsIcon,
   AlertTriangle,
   CheckCircle,
@@ -77,6 +83,7 @@ interface Plugin {
   author: string;
   is_active: boolean;
   requires_processing: boolean;
+  data_strategy?: string;
   created_at: string;
   updated_at: string;
 }
@@ -195,6 +202,23 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
     // Ensure main tab is set to plugins
     newSearchParams.set('tab', 'plugins');
     setSearchParams(newSearchParams);
+  };
+
+  // Helper function to generate instance webhook URL
+  const generateInstanceWebhookURL = (instanceId: string): string => {
+    return `${window.location.origin}/api/webhooks/instance/${instanceId}`;
+  };
+
+  // Helper function to copy webhook URL to clipboard
+  const copyWebhookUrl = async (instanceId: string) => {
+    try {
+      const webhookURL = generateInstanceWebhookURL(instanceId);
+      await navigator.clipboard.writeText(webhookURL);
+      setSuccessMessage("Webhook URL copied to clipboard!");
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (error) {
+      setError("Failed to copy webhook URL");
+    }
   };
 
   const fetchPluginInstances = async () => {
@@ -1070,7 +1094,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                       </div>
                     </TableCell>
                     <TableCell className="hidden lg:table-cell">
-                      <div className="font-medium">
+                      <div>
                         {userPlugin.plugin?.name || "Unknown Plugin"}
                       </div>
                     </TableCell>
@@ -1125,6 +1149,20 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center gap-2 justify-end">
+                        {userPlugin.plugin?.data_strategy === 'webhook' && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => copyWebhookUrl(userPlugin.id)}
+                              >
+                                <Copy className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Copy Webhook URL</TooltipContent>
+                          </Tooltip>
+                        )}
                         <Button
                           size="sm"
                           variant="outline"
@@ -1234,7 +1272,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                               <div className="min-w-0 flex-1">
                                 <div className="flex items-center gap-2 mb-1">
                                   <div className="text-base font-semibold truncate">{plugin.name}</div>
-                                  <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                                  <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs ${
                                     plugin.type === 'system' 
                                       ? 'bg-blue-100 text-blue-800' 
                                       : 'bg-purple-100 text-purple-800'
@@ -1451,6 +1489,28 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                 className="mt-2"
               />
             </div>
+
+            {editPluginInstance?.plugin?.data_strategy === 'webhook' && (
+              <div>
+                <Label>Webhook URL</Label>
+                <div className="flex gap-2 mt-2">
+                  <Input
+                    value={generateInstanceWebhookURL(editPluginInstance.id)}
+                    readOnly
+                    className="font-mono text-sm"
+                  />
+                  <Button
+                    variant="outline"
+                    onClick={() => copyWebhookUrl(editPluginInstance.id)}
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </div>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Use this URL to send webhook data to your plugin instance.
+                </p>
+              </div>
+            )}
 
             {editPluginInstance?.plugin?.requires_processing && (
               <div>

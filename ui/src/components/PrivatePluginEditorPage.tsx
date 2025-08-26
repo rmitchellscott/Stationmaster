@@ -29,7 +29,6 @@ interface PrivatePlugin {
   form_fields?: any;
   sample_data?: any;
   version: string;
-  webhook_token?: string;
   remove_bleed_margin?: boolean;
   enable_dark_mode?: boolean;
 }

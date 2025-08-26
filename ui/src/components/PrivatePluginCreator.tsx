@@ -34,7 +34,6 @@ import {
   Webhook,
   Plus,
   Trash2,
-  Copy,
   Eye,
   Shield,
   Loader2,
@@ -59,7 +58,6 @@ interface PrivatePlugin {
   form_fields?: FormFieldConfig;
   sample_data?: any;
   version: string;
-  webhook_token?: string;
   remove_bleed_margin?: boolean;
   enable_dark_mode?: boolean;
 }
@@ -259,13 +257,6 @@ export function PrivatePluginCreator({
     }]);
   };
 
-  // Generate webhook URL from token using frontend location
-  const generateWebhookURL = (token?: string): string => {
-    if (!token) {
-      return "Will be generated after saving";
-    }
-    return `${window.location.origin}/api/webhooks/plugin/${token}`;
-  };
 
   const removePollingURL = (index: number) => {
     setPollingUrls(prev => prev.filter((_, i) => i !== index));
@@ -384,31 +375,13 @@ export function PrivatePluginCreator({
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                <div>
-                  <Label>Webhook URL</Label>
-                  <div className="flex gap-2 mt-2">
-                    <Input 
-                      value={generateWebhookURL(formData.webhook_token)}
-                      readOnly
-                      className="bg-muted"
-                    />
-                    <Button 
-                      variant="outline" 
-                      size="sm"
-                      onClick={() => {
-                        const webhookURL = generateWebhookURL(formData.webhook_token);
-                        if (webhookURL !== "Will be generated after saving") {
-                          navigator.clipboard.writeText(webhookURL);
-                        }
-                      }}
-                    >
-                      <Copy className="h-4 w-4" />
-                    </Button>
-                  </div>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    POST JSON data to this URL (max 2KB)
-                  </p>
-                </div>
+                <Alert>
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertDescription>
+                    Webhook URLs are now available after creating plugin instances. 
+                    Go to Plugin Management → Plugin Instances to view webhook URLs for each instance.
+                  </AlertDescription>
+                </Alert>
               </div>
             </CardContent>
           </Card>

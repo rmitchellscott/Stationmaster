@@ -263,7 +263,6 @@ type PrivatePlugin struct {
 	
 	// Data configuration
 	DataStrategy    string         `gorm:"size:50;not null;default:'webhook'" json:"data_strategy"` // webhook, static, polling
-	WebhookToken    string         `gorm:"size:255;uniqueIndex" json:"webhook_token"`              // Unique token for webhook URL
 	PollingConfig   datatypes.JSON `json:"polling_config"`                                         // URLs, headers, body, intervals, etc.
 	FormFields      datatypes.JSON `json:"form_fields"`                                            // YAML form field definitions converted to JSON schema
 	
@@ -288,6 +287,19 @@ func (pp *PrivatePlugin) BeforeCreate(tx *gorm.DB) error {
 		pp.ID = uuid.New()
 	}
 	return nil
+}
+
+// PrivatePluginWebhookData represents webhook data storage for private plugin instances
+type PrivatePluginWebhookData struct {
+	ID                 string                 `json:"id" gorm:"primaryKey"`
+	PluginInstanceID   string                 `json:"plugin_instance_id" gorm:"index;not null"` // Changed from plugin_id to plugin_instance_id
+	MergedData         datatypes.JSON         `json:"merged_data"`    // Final merged data ready for templates
+	RawData            datatypes.JSON         `json:"raw_data"`       // Original webhook payload
+	MergeStrategy      string                 `json:"merge_strategy" gorm:"size:20;default:'default'"`
+	ReceivedAt         time.Time              `json:"received_at"`
+	ContentType        string                 `json:"content_type"`
+	ContentSize        int                    `json:"content_size"`
+	SourceIP           string                 `json:"source_ip"`
 }
 
 // Playlist represents a collection of plugins for a specific device
@@ -386,7 +398,6 @@ type PluginDefinition struct {
 	MarkupQuadrant  *string        `gorm:"type:text" json:"markup_quadrant,omitempty"`
 	SharedMarkup    *string        `gorm:"type:text" json:"shared_markup,omitempty"`
 	DataStrategy    *string        `gorm:"size:50" json:"data_strategy,omitempty"`      // webhook, polling, static
-	WebhookToken    *string        `gorm:"size:255;uniqueIndex" json:"webhook_token,omitempty"`
 	PollingConfig   datatypes.JSON `json:"polling_config,omitempty"`   // URLs, headers, body, intervals, etc.
 	FormFields      datatypes.JSON `json:"form_fields"`                // YAML form field definitions converted to JSON schema
 	
@@ -601,6 +612,7 @@ func GetAllModels() []interface{} {
 		&Device{},
 		
 		&PrivatePlugin{}, // Must come after User due to foreign key reference
+		&PrivatePluginWebhookData{}, // Must come after PrivatePlugin
 		
 		// New unified plugin models
 		&PluginDefinition{}, // Must come after User due to foreign key reference

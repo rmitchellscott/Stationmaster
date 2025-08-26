@@ -46,7 +46,6 @@ import {
   Webhook,
   Globe,
   Database,
-  Copy,
   RefreshCw,
   Download,
   Upload,
@@ -68,7 +67,6 @@ interface PrivatePlugin {
   is_published: boolean;
   created_at: string;
   updated_at: string;
-  webhook_token?: string;
 }
 
 interface PrivatePluginListProps {
@@ -140,21 +138,6 @@ export function PrivatePluginList({
     }
   };
 
-  const generateWebhookURL = (token?: string): string => {
-    if (!token) {
-      return "Will be generated after saving";
-    }
-    return `${window.location.origin}/api/webhooks/plugin/${token}`;
-  };
-
-  const copyWebhookUrl = async (webhookUrl: string) => {
-    try {
-      await navigator.clipboard.writeText(webhookUrl);
-      setSuccess("Webhook URL copied to clipboard!");
-    } catch (error) {
-      setError("Failed to copy webhook URL");
-    }
-  };
 
   const exportPlugin = async (pluginId: string) => {
     try {
@@ -449,32 +432,6 @@ export function PrivatePluginList({
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center gap-2 justify-end">
-                        {plugin.data_strategy === 'webhook' && plugin.webhook_token && (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => copyWebhookUrl(generateWebhookURL(plugin.webhook_token))}
-                              >
-                                <Copy className="h-4 w-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>Copy Webhook URL</TooltipContent>
-                          </Tooltip>
-                        )}
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => onEditPlugin(plugin)}
-                            >
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>Edit Plugin</TooltipContent>
-                        </Tooltip>
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <Button
@@ -486,6 +443,18 @@ export function PrivatePluginList({
                             </Button>
                           </TooltipTrigger>
                           <TooltipContent>Export</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => onEditPlugin(plugin)}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Edit Plugin</TooltipContent>
                         </Tooltip>
                         <Tooltip>
                           <TooltipTrigger asChild>

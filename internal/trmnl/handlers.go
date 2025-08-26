@@ -107,6 +107,7 @@ func DisplayHandler(c *gin.Context) {
 		currentItem          *database.PlaylistItem
 		activeItems          []database.PlaylistItem
 		device               *database.Device
+		sleepScreenServed    bool
 	}
 	
 	// Defer background operations to ensure they run even if API fails
@@ -137,7 +138,7 @@ func DisplayHandler(c *gin.Context) {
 						// Broadcast playlist change via SSE
 						processor := GetPluginProcessor()
 						if processor != nil {
-							processor.broadcastPlaylistChange(backgroundData.device, *backgroundData.currentItem, backgroundData.activeItems)
+							processor.broadcastPlaylistChange(backgroundData.device, *backgroundData.currentItem, backgroundData.activeItems, backgroundData.sleepScreenServed)
 						}
 					}
 				}
@@ -481,6 +482,7 @@ func DisplayHandler(c *gin.Context) {
 		if device.SleepShowScreen {
 			response["image_url"] = "/images/sleep.png"
 			response["filename"] = "sleep"
+			backgroundData.sleepScreenServed = true
 		}
 		
 	}

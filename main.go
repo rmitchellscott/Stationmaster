@@ -27,6 +27,7 @@ import (
 	"github.com/rmitchellscott/stationmaster/internal/handlers"
 	"github.com/rmitchellscott/stationmaster/internal/locales"
 	"github.com/rmitchellscott/stationmaster/internal/logging"
+	"github.com/rmitchellscott/stationmaster/internal/middleware"
 	"github.com/rmitchellscott/stationmaster/internal/plugins"
 	_ "github.com/rmitchellscott/stationmaster/internal/plugins/private" // Register private plugin factory
 	"github.com/rmitchellscott/stationmaster/internal/pollers"
@@ -254,8 +255,13 @@ func main() {
 	router.GET("/api/trmnl/firmware/:version/download", trmnl.FirmwareDownloadHandler)
 	router.POST("/api/trmnl/firmware/update-complete", trmnl.FirmwareUpdateCompleteHandler)
 
-	// Private plugin webhook endpoints (public - token-based authentication)
-	router.POST("/api/webhooks/plugin/:token", handlers.WebhookHandler)
+	// Private plugin instance webhook endpoints (public - instance ID-based authentication with rate limiting)
+	rateLimiter := middleware.NewWebhookRateLimiter(database.GetDB())
+	router.POST("/api/webhooks/instance/:id", 
+		rateLimiter.RequestSizeLimit(),
+		rateLimiter.RateLimit(),
+		handlers.WebhookHandler,
+	)
 
 	// Public firmware downloads (no authentication required)
 	// Custom handler to serve firmware files - supports both proxy and download modes

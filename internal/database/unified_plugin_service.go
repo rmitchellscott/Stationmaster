@@ -444,7 +444,6 @@ func (s *UnifiedPluginService) MigratePrivatePlugin(legacyPlugin *PrivatePlugin)
 		MarkupQuadrant:     &legacyPlugin.MarkupQuadrant,
 		SharedMarkup:       &legacyPlugin.SharedMarkup,
 		DataStrategy:       &legacyPlugin.DataStrategy,
-		WebhookToken:       &legacyPlugin.WebhookToken,
 		PollingConfig:      legacyPlugin.PollingConfig,
 		FormFields:         legacyPlugin.FormFields,
 		RemoveBleedMargin:  &legacyPlugin.RemoveBleedMargin,
@@ -511,6 +510,7 @@ func (s *UnifiedPluginService) GetPluginStats() (map[string]interface{}, error) 
 	return stats, nil
 }
 
+
 // ClearRenderedContentForInstance deletes all rendered content for a specific plugin instance
 func (s *UnifiedPluginService) ClearRenderedContentForInstance(instanceID uuid.UUID) error {
 	return s.db.Where("plugin_instance_id = ?", instanceID).Delete(&RenderedContent{}).Error
@@ -569,3 +569,4 @@ func (s *UnifiedPluginService) CleanupOrphanedData() error {
 	
 	return nil
 }
+

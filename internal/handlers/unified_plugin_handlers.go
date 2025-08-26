@@ -2,9 +2,7 @@ package handlers
 
 import (
 	"context"
-	"crypto/rand"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -140,12 +138,6 @@ func GetAvailablePluginDefinitionsHandler(c *gin.Context) {
 						"is_published":      pluginDef.IsPublished,
 						"created_at":        pluginDef.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 						"updated_at":        pluginDef.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
-						"webhook_token":     func() string {
-						if pluginDef.WebhookToken != nil {
-							return *pluginDef.WebhookToken
-						}
-						return ""
-					}(),
 						"markup_full":       "",
 						"markup_half_vert":  "",
 						"markup_half_horiz": "",
@@ -217,6 +209,7 @@ type UnifiedPluginInstance struct {
 		Author             string `json:"author"`
 		IsActive           bool   `json:"is_active"`
 		RequiresProcessing bool   `json:"requires_processing"`
+		DataStrategy       string `json:"data_strategy"`
 	} `json:"plugin"`
 }
 
@@ -273,6 +266,13 @@ func GetPluginInstancesHandler(c *gin.Context) {
 				instance.Plugin.Author = pluginInstance.PluginDefinition.Author
 				instance.Plugin.IsActive = true
 				instance.Plugin.RequiresProcessing = pluginInstance.PluginDefinition.RequiresProcessing
+				
+				// Set data strategy (with fallback to "webhook" for backward compatibility)
+				if pluginInstance.PluginDefinition.DataStrategy != nil {
+					instance.Plugin.DataStrategy = *pluginInstance.PluginDefinition.DataStrategy
+				} else {
+					instance.Plugin.DataStrategy = "webhook"
+				}
 			}
 
 			allInstances = append(allInstances, instance)
@@ -655,7 +655,6 @@ func CreatePluginDefinitionHandler(c *gin.Context) {
 		MarkupQuadrant    string      `json:"markup_quadrant"`
 		SharedMarkup      string      `json:"shared_markup"`
 		DataStrategy      string      `json:"data_strategy"`
-		WebhookToken      string      `json:"webhook_token"`
 		PollingConfig     interface{} `json:"polling_config"`
 		FormFields        interface{} `json:"form_fields"`
 		SampleData        interface{} `json:"sample_data"`
@@ -716,15 +715,6 @@ func CreatePluginDefinitionHandler(c *gin.Context) {
 	}
 
 	db := database.GetDB()
-	
-	// Generate webhook token if not provided
-	webhookToken := req.WebhookToken
-	if webhookToken == "" {
-		// Generate a 32-byte random token
-		tokenBytes := make([]byte, 32)
-		rand.Read(tokenBytes)
-		webhookToken = hex.EncodeToString(tokenBytes)
-	}
 
 	pluginDefinition := database.PluginDefinition{
 		PluginType:         req.PluginType,
@@ -742,7 +732,6 @@ func CreatePluginDefinitionHandler(c *gin.Context) {
 		MarkupQuadrant:     &req.MarkupQuadrant,
 		SharedMarkup:       &req.SharedMarkup,
 		DataStrategy:       &req.DataStrategy,
-		WebhookToken:       &webhookToken,
 		PollingConfig:      pollingConfigJSON,
 		FormFields:         formFieldsJSON,
 		SampleData:         sampleDataJSON,

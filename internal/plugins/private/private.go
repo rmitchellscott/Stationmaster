@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/rmitchellscott/stationmaster/internal/database"
 	"github.com/rmitchellscott/stationmaster/internal/plugins"
 	"github.com/rmitchellscott/stationmaster/internal/rendering"
@@ -132,8 +133,19 @@ func (p *PrivatePlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespon
 			}
 		}
 	case dataStrategy != nil && *dataStrategy == "webhook":
-		// Webhook data is handled separately via webhook endpoints
-		// No additional data fetching needed here
+		// Webhook data: retrieve and merge the latest webhook data
+		if p.instance != nil && p.instance.ID != uuid.Nil {
+			webhookService := database.NewWebhookService(database.GetDB())
+			webhookData, err := webhookService.GetWebhookDataTemplate(p.instance.ID.String())
+			if err != nil {
+				fmt.Printf("Warning: Failed to fetch webhook data for plugin instance %s: %v\n", p.instance.ID, err)
+			} else if webhookData != nil {
+				// Merge webhook data into template data
+				for key, value := range webhookData {
+					templateData[key] = value
+				}
+			}
+		}
 	case dataStrategy != nil && *dataStrategy == "static":
 		// Static strategy uses only form fields and trmnl struct - no external data
 		// No additional data fetching needed here

@@ -504,12 +504,14 @@ export function PrivatePluginHelp({ isOpen, onClose }: PrivatePluginHelpProps) {
                     snippetId="webhook-example"
                     language="bash"
                     title="Send data to webhook"
-                    code={`curl -X POST "https://your-domain.com/api/webhooks/plugin/your-token" \\
+                    code={`curl -X POST "https://your-domain.com/api/webhooks/instance/your-instance-id" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "temperature": "72°F",
-    "humidity": "45%",
-    "status": "comfortable"
+    "merge_variables": {
+      "temperature": "72°F",
+      "humidity": "45%",
+      "status": "comfortable"
+    }
   }'`}
                   />
                   <CodeSnippet

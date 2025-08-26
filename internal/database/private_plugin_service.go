@@ -24,13 +24,6 @@ func (s *PrivatePluginService) CreatePrivatePlugin(userID uuid.UUID, plugin *Pri
 	// Set the user ID
 	plugin.UserID = userID
 	
-	// Generate a unique webhook token
-	token, err := s.generateWebhookToken()
-	if err != nil {
-		return fmt.Errorf("failed to generate webhook token: %w", err)
-	}
-	plugin.WebhookToken = token
-	
 	// Create the plugin in the database
 	if err := s.db.Create(plugin).Error; err != nil {
 		return fmt.Errorf("failed to create private plugin: %w", err)
@@ -78,7 +71,6 @@ func (s *PrivatePluginService) UpdatePrivatePlugin(id uuid.UUID, userID uuid.UUI
 	// Preserve certain fields that shouldn't be updated
 	updates.ID = id
 	updates.UserID = userID
-	updates.WebhookToken = existingPlugin.WebhookToken // Don't allow webhook token changes via update
 	
 	// Update the plugin
 	if err := s.db.Save(updates).Error; err != nil {
@@ -104,44 +96,7 @@ func (s *PrivatePluginService) DeletePrivatePlugin(id uuid.UUID, userID uuid.UUI
 	return nil
 }
 
-// GetPrivatePluginByWebhookToken retrieves a private plugin by its webhook token
-func (s *PrivatePluginService) GetPrivatePluginByWebhookToken(token string) (*PrivatePlugin, error) {
-	var plugin PrivatePlugin
-	
-	if err := s.db.Where("webhook_token = ?", token).First(&plugin).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return nil, fmt.Errorf("private plugin not found for webhook token")
-		}
-		return nil, fmt.Errorf("failed to get private plugin by webhook token: %w", err)
-	}
-	
-	return &plugin, nil
-}
 
-// RegenerateWebhookToken generates a new webhook token for a private plugin
-func (s *PrivatePluginService) RegenerateWebhookToken(id uuid.UUID, userID uuid.UUID) (string, error) {
-	// First verify the plugin exists and belongs to the user
-	var existingPlugin PrivatePlugin
-	if err := s.db.Where("id = ? AND user_id = ?", id, userID).First(&existingPlugin).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return "", fmt.Errorf("private plugin not found")
-		}
-		return "", fmt.Errorf("failed to find private plugin: %w", err)
-	}
-	
-	// Generate new token
-	token, err := s.generateWebhookToken()
-	if err != nil {
-		return "", fmt.Errorf("failed to generate webhook token: %w", err)
-	}
-	
-	// Update the token
-	if err := s.db.Model(&existingPlugin).Update("webhook_token", token).Error; err != nil {
-		return "", fmt.Errorf("failed to update webhook token: %w", err)
-	}
-	
-	return token, nil
-}
 
 // GetPublishedPrivatePlugins retrieves all published private plugins (for recipe marketplace)
 func (s *PrivatePluginService) GetPublishedPrivatePlugins() ([]PrivatePlugin, error) {

@@ -371,13 +371,17 @@ function SortableTableRow({
   const sseCurrentlySleeping = deviceEvents?.sleepConfig?.currently_sleeping;
   const fallbackCurrentlySleeping = selectedDevice ? isDeviceCurrentlySleeping(selectedDevice, userTimezone) : false;
   const currentlySleeping = sseCurrentlySleeping !== undefined ? sseCurrentlySleeping : fallbackCurrentlySleeping;
-  const isSleepScreenActive = !timeTravelMode && currentlySleeping && selectedDevice?.sleep_show_screen;
+  
+  // Sleep screen is only "active" (showing "Now Showing") when:
+  // 1. Device is currently sleeping AND sleep screen is enabled
+  // 2. AND the sleep screen is actually being served (from SSE data)
+  const isSleepScreenActive = !timeTravelMode && currentlySleeping && selectedDevice?.sleep_show_screen && deviceEvents?.sleepConfig?.sleep_screen_served;
   
   // Use SSE-provided currently showing item ID for real-time updates (only in live mode)
   // Logic: "Now Showing" appears on whatever is actually displayed on the device
   const isCurrentlyShowing = !timeTravelMode && (
     item.is_sleep_mode 
-      ? isSleepScreenActive  // Sleep mode shows "Now Showing" only when sleep screen is displayed
+      ? isSleepScreenActive  // Sleep mode shows "Now Showing" only when sleep screen is actually displayed
       : (currentlyShowingItemId === item.id && !isSleepScreenActive)  // Regular items show "Now Showing" when they're current AND sleep screen is not active
   );
   const isChangingToCurrent = isCurrentlyShowing && currentItemChanged;
@@ -502,8 +506,8 @@ function SortableTableRow({
             // In live mode, use hybrid approach for current status
             (() => {
               if (currentlySleeping) {
-                // Only show "Now Showing" if sleep screen is actually displayed
-                if (selectedDevice?.sleep_show_screen) {
+                // Only show "Now Showing" if sleep screen is actually being served
+                if (selectedDevice?.sleep_show_screen && deviceEvents?.sleepConfig?.sleep_screen_served) {
                   return (
                     <Badge variant="default">
                       <PlayCircle className="h-3 w-3 mr-1" />
@@ -511,7 +515,7 @@ function SortableTableRow({
                     </Badge>
                   );
                 } else {
-                  // Sleep mode is active but not showing sleep screen - show "Active"
+                  // Sleep mode is active but sleep screen not yet served - show "Active"
                   return (
                     <Badge variant="outline">
                       <Moon className="h-3 w-3 mr-1" />

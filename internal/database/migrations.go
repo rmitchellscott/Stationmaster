@@ -2,6 +2,7 @@ package database
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/go-gormigrate/gormigrate/v2"
 	"github.com/rmitchellscott/stationmaster/internal/logging"
@@ -561,6 +562,251 @@ func RunMigrations(logPrefix string) error {
 				
 				if err := tx.Exec("ALTER TABLE render_queues DROP COLUMN IF EXISTS independent_render").Error; err != nil {
 					return fmt.Errorf("failed to drop independent_render column: %w", err)
+				}
+				
+				return nil
+			},
+		},
+		{
+			ID: "20250826_create_webhook_data_table_and_settings",
+			Migrate: func(tx *gorm.DB) error {
+				logging.Info("[MIGRATION] Creating webhook data table and adding webhook system settings")
+				
+				// Create webhook data table using the PrivatePluginWebhookData model
+				// We need to define the webhook data model inline since it's currently only in handlers
+				type PrivatePluginWebhookData struct {
+					ID           string                 `json:"id" gorm:"primaryKey"`
+					PluginID     string                 `json:"plugin_id" gorm:"index;not null"`
+					MergedData   map[string]interface{} `json:"merged_data" gorm:"type:json"`
+					RawData      map[string]interface{} `json:"raw_data" gorm:"type:json"`
+					MergeStrategy string                `json:"merge_strategy" gorm:"size:20;default:'default'"`
+					ReceivedAt   time.Time              `json:"received_at"`
+					ContentType  string                 `json:"content_type"`
+					ContentSize  int                    `json:"content_size"`
+					SourceIP     string                 `json:"source_ip"`
+				}
+				
+				if err := tx.AutoMigrate(&PrivatePluginWebhookData{}); err != nil {
+					return fmt.Errorf("failed to create private_plugin_webhook_data table: %w", err)
+				}
+				
+				// Add webhook system settings with defaults
+				webhookSettings := []SystemSetting{
+					{
+						Key:         "webhook_rate_limit_per_hour",
+						Value:       "30",
+						Description: "Maximum number of webhook requests per user per hour",
+						UpdatedAt:   time.Now(),
+					},
+					{
+						Key:         "webhook_max_request_size_kb",
+						Value:       "5",
+						Description: "Maximum webhook request payload size in KB",
+						UpdatedAt:   time.Now(),
+					},
+				}
+				
+				for _, setting := range webhookSettings {
+					// Use ON CONFLICT DO NOTHING to avoid overwriting existing settings
+					if err := tx.Exec(`
+						INSERT INTO system_settings (key, value, description, updated_at)
+						VALUES (?, ?, ?, ?)
+						ON CONFLICT (key) DO NOTHING
+					`, setting.Key, setting.Value, setting.Description, setting.UpdatedAt).Error; err != nil {
+						return fmt.Errorf("failed to insert webhook setting %s: %w", setting.Key, err)
+					}
+				}
+				
+				logging.Info("[MIGRATION] Successfully created webhook data table and settings")
+				return nil
+			},
+			Rollback: func(tx *gorm.DB) error {
+				logging.Info("[MIGRATION] Rolling back webhook data table and settings")
+				
+				// Drop webhook data table
+				if err := tx.Migrator().DropTable("private_plugin_webhook_data"); err != nil {
+					return fmt.Errorf("failed to drop webhook data table: %w", err)
+				}
+				
+				// Remove webhook system settings
+				webhookSettingKeys := []string{
+					"webhook_rate_limit_per_hour",
+					"webhook_max_request_size_kb",
+				}
+				
+				for _, key := range webhookSettingKeys {
+					if err := tx.Exec("DELETE FROM system_settings WHERE key = ?", key).Error; err != nil {
+						logging.Warn("[MIGRATION] Failed to remove webhook setting", "key", key, "error", err)
+					}
+				}
+				
+				return nil
+			},
+		},
+		{
+			ID: "20250826_migrate_private_plugins_to_instances",
+			Migrate: func(tx *gorm.DB) error {
+				logging.Info("[MIGRATION] Migrating private plugins to plugin instances")
+				
+				// Remove webhook_token column from plugin_instances if it exists (from earlier migration attempts)
+				tx.Exec("ALTER TABLE plugin_instances DROP COLUMN IF EXISTS webhook_token")
+				tx.Exec("DROP INDEX IF EXISTS idx_plugin_instances_webhook_token")
+				
+				// Find all private plugins (including those that may have had webhook tokens)
+				var privatePlugins []struct {
+					ID     string `gorm:"column:id"`
+					Name   string `gorm:"column:name"`
+					UserID string `gorm:"column:user_id"`
+				}
+				
+				err := tx.Raw(`
+					SELECT id, name, user_id 
+					FROM private_plugins
+				`).Scan(&privatePlugins).Error
+				
+				if err != nil {
+					return fmt.Errorf("failed to query private plugins: %w", err)
+				}
+				
+				logging.Info("[MIGRATION] Found private plugins", "count", len(privatePlugins))
+				
+				// For each private plugin, ensure there's a corresponding plugin definition and instance
+				for _, pp := range privatePlugins {
+					// Check if there's already a plugin definition for this private plugin
+					var existingDefCount int64
+					if err := tx.Raw(`
+						SELECT COUNT(*) FROM plugin_definitions 
+						WHERE plugin_type = 'private' AND identifier = ?
+					`, pp.ID).Scan(&existingDefCount).Error; err != nil {
+						logging.Warn("[MIGRATION] Failed to check existing plugin definition", "private_plugin_id", pp.ID, "error", err)
+						continue
+					}
+					
+					var definitionID string
+					if existingDefCount == 0 {
+						// Create plugin definition for this private plugin
+						definitionID = pp.ID // Use same UUID
+						err := tx.Exec(`
+							INSERT INTO plugin_definitions (id, plugin_type, owner_id, identifier, name, description, version, author, requires_processing, created_at, updated_at)
+							VALUES (?, 'private', ?, ?, ?, 'Migrated private plugin', '1.0.0', 'System Migration', true, NOW(), NOW())
+						`, definitionID, pp.UserID, pp.ID, pp.Name).Error
+						
+						if err != nil {
+							logging.Warn("[MIGRATION] Failed to create plugin definition", "private_plugin_id", pp.ID, "error", err)
+							continue
+						}
+						
+						logging.Info("[MIGRATION] Created plugin definition", "definition_id", definitionID, "private_plugin_id", pp.ID)
+					} else {
+						// Use existing definition ID
+						if err := tx.Raw(`
+							SELECT id FROM plugin_definitions 
+							WHERE plugin_type = 'private' AND identifier = ?
+						`, pp.ID).Scan(&definitionID).Error; err != nil {
+							logging.Warn("[MIGRATION] Failed to get existing plugin definition ID", "private_plugin_id", pp.ID, "error", err)
+							continue
+						}
+					}
+					
+					// Check if there's already a plugin instance for this definition
+					var existingInstanceCount int64
+					if err := tx.Raw(`
+						SELECT COUNT(*) FROM plugin_instances 
+						WHERE plugin_definition_id = ? AND user_id = ?
+					`, definitionID, pp.UserID).Scan(&existingInstanceCount).Error; err != nil {
+						logging.Warn("[MIGRATION] Failed to check existing plugin instance", "definition_id", definitionID, "error", err)
+						continue
+					}
+					
+					if existingInstanceCount == 0 {
+						// Create plugin instance for this private plugin
+						err := tx.Exec(`
+							INSERT INTO plugin_instances (id, user_id, plugin_definition_id, name, settings, created_at, updated_at)
+							VALUES (gen_random_uuid(), ?, ?, ?, '{}', NOW(), NOW())
+						`, pp.UserID, definitionID, pp.Name).Error
+						
+						if err != nil {
+							logging.Warn("[MIGRATION] Failed to create plugin instance", "definition_id", definitionID, "error", err)
+							continue
+						}
+						
+						logging.Info("[MIGRATION] Created plugin instance", "definition_id", definitionID, "name", pp.Name)
+					}
+				}
+				
+				logging.Info("[MIGRATION] Successfully migrated private plugins to plugin instances")
+				return nil
+			},
+			Rollback: func(tx *gorm.DB) error {
+				logging.Info("[MIGRATION] Rolling back private plugin migration")
+				
+				// This rollback removes plugin instances created by this migration
+				// Be careful - this could remove user data
+				logging.Warn("[MIGRATION] Rollback would remove plugin instances - skipping for data safety")
+				
+				return nil
+			},
+		},
+		{
+			ID: "20250826_fix_webhook_data_table_column_name",
+			Migrate: func(tx *gorm.DB) error {
+				logging.Info("[MIGRATION] Fixing webhook data table column name from plugin_id to plugin_instance_id")
+				
+				// Check if the table exists first
+				if !tx.Migrator().HasTable("private_plugin_webhook_data") {
+					logging.Info("[MIGRATION] private_plugin_webhook_data table does not exist, skipping")
+					return nil
+				}
+				
+				// Check for both columns to handle different migration states
+				hasPluginId := tx.Migrator().HasColumn("private_plugin_webhook_data", "plugin_id")
+				hasPluginInstanceId := tx.Migrator().HasColumn("private_plugin_webhook_data", "plugin_instance_id")
+				
+				if hasPluginId && hasPluginInstanceId {
+					// Both columns exist - drop the old plugin_id column
+					logging.Info("[MIGRATION] Both plugin_id and plugin_instance_id columns exist, dropping plugin_id")
+					if err := tx.Exec("ALTER TABLE private_plugin_webhook_data DROP COLUMN plugin_id").Error; err != nil {
+						return fmt.Errorf("failed to drop plugin_id column: %w", err)
+					}
+					logging.Info("[MIGRATION] Successfully dropped plugin_id column")
+				} else if hasPluginId && !hasPluginInstanceId {
+					// Only plugin_id exists - rename it
+					logging.Info("[MIGRATION] Only plugin_id column exists, renaming to plugin_instance_id")
+					if err := tx.Exec("ALTER TABLE private_plugin_webhook_data RENAME COLUMN plugin_id TO plugin_instance_id").Error; err != nil {
+						return fmt.Errorf("failed to rename plugin_id column to plugin_instance_id: %w", err)
+					}
+					logging.Info("[MIGRATION] Successfully renamed plugin_id column to plugin_instance_id")
+				} else if !hasPluginId && hasPluginInstanceId {
+					// Only plugin_instance_id exists - already migrated
+					logging.Info("[MIGRATION] Only plugin_instance_id column exists, migration already completed")
+				} else {
+					// Neither column exists - unexpected state
+					logging.Warn("[MIGRATION] Neither plugin_id nor plugin_instance_id column found in private_plugin_webhook_data table")
+				}
+				
+				return nil
+			},
+			Rollback: func(tx *gorm.DB) error {
+				logging.Info("[MIGRATION] Rolling back webhook data table column name change")
+				
+				// Check if table exists
+				if !tx.Migrator().HasTable("private_plugin_webhook_data") {
+					logging.Info("[MIGRATION] private_plugin_webhook_data table does not exist, skipping rollback")
+					return nil
+				}
+				
+				// Check current state
+				hasPluginId := tx.Migrator().HasColumn("private_plugin_webhook_data", "plugin_id")
+				hasPluginInstanceId := tx.Migrator().HasColumn("private_plugin_webhook_data", "plugin_instance_id")
+				
+				if !hasPluginId && hasPluginInstanceId {
+					// Only plugin_instance_id exists - rename it back to plugin_id
+					logging.Info("[MIGRATION] Renaming plugin_instance_id back to plugin_id")
+					if err := tx.Exec("ALTER TABLE private_plugin_webhook_data RENAME COLUMN plugin_instance_id TO plugin_id").Error; err != nil {
+						return fmt.Errorf("failed to rename plugin_instance_id column back to plugin_id: %w", err)
+					}
+				} else {
+					logging.Info("[MIGRATION] Column state doesn't require rollback action")
 				}
 				
 				return nil

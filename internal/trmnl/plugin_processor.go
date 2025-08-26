@@ -535,7 +535,7 @@ func (pp *PluginProcessor) processCurrentPlugin(device *database.Device, activeI
 }
 
 // broadcastPlaylistChange broadcasts playlist changes via SSE
-func (pp *PluginProcessor) broadcastPlaylistChange(device *database.Device, currentItem database.PlaylistItem, activeItems []database.PlaylistItem) {
+func (pp *PluginProcessor) broadcastPlaylistChange(device *database.Device, currentItem database.PlaylistItem, activeItems []database.PlaylistItem, sleepScreenServed bool) {
 	// Get user timezone for sleep calculations
 	userTimezone := "UTC" // Default fallback
 	if device.UserID != nil {
@@ -570,11 +570,12 @@ func (pp *PluginProcessor) broadcastPlaylistChange(device *database.Device, curr
 			"active_items":  activeItems,
 			"timestamp":     time.Now().UTC(),
 			"sleep_config": map[string]interface{}{
-				"enabled":            device.SleepEnabled,
-				"start_time":         device.SleepStartTime,
-				"end_time":           device.SleepEndTime,
-				"show_screen":        device.SleepShowScreen,
-				"currently_sleeping": currentlySleeping,
+				"enabled":               device.SleepEnabled,
+				"start_time":            device.SleepStartTime,
+				"end_time":              device.SleepEndTime,
+				"show_screen":           device.SleepShowScreen,
+				"currently_sleeping":    currentlySleeping,
+				"sleep_screen_served":   sleepScreenServed,
 			},
 		},
 	})

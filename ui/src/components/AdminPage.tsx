@@ -354,6 +354,8 @@ export function AdminPage() {
   const [siteUrl, setSiteUrl] = useState("");
   const [registrationEnabled, setRegistrationEnabled] = useState(false);
   const [registrationLocked, setRegistrationLocked] = useState(false);
+  const [webhookRateLimit, setWebhookRateLimit] = useState(30);
+  const [webhookMaxSizeKB, setWebhookMaxSizeKB] = useState(5);
   
   // Device management state
   const [devices, setDevices] = useState<Device[]>([]);
@@ -660,6 +662,8 @@ export function AdminPage() {
         setRegistrationEnabled(status.settings.registration_enabled === "true");
         setRegistrationLocked(status.settings.registration_enabled_locked || false);
         setSiteUrl(status.settings.site_url || "");
+        setWebhookRateLimit(parseInt(status.settings.webhook_rate_limit_per_hour) || 30);
+        setWebhookMaxSizeKB(parseInt(status.settings.webhook_max_request_size_kb) || 5);
       }
     } catch (error) {
       console.error("Failed to fetch system status:", error);
@@ -3060,6 +3064,70 @@ export function AdminPage() {
                             <div className="absolute inset-0 cursor-not-allowed" title="Set via environment variable" />
                           )}
                         </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Webhook Settings</CardTitle>
+                      <p className="text-sm text-muted-foreground">Configure rate limiting and request size limits for private plugin webhooks</p>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="webhook-rate-limit">Rate Limit (per hour)</Label>
+                          <Input
+                            id="webhook-rate-limit"
+                            type="number"
+                            min="1"
+                            max="1000"
+                            value={webhookRateLimit}
+                            onChange={(e) => setWebhookRateLimit(parseInt(e.target.value) || 30)}
+                            onBlur={() => {
+                              if (webhookRateLimit < 1 || webhookRateLimit > 1000) {
+                                setError("Rate limit must be between 1 and 1000");
+                                setWebhookRateLimit(30);
+                                return;
+                              }
+                              updateSystemSetting("webhook_rate_limit_per_hour", webhookRateLimit.toString());
+                            }}
+                            className="max-w-xs"
+                          />
+                          <p className="text-sm text-muted-foreground">
+                            Maximum webhook requests per user per hour
+                          </p>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="webhook-max-size">Max Request Size (KB)</Label>
+                          <Input
+                            id="webhook-max-size"
+                            type="number"
+                            min="1"
+                            max="100"
+                            value={webhookMaxSizeKB}
+                            onChange={(e) => setWebhookMaxSizeKB(parseInt(e.target.value) || 5)}
+                            onBlur={() => {
+                              if (webhookMaxSizeKB < 1 || webhookMaxSizeKB > 100) {
+                                setError("Max request size must be between 1 and 100 KB");
+                                setWebhookMaxSizeKB(5);
+                                return;
+                              }
+                              updateSystemSetting("webhook_max_request_size_kb", webhookMaxSizeKB.toString());
+                            }}
+                            className="max-w-xs"
+                          />
+                          <p className="text-sm text-muted-foreground">
+                            Maximum webhook payload size in kilobytes
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-sm text-muted-foreground mt-4">
+                        <p>
+                          <strong>Rate Limiting:</strong> Each user can send webhook requests at the specified rate per hour across all their private plugins.
+                        </p>
+                        <p className="mt-1">
+                          <strong>Request Size:</strong> Individual webhook payloads cannot exceed this size limit.
+                        </p>
                       </div>
                     </CardContent>
                   </Card>

@@ -457,3 +457,189 @@ func GetPrivatePluginStatsHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"stats": stats})
 }
 
+// ExportPrivatePluginHandler exports a private plugin as TRMNL-compatible ZIP
+func ExportPrivatePluginHandler(c *gin.Context) {
+	user, ok := auth.RequireUser(c)
+	if !ok {
+		return
+	}
+
+	idParam := c.Param("id")
+	id, err := uuid.Parse(idParam)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid plugin ID"})
+		return
+	}
+
+	db := database.GetDB()
+	service := database.NewPrivatePluginService(db)
+
+	// Get the private plugin first to check ownership
+	plugin, err := service.GetPrivatePluginByID(id, user.ID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Private plugin not found"})
+		return
+	}
+
+	// Get the corresponding PluginDefinition from the unified system
+	unifiedService := database.NewUnifiedPluginService(db)
+	def, err := unifiedService.GetPluginDefinitionByID(id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve plugin definition", "details": err.Error()})
+		return
+	}
+
+	// Verify ownership for private plugins
+	if def.PluginType == "private" && (def.OwnerID == nil || *def.OwnerID != user.ID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
+		return
+	}
+
+	// Create ZIP export service
+	zipService := NewTRMNLZipService()
+
+	// Generate TRMNL-compatible ZIP
+	zipBuffer, err := zipService.CreateTRMNLZip(def)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create export ZIP", "details": err.Error()})
+		return
+	}
+
+	// Generate filename
+	filename := zipService.GenerateExportFilename(plugin.Name)
+
+	// Set response headers for file download
+	c.Header("Content-Type", "application/zip")
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
+	c.Header("Content-Length", fmt.Sprintf("%d", zipBuffer.Len()))
+
+	// Stream the ZIP file
+	c.Data(http.StatusOK, "application/zip", zipBuffer.Bytes())
+}
+
+// ImportPrivatePluginHandler imports a TRMNL-compatible ZIP file as a private plugin
+func ImportPrivatePluginHandler(c *gin.Context) {
+	user, ok := auth.RequireUser(c)
+	if !ok {
+		return
+	}
+
+	// Get uploaded file
+	file, header, err := c.Request.FormFile("file")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No file uploaded", "details": err.Error()})
+		return
+	}
+	defer file.Close()
+
+	// Create ZIP service
+	zipService := NewTRMNLZipService()
+
+	// Validate ZIP structure
+	if err := zipService.ValidateZipStructure(file, header); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ZIP file", "details": err.Error()})
+		return
+	}
+
+	// Reset file position
+	if _, err := file.Seek(0, 0); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process uploaded file"})
+		return
+	}
+
+	// Extract and validate ZIP contents
+	zipData, err := zipService.ExtractTRMNLZip(file, header)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid TRMNL ZIP format", "details": err.Error()})
+		return
+	}
+
+	// Convert to PluginDefinition
+	def, err := zipService.ConvertZipDataToPluginDefinition(zipData)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to process plugin data", "details": err.Error()})
+		return
+	}
+
+	// Validate templates
+	validator := validation.NewTemplateValidator()
+	validationResult := validator.ValidateAllTemplates(
+		safeStringValue(def.MarkupFull),
+		safeStringValue(def.MarkupHalfVert),
+		safeStringValue(def.MarkupHalfHoriz),
+		safeStringValue(def.MarkupQuadrant),
+		safeStringValue(def.SharedMarkup),
+	)
+
+	if !validationResult.Valid {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Template validation failed",
+			"validation_errors": validationResult.Errors,
+			"validation_warnings": validationResult.Warnings,
+		})
+		return
+	}
+
+	// Set ownership
+	def.OwnerID = &user.ID
+
+	// Create the plugin in the unified system
+	db := database.GetDB()
+	unifiedService := database.NewUnifiedPluginService(db)
+
+	if err := unifiedService.CreatePluginDefinition(def); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create private plugin", "details": err.Error()})
+		return
+	}
+
+	// Also create in the legacy system for backward compatibility
+	privatePlugin := &database.PrivatePlugin{
+		Name:              def.Name,
+		Description:       def.Description,
+		MarkupFull:        safeStringValue(def.MarkupFull),
+		MarkupHalfVert:    safeStringValue(def.MarkupHalfVert),
+		MarkupHalfHoriz:   safeStringValue(def.MarkupHalfHoriz),
+		MarkupQuadrant:    safeStringValue(def.MarkupQuadrant),
+		SharedMarkup:      safeStringValue(def.SharedMarkup),
+		DataStrategy:      safeStringValue(def.DataStrategy),
+		PollingConfig:     def.PollingConfig,
+		FormFields:        def.FormFields,
+		Version:           def.Version,
+		RemoveBleedMargin: getBoolValue(def.RemoveBleedMargin),
+		EnableDarkMode:    getBoolValue(def.EnableDarkMode),
+		IsPublished:       def.IsPublished,
+	}
+
+	privateService := database.NewPrivatePluginService(db)
+	if err := privateService.CreatePrivatePlugin(user.ID, privatePlugin); err != nil {
+		// Log the error but don't fail - unified system is primary
+		fmt.Printf("Warning: Failed to create legacy private plugin: %v\n", err)
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"message": "Private plugin imported successfully",
+		"plugin": gin.H{
+			"id":          def.ID,
+			"name":        def.Name,
+			"description": def.Description,
+			"version":     def.Version,
+		},
+	})
+}
+
+// safeStringValue safely extracts string value from pointer
+func safeStringValue(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
+// getBoolValue safely extracts bool value from pointer
+func getBoolValue(b *bool) bool {
+	if b == nil {
+		return false
+	}
+	return *b
+}
+

@@ -178,7 +178,7 @@ func (r *BrowserlessRenderer) RenderHTML(ctx context.Context, html string, width
 	// Wait for completion signal (more reliable than style-based detection)
 	req.WaitForSelector = &WaitForSelector{
 		Selector: "body[data-render-complete='true']", // Wait for render completion attribute
-		Timeout:  8000,                                // 8 second timeout (reduced from 15)
+		Timeout:  12000,                               // 12 second timeout (increased for dithering)
 		Visible:  false,                               // Don't require visibility, just presence
 	}
 	

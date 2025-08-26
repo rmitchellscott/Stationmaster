@@ -160,12 +160,15 @@ func (v *TemplateValidator) verifyContainerization(template string, templateName
 	var errors []string
 	var warnings []string
 
-	// Check for container div with unique ID
+	// Check for container div with unique ID (Stationmaster format)
 	hasContainer := regexp.MustCompile(`<div[^>]*id\s*=\s*["']plugin-{{ instance_id }}["'][^>]*>`).MatchString(template)
 	hasContainerClass := regexp.MustCompile(`<div[^>]*class\s*=\s*["'][^"']*plugin-container[^"']*["'][^>]*>`).MatchString(template)
+	
+	// Check for TRMNL layout format (which is what our actual plugins use)
+	hasTrmnlLayout := regexp.MustCompile(`<div[^>]*class\s*=\s*["'][^"']*layout[^"']*["'][^>]*>`).MatchString(template)
 
-	if !hasContainer && !hasContainerClass {
-		errors = append(errors, fmt.Sprintf("%s: Template must include a container div with either id='plugin-{{ instance_id }}' or class='plugin-container'", templateName))
+	if !hasContainer && !hasContainerClass && !hasTrmnlLayout {
+		errors = append(errors, fmt.Sprintf("%s: Template must include a container div with either id='plugin-{{ instance_id }}', class='plugin-container', or TRMNL's class='layout'", templateName))
 	}
 
 	// Check for proper TRMNL framework usage

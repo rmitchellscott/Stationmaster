@@ -476,6 +476,10 @@ func main() {
 		pluginDefs.GET("/refresh-rate-options", handlers.GetRefreshRateOptionsHandler) // GET /api/plugin-definitions/refresh-rate-options - get available refresh rates
 		pluginDefs.POST("/validate-settings", handlers.ValidatePluginSettingsHandler) // POST /api/plugin-definitions/validate-settings - validate plugin settings
 		pluginDefs.GET("/types", handlers.GetAvailablePluginTypesHandler) // GET /api/plugin-definitions/types - get available plugin types
+		pluginDefs.GET("/:id/export", handlers.ExportPrivatePluginHandler) // GET /api/plugin-definitions/:id/export - export private plugin as TRMNL-compatible ZIP
+		pluginDefs.POST("/import", handlers.ImportPrivatePluginHandler) // POST /api/plugin-definitions/import - import TRMNL-compatible ZIP as private plugin
+		pluginDefs.POST("/debug/validate-yaml", handlers.ValidateTRMNLYAMLHandler) // POST /api/plugin-definitions/debug/validate-yaml - validate TRMNL YAML format
+		pluginDefs.POST("/debug/test-conversion", handlers.TestTRMNLConversionHandler) // POST /api/plugin-definitions/debug/test-conversion - test bidirectional TRMNL conversion
 	}
 
 	protected.GET("/plugin-instances", handlers.GetPluginInstancesHandler) // GET /api/plugin-instances - list user's plugin instances

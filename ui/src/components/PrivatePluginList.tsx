@@ -7,6 +7,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -47,6 +48,8 @@ import {
   Database,
   Copy,
   RefreshCw,
+  Download,
+  Upload,
 } from "lucide-react";
 
 interface PrivatePlugin {
@@ -90,6 +93,12 @@ export function PrivatePluginList({
     isOpen: boolean;
     plugin: PrivatePlugin | null;
   }>({ isOpen: false, plugin: null });
+
+  // Import dialog state
+  const [importDialog, setImportDialog] = useState<{
+    isOpen: boolean;
+    isUploading: boolean;
+  }>({ isOpen: false, isUploading: false });
 
   const fetchPrivatePlugins = async () => {
     try {
@@ -144,6 +153,104 @@ export function PrivatePluginList({
       setSuccess("Webhook URL copied to clipboard!");
     } catch (error) {
       setError("Failed to copy webhook URL");
+    }
+  };
+
+  const exportPlugin = async (pluginId: string) => {
+    try {
+      setError(null);
+      const response = await fetch(`/api/plugin-definitions/${pluginId}/export`, {
+        method: "GET",
+        credentials: "include",
+      });
+
+      if (response.ok) {
+        // Get filename from Content-Disposition header or create a default
+        const contentDisposition = response.headers.get('Content-Disposition');
+        let filename = 'plugin.zip';
+        if (contentDisposition) {
+          const filenameMatch = contentDisposition.match(/filename="([^"]+)"/);
+          if (filenameMatch) {
+            filename = filenameMatch[1];
+          }
+        }
+
+        // Create blob and download
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+
+        setSuccess("Plugin exported successfully!");
+      } else {
+        const errorData = await response.json();
+        setError(errorData.error || "Failed to export plugin");
+      }
+    } catch (error) {
+      setError("Network error occurred while exporting plugin");
+    }
+  };
+
+  const importPlugin = async (file: File) => {
+    try {
+      setError(null);
+      setImportDialog(prev => ({ ...prev, isUploading: true }));
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch('/api/plugin-definitions/import', {
+        method: 'POST',
+        credentials: 'include',
+        body: formData,
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setSuccess(`Plugin "${data.plugin.name}" imported successfully!`);
+        setImportDialog({ isOpen: false, isUploading: false });
+        await fetchPrivatePlugins(); // Refresh the list
+      } else {
+        const errorData = await response.json();
+        let errorMessage = errorData.error || "Failed to import plugin";
+        
+        // Add detailed error information if available
+        if (errorData.details) {
+          errorMessage += ": " + errorData.details;
+        }
+        
+        // Add validation errors if available
+        if (errorData.validation_errors && errorData.validation_errors.length > 0) {
+          errorMessage += "\n\nValidation errors:\n" + errorData.validation_errors.join("\n");
+        }
+        
+        // Add validation warnings if available
+        if (errorData.validation_warnings && errorData.validation_warnings.length > 0) {
+          errorMessage += "\n\nValidation warnings:\n" + errorData.validation_warnings.join("\n");
+        }
+        
+        setError(errorMessage);
+      }
+    } catch (error) {
+      setError("Network error occurred while importing plugin");
+    } finally {
+      setImportDialog(prev => ({ ...prev, isUploading: false }));
+    }
+  };
+
+  const handleImportFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      if (file.type === 'application/zip' || file.name.endsWith('.zip')) {
+        importPlugin(file);
+      } else {
+        setError("Please select a valid ZIP file");
+      }
     }
   };
 
@@ -206,7 +313,9 @@ export function PrivatePluginList({
       {error && (
         <Alert variant="destructive">
           <AlertTriangle className="h-4 w-4" />
-          <AlertDescription>{error}</AlertDescription>
+          <AlertDescription>
+            <div className="whitespace-pre-wrap">{error}</div>
+          </AlertDescription>
         </Alert>
       )}
 
@@ -224,10 +333,30 @@ export function PrivatePluginList({
             Custom plugins you've created with Liquid templates
           </p>
         </div>
-        <Button onClick={onCreatePlugin}>
-          <Plus className="h-4 w-4 mr-2" />
-          Create Private Plugin
-        </Button>
+        <div className="flex gap-2">
+          <div className="relative">
+            <Input
+              id="import-file"
+              type="file"
+              accept=".zip"
+              onChange={handleImportFileChange}
+              className="sr-only"
+              disabled={importDialog.isUploading}
+            />
+            <Button 
+              variant="outline" 
+              onClick={() => document.getElementById('import-file')?.click()}
+              disabled={importDialog.isUploading}
+            >
+              <Upload className="h-4 w-4 mr-2" />
+              {importDialog.isUploading ? "Importing..." : "Import"}
+            </Button>
+          </div>
+          <Button onClick={onCreatePlugin}>
+            <Plus className="h-4 w-4 mr-2" />
+            Create Private Plugin
+          </Button>
+        </div>
       </div>
 
       {loading ? (
@@ -240,12 +369,32 @@ export function PrivatePluginList({
             <Code2 className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
             <h3 className="text-lg font-semibold mb-2">No Private Plugins</h3>
             <p className="text-muted-foreground mb-4">
-              Create your first private plugin using Liquid templates and TRMNL's design framework.
+              Create your first private plugin using Liquid templates and TRMNL's design framework, or import an existing TRMNL plugin.
             </p>
-            <Button onClick={onCreatePlugin}>
-              <Plus className="h-4 w-4 mr-2" />
-              Create Your First Private Plugin
-            </Button>
+            <div className="flex gap-2 justify-center">
+              <div className="relative">
+                <Input
+                  id="import-file-empty"
+                  type="file"
+                  accept=".zip"
+                  onChange={handleImportFileChange}
+                  className="sr-only"
+                  disabled={importDialog.isUploading}
+                />
+                <Button 
+                  variant="outline" 
+                  onClick={() => document.getElementById('import-file-empty')?.click()}
+                  disabled={importDialog.isUploading}
+                >
+                  <Upload className="h-4 w-4 mr-2" />
+                  {importDialog.isUploading ? "Importing..." : "Import"}
+                </Button>
+              </div>
+              <Button onClick={onCreatePlugin}>
+                <Plus className="h-4 w-4 mr-2" />
+                Create Your First Private Plugin
+              </Button>
+            </div>
           </CardContent>
         </Card>
       ) : (
@@ -300,36 +449,12 @@ export function PrivatePluginList({
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center gap-2 justify-end">
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => onPreviewPlugin(plugin)}
-                            >
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>Preview Plugin</TooltipContent>
-                        </Tooltip>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => onEditPlugin(plugin)}
-                            >
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>Edit Plugin</TooltipContent>
-                        </Tooltip>
                         {plugin.data_strategy === 'webhook' && plugin.webhook_token && (
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <Button
                                 size="sm"
-                                variant="ghost"
+                                variant="outline"
                                 onClick={() => copyWebhookUrl(generateWebhookURL(plugin.webhook_token))}
                               >
                                 <Copy className="h-4 w-4" />
@@ -342,7 +467,31 @@ export function PrivatePluginList({
                           <TooltipTrigger asChild>
                             <Button
                               size="sm"
-                              variant="ghost"
+                              variant="outline"
+                              onClick={() => onEditPlugin(plugin)}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Edit Plugin</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => exportPlugin(plugin.id)}
+                            >
+                              <Download className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Export</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              size="sm"
+                              variant="outline"
                               onClick={() => setDeleteDialog({ isOpen: true, plugin })}
                             >
                               <Trash2 className="h-4 w-4" />

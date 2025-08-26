@@ -479,12 +479,57 @@ func (r *PrivatePluginRenderer) RenderToClientSideHTML(opts RenderOptions) (stri
                             outputEl.style.display = 'block';
                             outputEl.innerHTML = wrappedContent;
                             
-                            // Load TRMNL plugins.js AFTER content is shown
-                            const script = document.createElement('script');
-                            script.src = 'https://usetrmnl.com/js/latest/plugins.js';
-                            script.onload = () => {}; // Plugin loaded successfully
-                            script.onerror = (e) => console.error('TRMNL plugins.js failed to load:', e);
-                            document.head.appendChild(script);
+                            // Load all TRMNL scripts AFTER content is shown
+                            const scriptUrls = [
+                                // Main plugins.js (layout/typography utilities)
+                                'https://usetrmnl.com/js/latest/plugins.js',
+                                
+                                // Core Plugin Files
+                                'https://usetrmnl.com/assets/plugin-bfbd7e9488fd0d6dff2f619b5cb963c0772a24d6d0b537f60089dc53aa4746ff.js',
+                                'https://usetrmnl.com/assets/plugin_legacy-0c72702a185603fd7fc5eb915658f49486903cb5c92cd6153a336b8ce3973452.js',
+                                'https://usetrmnl.com/assets/plugin_demo-25268352c5a400b970985521a5eaa3dc90c736ce0cbf42d749e7e253f0c227f5.js',
+                                
+                                // Plugin Render Files
+                                'https://usetrmnl.com/assets/plugin-render/plugins-332ca4207dd02576b3641691907cb829ef52a36c4a092a75324a8fc860906967.js',
+                                'https://usetrmnl.com/assets/plugin-render/plugins_legacy-a6b0b3aeac32ca71413f1febc053c59a528d4c6bb2173c22bd94ff8e0b9650f1.js',
+                                'https://usetrmnl.com/assets/plugin-render/dithering-d697f6229e3bd6e2455425d647e5395bb608999c2039a9837a903c7c7e952d61.js',
+                                'https://usetrmnl.com/assets/plugin-render/asset-deduplication-39fa2231b7a5bd5bedf4a1782b6a95d8b87eb3aaaa5e2b6cee287133d858bc96.js'
+                            ];
+                            
+                            function loadScriptsSequentially(urls, index = 0) {
+                                if (index >= urls.length) {
+                                    // All scripts loaded - handle dithering timing
+                                    setTimeout(() => {
+                                        handleDitheringTiming();
+                                    }, 100);
+                                    return;
+                                }
+                                
+                                const script = document.createElement('script');
+                                script.src = urls[index];
+                                script.onload = () => loadScriptsSequentially(urls, index + 1);
+                                script.onerror = (e) => {
+                                    console.error('TRMNL script failed to load:', urls[index], e);
+                                    loadScriptsSequentially(urls, index + 1); // Continue loading other scripts
+                                };
+                                document.head.appendChild(script);
+                            }
+                            
+                            function handleDitheringTiming() {
+                                // Check if window.load already fired and handle dithering timing
+                                if (document.readyState === 'complete') {
+                                    // Page already loaded, manually trigger dithering
+                                    if (typeof window.setup === 'function') {
+                                        window.setup();
+                                    } else {
+                                        // Fallback: dispatch load event to trigger dithering
+                                        window.dispatchEvent(new Event('load'));
+                                    }
+                                }
+                                // If readyState is not complete, dithering will trigger on natural window.load
+                            }
+                            
+                            loadScriptsSequentially(scriptUrls);
                         }
                     }
                     

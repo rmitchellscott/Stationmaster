@@ -53,3 +53,6 @@ temp/
 
 # Docker volumes
 postgres_data/
+
+# Sensitive files
+cookies.txt

@@ -330,6 +330,41 @@ func AddPlaylistItemHandler(c *gin.Context) {
 		logging.Info("[PLAYLIST] Scheduled immediate render for playlist addition", "plugin_instance_id", req.PluginInstanceID, "job_id", renderJob.ID)
 	}
 
+	// If this is a mashup plugin, also schedule render jobs for its children
+	if pluginInstance.PluginDefinition.PluginType == "mashup" {
+		mashupService := database.NewMashupService(db)
+		children, err := mashupService.GetChildren(req.PluginInstanceID)
+		if err == nil && len(children) > 0 {
+			logging.Info("[PLAYLIST] Scheduling render jobs for mashup children", "mashup_id", req.PluginInstanceID, "children_count", len(children))
+			
+			for _, child := range children {
+				childRenderJob := database.RenderQueue{
+					ID:               uuid.New(),
+					PluginInstanceID: child.ChildInstanceID,
+					Priority:         998, // Slightly lower priority than parent mashup
+					ScheduledFor:     time.Now(),
+					Status:           "pending",
+					IndependentRender: true, // Independent renders for mashup children
+				}
+				
+				if childErr := db.Create(&childRenderJob).Error; childErr != nil {
+					logging.Error("[PLAYLIST] Failed to schedule render job for mashup child", 
+						"mashup_id", req.PluginInstanceID, 
+						"child_id", child.ChildInstanceID, 
+						"error", childErr)
+				} else {
+					logging.Info("[PLAYLIST] Scheduled render for mashup child", 
+						"mashup_id", req.PluginInstanceID, 
+						"child_id", child.ChildInstanceID, 
+						"slot", child.SlotPosition,
+						"job_id", childRenderJob.ID)
+				}
+			}
+		} else if err != nil {
+			logging.Warn("[PLAYLIST] Failed to get mashup children for render scheduling", "mashup_id", req.PluginInstanceID, "error", err)
+		}
+	}
+
 	// Broadcast playlist item added event
 	sseService := sse.GetSSEService()
 	sseService.BroadcastToDevice(playlist.DeviceID, sse.Event{

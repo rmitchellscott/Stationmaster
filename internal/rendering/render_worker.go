@@ -251,6 +251,12 @@ func (w *RenderWorker) renderForDevice(ctx context.Context, pluginInstance datab
 		if !exists {
 			return fmt.Errorf("system plugin %s not found in registry", pluginInstance.PluginDefinition.Identifier)
 		}
+	} else if pluginInstance.PluginDefinition.PluginType == "mashup" {
+		// Use mashup plugin factory
+		plugin, err = w.factory.CreatePlugin(&pluginInstance.PluginDefinition, &pluginInstance)
+		if err != nil {
+			return fmt.Errorf("failed to create mashup plugin: %w", err)
+		}
 	} else {
 		return fmt.Errorf("unknown plugin type: %s", pluginInstance.PluginDefinition.PluginType)
 	}
@@ -505,6 +511,9 @@ func (w *RenderWorker) scheduleNextRenderWithOptions(ctx context.Context, plugin
 			return
 		}
 		requiresProcessing = plugin.RequiresProcessing()
+	} else if pluginInstance.PluginDefinition.PluginType == "mashup" {
+		// Mashup plugins always require processing (they generate HTML from children)
+		requiresProcessing = true
 	} else {
 		// Unknown plugin type
 		logging.Error("[RENDER_WORKER] Unknown plugin type", "plugin_type", pluginInstance.PluginDefinition.PluginType, "instance_name", pluginInstance.Name, "instance_id", pluginInstance.ID)
@@ -582,6 +591,18 @@ func (w *RenderWorker) calculateNextRenderTime(ctx context.Context, pluginInstan
 	
 	now := time.Now().In(location)
 	refreshInterval := pluginInstance.RefreshInterval
+	
+	// For mashup plugins, use the minimum refresh rate of child plugins
+	if pluginInstance.PluginDefinition.PluginType == "mashup" {
+		mashupService := database.NewMashupService(w.db)
+		childRefreshRate, err := mashupService.CalculateRefreshRate(pluginInstance.ID)
+		if err != nil {
+			logging.Warn("[RENDER_WORKER] Failed to calculate mashup refresh rate, using instance rate", "plugin", pluginInstance.Name, "error", err)
+		} else {
+			refreshInterval = childRefreshRate
+			logging.Debug("[RENDER_WORKER] Using calculated mashup refresh rate", "plugin", pluginInstance.Name, "child_rate", childRefreshRate, "original_rate", pluginInstance.RefreshInterval)
+		}
+	}
 	
 	// Handle different refresh intervals with smart scheduling
 	switch refreshInterval {

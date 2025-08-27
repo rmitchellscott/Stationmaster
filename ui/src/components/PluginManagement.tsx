@@ -67,11 +67,14 @@ import {
   ChevronUp,
   ChevronDown,
   ChevronsUpDown,
+  Layers,
+  PlayCircle,
 } from "lucide-react";
 import { PrivatePluginList } from "./PrivatePluginList";
 import { PluginPreview } from "./PluginPreview";
 import { LiquidEditor } from "./LiquidEditor";
 import { PrivatePluginHelp } from "./PrivatePluginHelp";
+import { MashupCreator } from "./MashupCreator";
 
 interface Plugin {
   id: string;
@@ -192,8 +195,11 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
   // Pending edit state for handling navigation timing issues
   const [pendingEditInstanceId, setPendingEditInstanceId] = useState<string | null>(null);
 
+  // Mashup creator state
+  const [showMashupCreator, setShowMashupCreator] = useState(false);
+
   // Get active subtab from URL query parameters
-  const activeTab = (searchParams.get('subtab') as 'instances' | 'private') || 'instances';
+  const activeTab = (searchParams.get('subtab') as 'instances' | 'private' | 'mashup') || 'instances';
 
   // Handle subtab change by updating URL query parameters
   const handleSubTabChange = (subtab: string) => {
@@ -644,6 +650,18 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
     setPreviewingPrivatePlugin(plugin);
   };
 
+  // Mashup handlers
+  const handleCreateMashup = () => {
+    setShowMashupCreator(true);
+  };
+
+  const handleMashupCreated = (mashupInstanceId: string) => {
+    // Refresh plugin instances to show the new mashup
+    fetchPluginInstances();
+    setSuccessMessage("Mashup created successfully!");
+    setTimeout(() => setSuccessMessage(null), 3000);
+  };
+
   // Helper function to check if a plugin has configuration fields
   const hasConfigurationFields = (plugin: Plugin): boolean => {
     try {
@@ -940,6 +958,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
         <TabsList>
           <TabsTrigger value="instances">Plugin Instances</TabsTrigger>
           <TabsTrigger value="private">Private Plugins</TabsTrigger>
+          <TabsTrigger value="mashup">Mashups</TabsTrigger>
         </TabsList>
 
         <TabsContent value="instances" className="space-y-4">
@@ -1657,6 +1676,127 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
             onPreviewPlugin={handlePreviewPrivatePlugin}
           />
         </TabsContent>
+
+        <TabsContent value="mashup" className="space-y-4">
+          <div className="flex justify-between items-center">
+            <div>
+              <h4 className="font-semibold">Mashup Plugins</h4>
+              <p className="text-sm text-muted-foreground">
+                Create and manage mashups that combine multiple private plugins
+              </p>
+            </div>
+            <Button onClick={handleCreateMashup}>
+              <Layers className="w-4 h-4 mr-2" />
+              Create Mashup
+            </Button>
+          </div>
+
+          {/* Display mashup plugin instances */}
+          <div className="space-y-4">
+            {pluginInstances.filter(instance => instance.plugin?.type === "mashup").length === 0 ? (
+              <Card className="text-center py-8">
+                <CardContent className="space-y-4">
+                  <Layers className="w-12 h-12 mx-auto text-muted-foreground" />
+                  <div>
+                    <h3 className="text-lg font-semibold">No mashups yet</h3>
+                    <p className="text-muted-foreground">
+                      Create your first mashup to combine multiple private plugins into a single layout
+                    </p>
+                  </div>
+                  <Button onClick={handleCreateMashup}>
+                    <Layers className="w-4 h-4 mr-2" />
+                    Create Your First Mashup
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid gap-4">
+                {pluginInstances
+                  .filter(instance => instance.plugin?.type === "mashup")
+                  .map((instance) => (
+                    <Card key={instance.id} className="hover:shadow-sm transition-shadow">
+                      <CardHeader className="pb-3">
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="p-2 rounded-lg bg-primary/10">
+                              <Layers className="w-5 h-5 text-primary" />
+                            </div>
+                            <div>
+                              <CardTitle className="text-base font-semibold">
+                                {instance.name}
+                              </CardTitle>
+                              <div className="flex items-center gap-2 mt-1">
+                                <Badge variant="secondary" className="text-xs">
+                                  Mashup
+                                </Badge>
+                                <span className="text-xs text-muted-foreground">
+                                  Layout: {instance.plugin?.data_strategy || "Unknown"}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => {
+                                    setEditPluginInstance(instance);
+                                    setEditInstanceName(instance.name);
+                                    setEditInstanceSettings(JSON.parse(instance.settings || "{}"));
+                                    setEditInstanceRefreshRate(instance.refresh_interval);
+                                    setShowEditDialog(true);
+                                  }}
+                                >
+                                  <Edit className="w-4 h-4" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>Edit mashup</TooltipContent>
+                            </Tooltip>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => setDeletePluginDialog({ isOpen: true, plugin: instance })}
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>Delete mashup</TooltipContent>
+                            </Tooltip>
+                          </div>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="pt-0">
+                        <div className="flex items-center justify-between text-sm text-muted-foreground">
+                          <div className="flex items-center gap-4">
+                            <span>
+                              Refresh: {instance.refresh_interval >= 3600 
+                                ? `${Math.floor(instance.refresh_interval / 3600)}h` 
+                                : instance.refresh_interval >= 60
+                                ? `${Math.floor(instance.refresh_interval / 60)}m`
+                                : `${instance.refresh_interval}s`}
+                            </span>
+                            <span className={instance.is_active ? "text-green-600" : "text-red-600"}>
+                              {instance.is_active ? "Active" : "Inactive"}
+                            </span>
+                          </div>
+                          {instance.is_used_in_playlists && (
+                            <Badge variant="outline" className="text-xs">
+                              <PlayCircle className="w-3 h-3 mr-1" />
+                              In Playlist
+                            </Badge>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+              </div>
+            )}
+          </div>
+        </TabsContent>
       </Tabs>
 
 
@@ -1668,6 +1808,13 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
           onClose={() => setPreviewingPrivatePlugin(null)}
         />
       )} */}
+
+      {/* Mashup Creator Dialog */}
+      <MashupCreator
+        open={showMashupCreator}
+        onClose={() => setShowMashupCreator(false)}
+        onSuccess={handleMashupCreated}
+      />
     </div>
   );
 }

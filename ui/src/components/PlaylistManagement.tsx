@@ -87,6 +87,7 @@ import {
   EyeOff,
   GripVertical,
   Moon,
+  Layers,
 } from "lucide-react";
 import { Device, isDeviceCurrentlySleeping } from "@/utils/deviceHelpers";
 
@@ -437,11 +438,21 @@ function SortableTableRow({
       </TableCell>
       <TableCell>
         <div>
-          <div className="font-medium">
+          <div className="font-medium flex items-center gap-2">
+            {item.plugin_instance?.plugin?.type === "mashup" && (
+              <Layers className="w-4 h-4 text-primary" />
+            )}
             {item.plugin_instance?.name || "Unnamed Instance"}
+            {item.plugin_instance?.plugin?.type === "mashup" && (
+              <Badge variant="secondary" className="text-xs">
+                Mashup
+              </Badge>
+            )}
           </div>
           <div className="text-sm text-muted-foreground">
-            {item.plugin_instance?.plugin_definition?.name || "Unknown Plugin"}
+            {item.plugin_instance?.plugin?.type === "mashup" 
+              ? `Mashup Layout: ${item.plugin_instance?.plugin?.data_strategy || "Unknown"}` 
+              : item.plugin_instance?.plugin_definition?.name || "Unknown Plugin"}
           </div>
           <div className="text-xs md:hidden mt-1">
             <span className="flex items-center gap-1">

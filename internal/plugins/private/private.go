@@ -116,21 +116,84 @@ func (p *PrivatePlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespon
 	// Fetch external data based on data strategy
 	switch dataStrategy := p.definition.DataStrategy; {
 	case dataStrategy != nil && *dataStrategy == "polling":
-		// Use enhanced data poller for robust polling with retries and error handling
-		poller := NewEnhancedDataPoller()
-		pollingCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		if polledResult, err := poller.PollData(pollingCtx, p.definition, formFieldValues); err == nil && polledResult.Success {
-			// Merge polling data into template data
-			for key, value := range polledResult.Data {
-				templateData[key] = value
+		// First check if we have fresh polling data stored
+		pollingService := database.NewPollingDataService(database.GetDB())
+		
+		// Check if stored data is fresh (within 5 minutes of expected refresh)
+		maxAge := 5 * time.Minute // Allow some staleness to avoid duplicate polls
+		if isFresh, err := pollingService.IsPollingDataFresh(instanceID, maxAge); err == nil && isFresh {
+			// Use stored polling data
+			if storedData, err := pollingService.GetPollingDataTemplate(instanceID); err == nil {
+				for key, value := range storedData {
+					templateData[key] = value
+				}
+				logging.Debug("[PRIVATE_PLUGIN] Using fresh stored polling data", "plugin_id", p.definition.ID, "instance_id", instanceID)
 			}
 		} else {
-			// Log error but don't fail - allow template to render with form data only
-			if err != nil {
-				logging.WarnWithComponent(logging.ComponentPlugins, "Failed to fetch polling data for plugin", "plugin_id", p.definition.ID, "error", err)
-			} else if len(polledResult.Errors) > 0 {
-				logging.WarnWithComponent(logging.ComponentPlugins, "Polling errors for plugin", "plugin_id", p.definition.ID, "errors", polledResult.Errors)
+			// Poll fresh data and store it
+			poller := NewEnhancedDataPoller()
+			pollingCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			
+			pollStartTime := time.Now()
+			polledResult, err := poller.PollData(pollingCtx, p.definition, formFieldValues)
+			pollDuration := time.Since(pollStartTime)
+			
+			if err == nil && polledResult.Success {
+				// Merge polling data into template data
+				for key, value := range polledResult.Data {
+					templateData[key] = value
+				}
+				
+				// Store the polling data for future use (including mashup children)
+				rawDataJSON, _ := json.Marshal(polledResult.Data)
+				mergedDataJSON, _ := json.Marshal(polledResult.Data)
+				errorsJSON, _ := json.Marshal(polledResult.Errors)
+				
+				pollingData := &database.PrivatePluginPollingData{
+					ID:               instanceID + "_poll_" + fmt.Sprintf("%d", time.Now().Unix()),
+					PluginInstanceID: instanceID,
+					MergedData:       mergedDataJSON,
+					RawData:          rawDataJSON,
+					PolledAt:         time.Now(),
+					PollDuration:     pollDuration,
+					Success:          true,
+					Errors:           errorsJSON,
+					URLCount:         len(polledResult.Data), // Approximation
+				}
+				
+				if storeErr := pollingService.StorePollingData(pollingData); storeErr != nil {
+					logging.WarnWithComponent(logging.ComponentPlugins, "Failed to store polling data", "plugin_id", p.definition.ID, "error", storeErr)
+				} else {
+					logging.Debug("[PRIVATE_PLUGIN] Stored fresh polling data", "plugin_id", p.definition.ID, "instance_id", instanceID, "duration", pollDuration)
+				}
+			} else {
+				// Store failed polling attempt
+				errorsJSON, _ := json.Marshal(polledResult.Errors)
+				if err != nil {
+					errorsJSON, _ = json.Marshal([]string{err.Error()})
+				}
+				
+				pollingData := &database.PrivatePluginPollingData{
+					ID:               instanceID + "_poll_" + fmt.Sprintf("%d", time.Now().Unix()),
+					PluginInstanceID: instanceID,
+					MergedData:       []byte("{}"),
+					RawData:          []byte("{}"),
+					PolledAt:         time.Now(),
+					PollDuration:     pollDuration,
+					Success:          false,
+					Errors:           errorsJSON,
+					URLCount:         0,
+				}
+				
+				pollingService.StorePollingData(pollingData)
+				
+				// Log error but don't fail - allow template to render with form data only
+				if err != nil {
+					logging.WarnWithComponent(logging.ComponentPlugins, "Failed to fetch polling data for plugin", "plugin_id", p.definition.ID, "error", err)
+				} else if len(polledResult.Errors) > 0 {
+					logging.WarnWithComponent(logging.ComponentPlugins, "Polling errors for plugin", "plugin_id", p.definition.ID, "errors", polledResult.Errors)
+				}
 			}
 		}
 	case dataStrategy != nil && *dataStrategy == "webhook":

@@ -19,79 +19,82 @@ interface AddPluginDropdownProps {
 // Single plugin layout representation
 const getSinglePluginGrid = () => {
   const baseClasses = "border border-dashed border-muted-foreground/30 rounded text-xs flex items-center justify-center text-muted-foreground/60 font-medium bg-muted/20";
-  return <div className={`${baseClasses} h-16 w-20`}>Plugin</div>;
+  return <div className={`${baseClasses} h-16 w-24`}></div>;
 };
 
-// Mashup layout grid representations (reused from MashupLayoutSelector)
+// Mashup layout grid representations
 const getMashupLayoutGrid = (layoutId: string) => {
-  const baseClasses = "border border-dashed border-muted-foreground/30 rounded text-xs flex items-center justify-center text-muted-foreground/60 font-medium";
+  const baseClasses = "border border-dashed border-muted-foreground/30 rounded flex items-center justify-center bg-muted/20";
+  
+  console.log('Rendering layout:', layoutId); // Debug log
   
   switch (layoutId) {
     case "1Lx1R": // Left | Right
       return (
-        <div className="grid grid-cols-2 gap-1 h-16 w-20">
-          <div className={`${baseClasses} bg-muted/20`}>L</div>
-          <div className={`${baseClasses} bg-muted/20`}>R</div>
+        <div className="grid grid-cols-2 gap-1 h-16 w-24">
+          <div className={baseClasses}></div>
+          <div className={baseClasses}></div>
         </div>
       );
     case "1Tx1B": // Top / Bottom
       return (
-        <div className="grid grid-rows-2 gap-1 h-16 w-20">
-          <div className={`${baseClasses} bg-muted/20`}>T</div>
-          <div className={`${baseClasses} bg-muted/20`}>B</div>
+        <div className="grid grid-rows-2 gap-1 h-16 w-24">
+          <div className={baseClasses}></div>
+          <div className={baseClasses}></div>
         </div>
       );
     case "1Lx2R": // Left | Top-Right / Bottom-Right
       return (
-        <div className="grid grid-cols-2 gap-1 h-16 w-20">
-          <div className={`${baseClasses} bg-muted/20 row-span-2`}>L</div>
+        <div className="grid grid-cols-[2fr_1fr] gap-1 h-16 w-24">
+          <div className={baseClasses}></div>
           <div className="grid grid-rows-2 gap-1">
-            <div className={`${baseClasses} bg-muted/20`}>RT</div>
-            <div className={`${baseClasses} bg-muted/20`}>RB</div>
+            <div className={baseClasses}></div>
+            <div className={baseClasses}></div>
           </div>
         </div>
       );
     case "2Lx1R": // Left-Top / Left-Bottom | Right
       return (
-        <div className="grid grid-cols-2 gap-1 h-16 w-20">
+        <div className="grid grid-cols-[1fr_2fr] gap-1 h-16 w-24">
           <div className="grid grid-rows-2 gap-1">
-            <div className={`${baseClasses} bg-muted/20`}>LT</div>
-            <div className={`${baseClasses} bg-muted/20`}>LB</div>
+            <div className={baseClasses}></div>
+            <div className={baseClasses}></div>
           </div>
-          <div className={`${baseClasses} bg-muted/20 row-span-2`}>R</div>
+          <div className={baseClasses}></div>
         </div>
       );
     case "2Tx1B": // Top-Left | Top-Right / Bottom
       return (
-        <div className="grid grid-rows-2 gap-1 h-16 w-20">
+        <div className="grid grid-rows-[1fr_2fr] gap-1 h-16 w-24">
           <div className="grid grid-cols-2 gap-1">
-            <div className={`${baseClasses} bg-muted/20`}>TL</div>
-            <div className={`${baseClasses} bg-muted/20`}>TR</div>
+            <div className={baseClasses}></div>
+            <div className={baseClasses}></div>
           </div>
-          <div className={`${baseClasses} bg-muted/20 col-span-2`}>B</div>
+          <div className={baseClasses}></div>
         </div>
       );
     case "1Tx2B": // Top / Bottom-Left | Bottom-Right
       return (
-        <div className="grid grid-rows-2 gap-1 h-16 w-20">
-          <div className={`${baseClasses} bg-muted/20 col-span-2`}>T</div>
+        <div className="grid grid-rows-[2fr_1fr] gap-1 h-16 w-24">
+          <div className={baseClasses}></div>
           <div className="grid grid-cols-2 gap-1">
-            <div className={`${baseClasses} bg-muted/20`}>BL</div>
-            <div className={`${baseClasses} bg-muted/20`}>BR</div>
+            <div className={baseClasses}></div>
+            <div className={baseClasses}></div>
           </div>
         </div>
       );
     case "2x2": // Quadrant grid
       return (
-        <div className="grid grid-cols-2 grid-rows-2 gap-1 h-16 w-20">
-          <div className={`${baseClasses} bg-muted/20`}>Q1</div>
-          <div className={`${baseClasses} bg-muted/20`}>Q2</div>
-          <div className={`${baseClasses} bg-muted/20`}>Q3</div>
-          <div className={`${baseClasses} bg-muted/20`}>Q4</div>
+        <div className="grid grid-cols-2 grid-rows-2 gap-1 h-16 w-24">
+          <div className={baseClasses}></div>
+          <div className={baseClasses}></div>
+          <div className={baseClasses}></div>
+          <div className={baseClasses}></div>
         </div>
       );
     default:
-      return <div className={`${baseClasses} h-16 w-20 bg-muted/20`}>?</div>;
+      console.warn('Unknown layout ID:', layoutId); // Debug warning
+      return <div className={`${baseClasses} h-16 w-24`}>?</div>;
   }
 };
 
@@ -154,11 +157,10 @@ export const AddPluginDropdown: React.FC<AddPluginDropdownProps> = ({
         aria-label="Plugin selection menu"
       >
         <div className="p-4">
-          <div className="text-sm font-medium mb-3">Choose Plugin Type</div>
           
           {/* Single Plugin Option */}
-          <Card 
-            className="mb-3 cursor-pointer transition-all duration-200 hover:shadow-sm hover:border-muted-foreground/30"
+          <div 
+            className="mb-4 p-4 cursor-pointer transition-all duration-200 hover:bg-muted/20 rounded-lg border border-dashed border-muted-foreground/30"
             onClick={handlePluginSelect}
             role="button"
             tabIndex={0}
@@ -170,26 +172,10 @@ export const AddPluginDropdown: React.FC<AddPluginDropdownProps> = ({
               }
             }}
           >
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <Puzzle className="h-4 w-4" />
-                  Single Plugin
-                </CardTitle>
-                <Badge variant="secondary" className="text-xs">
-                  1 slot
-                </Badge>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0">
-              <div className="flex items-center justify-center mb-2">
-                {getSinglePluginGrid()}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Create a regular plugin instance
-              </p>
-            </CardContent>
-          </Card>
+            <div className="flex items-center justify-center">
+              {getSinglePluginGrid()}
+            </div>
+          </div>
 
           {/* Mashup Layouts */}
           {loading ? (
@@ -197,48 +183,27 @@ export const AddPluginDropdown: React.FC<AddPluginDropdownProps> = ({
               Loading layouts...
             </div>
           ) : (
-            <div className="space-y-2">
-              <div className="text-xs font-medium text-muted-foreground mb-2">
-                Mashup Layouts
-              </div>
-              <div className="max-h-64 overflow-y-auto space-y-2">
-                {layouts.map((layout) => (
-                  <Card
-                    key={layout.id}
-                    className="cursor-pointer transition-all duration-200 hover:shadow-sm hover:border-muted-foreground/30"
-                    onClick={() => handleMashupSelect(layout)}
-                    role="button"
-                    tabIndex={0}
-                    aria-label={`Create mashup with ${layout.name} layout`}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        handleMashupSelect(layout);
-                      }
-                    }}
-                  >
-                    <CardHeader className="pb-2">
-                      <div className="flex items-center justify-between">
-                        <CardTitle className="text-sm font-medium flex items-center gap-2">
-                          <Grid2x2 className="h-4 w-4" />
-                          {layout.name}
-                        </CardTitle>
-                        <Badge variant="secondary" className="text-xs">
-                          {layout.slots} slots
-                        </Badge>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="pt-0">
-                      <div className="flex items-center justify-center mb-2">
-                        {getMashupLayoutGrid(layout.id)}
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        {layout.description}
-                      </p>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
+            <div className="grid grid-cols-2 gap-3">
+              {layouts.map((layout) => (
+                <div
+                  key={layout.id}
+                  className="p-4 cursor-pointer transition-all duration-200 hover:bg-muted/20 rounded-lg border border-dashed border-muted-foreground/30"
+                  onClick={() => handleMashupSelect(layout)}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Create mashup with ${layout.name} layout`}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      handleMashupSelect(layout);
+                    }
+                  }}
+                >
+                  <div className="flex items-center justify-center">
+                    {getMashupLayoutGrid(layout.id)}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>

@@ -76,7 +76,11 @@ func (r *MashupRenderer) generateMashupHTML(childData map[string]interface{}, ch
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://usetrmnl.com/css/latest/plugins.css">
     <script src="https://cdn.jsdelivr.net/npm/liquidjs@10.10.1/dist/liquid.browser.umd.js"></script>
-    <!-- TRMNL Scripts for dithering and other functionality -->
+    <!-- TRMNL Scripts for core functionality, filters, and rendering -->
+    <script src="https://usetrmnl.com/js/latest/plugins.js"></script>
+    <script src="https://usetrmnl.com/assets/plugin-bfbd7e9488fd0d6dff2f619b5cb963c0772a24d6d0b537f60089dc53aa4746ff.js"></script>
+    <script src="https://usetrmnl.com/assets/plugin_legacy-0c72702a185603fd7fc5eb915658f49486903cb5c92cd6153a336b8ce3973452.js"></script>
+    <script src="https://usetrmnl.com/assets/plugin_demo-25268352c5a400b970985521a5eaa3dc90c736ce0cbf42d749e7e253f0c227f5.js"></script>
     <script src="https://usetrmnl.com/assets/plugin-render/plugins-332ca4207dd02576b3641691907cb829ef52a36c4a092a75324a8fc860906967.js"></script>
     <script src="https://usetrmnl.com/assets/plugin-render/plugins_legacy-a6b0b3aeac32ca71413f1febc053c59a528d4c6bb2173c22bd94ff8e0b9650f1.js"></script>
     <script src="https://usetrmnl.com/assets/plugin-render/dithering-d697f6229e3bd6e2455425d647e5395bb608999c2039a9837a903c7c7e952d61.js"></script>
@@ -191,6 +195,96 @@ func (r *MashupRenderer) generateMashupHTML(childData map[string]interface{}, ch
                     console.warn('parse_json filter error:', e);
                     return jsonString;
                 }
+            });
+            
+            // group_by: Group array by key
+            engine.registerFilter('group_by', function(array, key) {
+                if (!Array.isArray(array)) return array;
+                
+                const grouped = {};
+                array.forEach(item => {
+                    const groupKey = item[key] || 'undefined';
+                    if (!grouped[groupKey]) grouped[groupKey] = [];
+                    grouped[groupKey].push(item);
+                });
+                
+                return Object.keys(grouped).map(k => ({
+                    name: k,
+                    items: grouped[k],
+                    size: grouped[k].length
+                }));
+            });
+            
+            // find_by: Find array item by key/value
+            engine.registerFilter('find_by', function(array, key, value) {
+                if (!Array.isArray(array)) return null;
+                return array.find(item => item[key] === value) || null;
+            });
+            
+            // sample: Random array selection
+            engine.registerFilter('sample', function(array) {
+                if (!Array.isArray(array) || array.length === 0) return null;
+                return array[Math.floor(Math.random() * array.length)];
+            });
+            
+            // number_with_delimiter: Format numbers with delimiters
+            engine.registerFilter('number_with_delimiter', function(number, delimiter) {
+                if (isNaN(number)) return number;
+                const delim = delimiter || ',';
+                return Number(number).toLocaleString().replace(/,/g, delim);
+            });
+            
+            // number_to_currency: Convert to localized currency
+            engine.registerFilter('number_to_currency', function(number, currency, locale) {
+                if (isNaN(number)) return number;
+                
+                if (!locale && this.context) {
+                    locale = this.context.get(['trmnl', 'user', 'locale']) || 'en-US';
+                }
+                
+                const options = {
+                    style: 'currency',
+                    currency: currency || 'USD'
+                };
+                
+                try {
+                    return new Intl.NumberFormat(locale, options).format(number);
+                } catch (e) {
+                    return currency + ' ' + number;
+                }
+            });
+            
+            // pluralize: Word inflection based on count
+            engine.registerFilter('pluralize', function(word, count, pluralForm) {
+                if (count === 1) return word;
+                return pluralForm || (word + 's');
+            });
+            
+            // markdown_to_html: Simple markdown conversion
+            engine.registerFilter('markdown_to_html', function(markdown) {
+                if (!markdown) return '';
+                
+                // Basic markdown conversion (extend as needed)
+                return markdown
+                    .replace(/^# (.*$)/gim, '<h1>$1</h1>')
+                    .replace(/^## (.*$)/gim, '<h2>$1</h2>')
+                    .replace(/^### (.*$)/gim, '<h3>$1</h3>')
+                    .replace(/\*\*(.*)\*\*/gim, '<strong>$1</strong>')
+                    .replace(/\*(.*)\*/gim, '<em>$1</em>')
+                    .replace(/\n/gim, '<br>');
+            });
+            
+            // append_random: Generate unique identifiers
+            engine.registerFilter('append_random', function(string) {
+                const randomSuffix = Math.random().toString(36).substring(2, 8);
+                return string + '_' + randomSuffix;
+            });
+            
+            // days_ago: Generate date X days before current
+            engine.registerFilter('days_ago', function(days) {
+                const date = new Date();
+                date.setDate(date.getDate() - parseInt(days));
+                return date.toISOString().split('T')[0];
             });
         }
 

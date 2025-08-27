@@ -530,6 +530,30 @@ func (r *PrivatePluginRenderer) RenderToClientSideHTML(opts RenderOptions) (stri
                             }
                             
                             loadScriptsSequentially(scriptUrls);
+                            
+                            // CRITICAL FIX: Execute any script tags that were inserted via innerHTML
+                            // Browsers don't execute script tags when added through innerHTML for security
+                            const scripts = outputEl.querySelectorAll('script');
+                            scripts.forEach(script => {
+                                console.log('Executing template script:', script.textContent.substring(0, 100) + '...');
+                                let scriptContent = script.textContent;
+                                
+                                // IMPORTANT: Make functions globally accessible
+                                // Convert 'const functionName =' to 'window.functionName =' 
+                                scriptContent = scriptContent.replace(/const\s+(\w+)\s*=\s*\(/g, 'window.$1 = (');
+                                
+                                const newScript = document.createElement('script');
+                                newScript.textContent = scriptContent;
+                                document.body.appendChild(newScript);
+                            });
+                            
+                            // CRITICAL: Handle DOMContentLoaded timing issue
+                            // Since DOM was already loaded when our scripts executed, any DOMContentLoaded 
+                            // event listeners in the template scripts never fired. Dispatch the event manually.
+                            setTimeout(() => {
+                                console.log('Dispatching DOMContentLoaded event for template scripts');
+                                document.dispatchEvent(new Event('DOMContentLoaded'));
+                            }, 50);
                         }
                     }
                     

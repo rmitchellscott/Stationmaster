@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/rmitchellscott/stationmaster/internal/config"
 )
 
 // ValidationResult represents the result of template validation
@@ -116,6 +118,11 @@ func (v *TemplateValidator) validateBasicLiquidSyntax(template string, templateN
 func (v *TemplateValidator) checkSecurity(template string, templateName string) ([]string, []string) {
 	var errors []string
 	var warnings []string
+
+	// Check if external scripts are allowed (development/testing mode)
+	if config.Get("ALLOW_EXTERNAL_SCRIPTS", "false") == "true" {
+		return errors, warnings // Skip all security checks when explicitly enabled
+	}
 
 	// Dangerous patterns to block
 	dangerousPatterns := map[string]string{

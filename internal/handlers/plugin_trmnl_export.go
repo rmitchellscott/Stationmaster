@@ -66,6 +66,86 @@ func (f *FlexibleHeaders) UnmarshalYAML(value *yaml.Node) error {
 	return nil
 }
 
+// FlexibleOptions can handle both simple string arrays and key-value map arrays for form field options
+type FlexibleOptions struct {
+	Options []string
+	OptionsMap map[string]string
+}
+
+// UnmarshalYAML implements custom YAML unmarshaling for FlexibleOptions
+func (f *FlexibleOptions) UnmarshalYAML(value *yaml.Node) error {
+	// Initialize empty structures
+	f.Options = nil
+	f.OptionsMap = make(map[string]string)
+	
+	// If it's an empty string or just whitespace, set to empty
+	if value.Kind == yaml.ScalarNode && strings.TrimSpace(value.Value) == "" {
+		return nil
+	}
+	
+	// If it's a sequence (array), process each item
+	if value.Kind == yaml.SequenceNode {
+		for _, item := range value.Content {
+			// If the item is a scalar (simple string)
+			if item.Kind == yaml.ScalarNode {
+				f.Options = append(f.Options, item.Value)
+			} else if item.Kind == yaml.MappingNode {
+				// If the item is a map (key-value pair)
+				var itemMap map[string]string
+				if err := item.Decode(&itemMap); err != nil {
+					return fmt.Errorf("failed to decode option map: %w", err)
+				}
+				
+				// Add each key-value pair to the options map
+				for key, value := range itemMap {
+					f.OptionsMap[key] = value
+				}
+			}
+		}
+		return nil
+	}
+	
+	// For any other case, treat as empty
+	return nil
+}
+
+// ToStringSlice converts FlexibleOptions to a simple string slice for backward compatibility
+func (f *FlexibleOptions) ToStringSlice() []string {
+	if len(f.Options) > 0 {
+		return f.Options
+	}
+	
+	// If we have a map, convert VALUES to strings (for enum field values)
+	if len(f.OptionsMap) > 0 {
+		result := make([]string, 0, len(f.OptionsMap))
+		for _, value := range f.OptionsMap {
+			result = append(result, value)
+		}
+		return result
+	}
+	
+	return nil
+}
+
+// GetDisplayNames returns the display names (keys) from the options map
+func (f *FlexibleOptions) GetDisplayNames() []string {
+	if len(f.Options) > 0 {
+		// For simple string options, display names are the same as values
+		return f.Options
+	}
+	
+	// If we have a map, return the keys (display names)
+	if len(f.OptionsMap) > 0 {
+		result := make([]string, 0, len(f.OptionsMap))
+		for key := range f.OptionsMap {
+			result = append(result, key)
+		}
+		return result
+	}
+	
+	return nil
+}
+
 // TRMNLSettings represents the structure of TRMNL's settings.yml file
 // Updated to match actual TRMNL field names and handle flexible types
 type TRMNLSettings struct {
@@ -107,13 +187,13 @@ type TRMNLFormField struct {
 	Description string      `yaml:"description,omitempty"`
 	
 	// Legacy fields for backward compatibility
-	ID          string      `yaml:"id"`
-	Type        string      `yaml:"type"`
-	Label       string      `yaml:"label"`
-	Required    bool        `yaml:"required,omitempty"`
-	Default     interface{} `yaml:"default,omitempty"`
-	Options     []string    `yaml:"options,omitempty"`
-	Placeholder string      `yaml:"placeholder,omitempty"`
+	ID          string         `yaml:"id"`
+	Type        string         `yaml:"type"`
+	Label       string         `yaml:"label"`
+	Required    bool           `yaml:"required,omitempty"`
+	Default     interface{}    `yaml:"default,omitempty"`
+	Options     FlexibleOptions `yaml:"options,omitempty"`
+	Placeholder string         `yaml:"placeholder,omitempty"`
 }
 
 // TRMNLExportService handles conversion between Stationmaster and TRMNL formats
@@ -452,7 +532,9 @@ func (s *TRMNLExportService) convertFormFieldsToTRMNL(formFieldsJSON []byte) ([]
 							options[i] = str
 						}
 					}
-					trmnlField.Options = options
+					// Set FlexibleOptions with simple string options
+					trmnlField.Options.Options = options
+					trmnlField.Options.OptionsMap = make(map[string]string)
 					trmnlField.Type = "select"
 				}
 
@@ -514,7 +596,7 @@ func (s *TRMNLExportService) convertFormFieldsFromTRMNL(trmnlFields []TRMNLFormF
 			"label", label,
 			"required", field.Required,
 			"has_default", field.Default != nil,
-			"has_options", len(field.Options) > 0)
+			"has_options", len(field.Options.ToStringSlice()) > 0)
 
 		if id == "" {
 			logging.Error("[TRMNL IMPORT] Form field missing ID/keyname", "index", i, "field", field)
@@ -545,9 +627,22 @@ func (s *TRMNLExportService) convertFormFieldsFromTRMNL(trmnlFields []TRMNLFormF
 			fieldDef["description"] = description
 		}
 
-		if field.Options != nil && len(field.Options) > 0 {
-			fieldDef["enum"] = field.Options
-			logging.Info("[TRMNL IMPORT] Added options", "field", id, "options", field.Options)
+		// Handle flexible options - convert to string slice for JSON schema
+		optionsList := field.Options.ToStringSlice()
+		displayNames := field.Options.GetDisplayNames()
+		if len(optionsList) > 0 {
+			fieldDef["enum"] = optionsList
+			
+			// Add display names if they differ from values (i.e., we have a map)
+			if len(field.Options.OptionsMap) > 0 && len(displayNames) == len(optionsList) {
+				fieldDef["enumNames"] = displayNames
+				logging.Info("[TRMNL IMPORT] Added options with display names", 
+					"field", id, 
+					"options", optionsList, 
+					"display_names", displayNames)
+			} else {
+				logging.Info("[TRMNL IMPORT] Added options", "field", id, "options", optionsList)
+			}
 		}
 
 		properties[id] = fieldDef

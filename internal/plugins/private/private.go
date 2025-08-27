@@ -151,7 +151,7 @@ func (p *PrivatePlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespon
 				errorsJSON, _ := json.Marshal(polledResult.Errors)
 				
 				pollingData := &database.PrivatePluginPollingData{
-					ID:               instanceID + "_poll_" + fmt.Sprintf("%d", time.Now().Unix()),
+					ID:               instanceID + "_polling_data",
 					PluginInstanceID: instanceID,
 					MergedData:       mergedDataJSON,
 					RawData:          rawDataJSON,
@@ -175,7 +175,7 @@ func (p *PrivatePlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespon
 				}
 				
 				pollingData := &database.PrivatePluginPollingData{
-					ID:               instanceID + "_poll_" + fmt.Sprintf("%d", time.Now().Unix()),
+					ID:               instanceID + "_polling_data",
 					PluginInstanceID: instanceID,
 					MergedData:       []byte("{}"),
 					RawData:          []byte("{}"),

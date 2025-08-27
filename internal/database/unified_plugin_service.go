@@ -26,7 +26,7 @@ func (s *UnifiedPluginService) CreatePluginDefinition(definition *PluginDefiniti
 }
 
 // GetPluginDefinitionByID retrieves a plugin definition by ID
-func (s *UnifiedPluginService) GetPluginDefinitionByID(id uuid.UUID) (*PluginDefinition, error) {
+func (s *UnifiedPluginService) GetPluginDefinitionByID(id string) (*PluginDefinition, error) {
 	var definition PluginDefinition
 	err := s.db.Preload("Owner").First(&definition, "id = ? AND is_active = ?", id, true).Error
 	if err != nil {
@@ -70,7 +70,7 @@ func (s *UnifiedPluginService) UpdatePluginDefinition(definition *PluginDefiniti
 }
 
 // DeletePluginDefinition soft deletes a plugin definition and cascades to all instances
-func (s *UnifiedPluginService) DeletePluginDefinition(id uuid.UUID, ownerID *uuid.UUID) error {
+func (s *UnifiedPluginService) DeletePluginDefinition(id string, ownerID *uuid.UUID) error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
 		// First verify the plugin definition exists and check ownership
 		var definition PluginDefinition
@@ -153,7 +153,7 @@ func (s *UnifiedPluginService) DeletePluginDefinition(id uuid.UUID, ownerID *uui
 // PluginInstance Operations
 
 // CreatePluginInstance creates a new plugin instance
-func (s *UnifiedPluginService) CreatePluginInstance(userID, definitionID uuid.UUID, name string, settings map[string]interface{}, refreshInterval int) (*PluginInstance, error) {
+func (s *UnifiedPluginService) CreatePluginInstance(userID uuid.UUID, definitionID string, name string, settings map[string]interface{}, refreshInterval int) (*PluginInstance, error) {
 	// Verify the plugin definition exists
 	definition, err := s.GetPluginDefinitionByID(definitionID)
 	if err != nil {
@@ -214,7 +214,7 @@ func (s *UnifiedPluginService) GetPluginInstancesByUser(userID uuid.UUID) ([]Plu
 }
 
 // GetPluginInstancesByDefinition retrieves all instances of a specific plugin definition
-func (s *UnifiedPluginService) GetPluginInstancesByDefinition(definitionID uuid.UUID) ([]PluginInstance, error) {
+func (s *UnifiedPluginService) GetPluginInstancesByDefinition(definitionID string) ([]PluginInstance, error) {
 	var instances []PluginInstance
 	err := s.db.Preload("User").
 		Where("plugin_definition_id = ? AND is_active = ?", definitionID, true).
@@ -404,6 +404,7 @@ func (s *UnifiedPluginService) GetPluginInstanceSettings(instanceID uuid.UUID) (
 // CreateSystemPluginDefinition creates a plugin definition for a system plugin
 func (s *UnifiedPluginService) CreateSystemPluginDefinition(identifier, name, description, configSchema, version, author string, requiresProcessing bool) (*PluginDefinition, error) {
 	definition := &PluginDefinition{
+		ID:                 identifier, // Use plugin type as the ID directly
 		PluginType:         "system",
 		OwnerID:            nil, // System plugins have no owner
 		Identifier:         identifier,
@@ -416,14 +417,14 @@ func (s *UnifiedPluginService) CreateSystemPluginDefinition(identifier, name, de
 		IsActive:           true,
 	}
 	
-	// Use ON CONFLICT to handle existing system plugins
+	// Use FirstOrCreate with ID to handle existing system plugins
 	err := s.db.FirstOrCreate(definition, PluginDefinition{
-		PluginType: "system",
-		Identifier: identifier,
+		ID: identifier,
 	}).Error
 	
 	return definition, err
 }
+
 
 
 // Statistics and Analytics

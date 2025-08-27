@@ -336,7 +336,7 @@ func (s *Schedule) BeforeCreate(tx *gorm.DB) error {
 
 // PluginDefinition represents a unified plugin definition (system, private, or public)
 type PluginDefinition struct {
-	ID         uuid.UUID  `gorm:"type:uuid;primaryKey" json:"id"`
+	ID         string     `gorm:"size:255;primaryKey" json:"id"`        // Plugin type for system plugins, UUID string for private/public
 	PluginType string     `gorm:"size:20;not null" json:"plugin_type"` // "system", "private", "public"
 	OwnerID    *uuid.UUID `gorm:"type:uuid;index" json:"owner_id"`     // NULL for system plugins, user_id for private/public
 	
@@ -382,8 +382,9 @@ type PluginDefinition struct {
 }
 
 func (pd *PluginDefinition) BeforeCreate(tx *gorm.DB) error {
-	if pd.ID == uuid.Nil {
-		pd.ID = uuid.New()
+	if pd.ID == "" {
+		// Generate UUID string for private/public plugins if no ID provided
+		pd.ID = uuid.New().String()
 	}
 	return nil
 }
@@ -392,7 +393,7 @@ func (pd *PluginDefinition) BeforeCreate(tx *gorm.DB) error {
 type PluginInstance struct {
 	ID                 uuid.UUID      `gorm:"type:uuid;primaryKey" json:"id"`
 	UserID             uuid.UUID      `gorm:"type:uuid;not null;index" json:"user_id"`
-	PluginDefinitionID uuid.UUID      `gorm:"type:uuid;not null;index" json:"plugin_definition_id"`
+	PluginDefinitionID string         `gorm:"size:255;not null;index" json:"plugin_definition_id"`
 	
 	Name            string         `gorm:"size:255;not null" json:"name"`        // User-defined name for this instance
 	Settings        datatypes.JSON `gorm:"type:text" json:"settings"`           // JSON settings specific to this instance

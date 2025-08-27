@@ -22,6 +22,7 @@ import (
 
 	// internal
 	"github.com/rmitchellscott/stationmaster/internal/auth"
+	"github.com/rmitchellscott/stationmaster/internal/bootstrap"
 	"github.com/rmitchellscott/stationmaster/internal/config"
 	"github.com/rmitchellscott/stationmaster/internal/database"
 	"github.com/rmitchellscott/stationmaster/internal/handlers"
@@ -99,6 +100,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Bootstrap system plugins into the database
+	db := database.GetDB()
+	if err := bootstrap.BootstrapSystemPlugins(db); err != nil {
+		logging.ErrorWithComponent(logging.ComponentStartup, "Failed to bootstrap system plugins", "error", err)
+		os.Exit(1)
+	}
+	logging.InfoWithComponent(logging.ComponentStartup, "System plugins bootstrapped successfully")
+
 	// Initialize OIDC if configured
 	if err := auth.InitOIDC(); err != nil {
 		logging.Error("[STARTUP] Failed to initialize OIDC", "error", err)
@@ -114,9 +123,7 @@ func main() {
 	// Initialize and start background pollers
 	pollerManager := pollers.NewManager()
 
-	// Register pollers
-	db := database.GetDB()
-	
+	// Register pollers (reuse db from bootstrap)
 	
 	// Initialize plugin factory
 	plugins.InitPluginFactory(db)

@@ -30,7 +30,7 @@ func NewPrivatePlugin(definition *database.PluginDefinition, instance *database.
 
 // Type returns the plugin type identifier based on the definition
 func (p *PrivatePlugin) Type() string {
-	return fmt.Sprintf("private_%s", p.definition.ID.String())
+	return fmt.Sprintf("private_%s", p.definition.ID)
 }
 
 // PluginType returns that this is an image plugin

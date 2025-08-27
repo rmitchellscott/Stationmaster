@@ -805,6 +805,191 @@ func RunMigrations(logPrefix string) error {
 				return nil
 			},
 		},
+		{
+			ID: "20250826_convert_plugin_definition_ids_to_string",
+			Migrate: func(tx *gorm.DB) error {
+				logging.Info("[MIGRATION] Converting plugin_definitions and plugin_instances to use string IDs")
+				
+				// Step 1: Add new string columns (idempotent)
+				if err := tx.Exec("ALTER TABLE plugin_definitions ADD COLUMN IF NOT EXISTS id_new VARCHAR(255)").Error; err != nil {
+					return fmt.Errorf("failed to add id_new column to plugin_definitions: %w", err)
+				}
+				
+				if err := tx.Exec("ALTER TABLE plugin_instances ADD COLUMN IF NOT EXISTS plugin_definition_id_new VARCHAR(255)").Error; err != nil {
+					return fmt.Errorf("failed to add plugin_definition_id_new column to plugin_instances: %w", err)
+				}
+				
+				// Step 2: Populate new string columns (only if not already populated)
+				// For system plugins, use the identifier field as the ID
+				// For private plugins, convert UUID to string
+				if err := tx.Exec(`
+					UPDATE plugin_definitions 
+					SET id_new = CASE 
+						WHEN plugin_type = 'system' THEN identifier 
+						ELSE id::text 
+					END
+					WHERE id_new IS NULL OR id_new = ''
+				`).Error; err != nil {
+					return fmt.Errorf("failed to populate id_new in plugin_definitions: %w", err)
+				}
+				
+				// Update plugin_instances to reference the new string IDs (only if not already populated)
+				if err := tx.Exec(`
+					UPDATE plugin_instances 
+					SET plugin_definition_id_new = pd.id_new
+					FROM plugin_definitions pd 
+					WHERE plugin_instances.plugin_definition_id = pd.id
+					AND (plugin_instances.plugin_definition_id_new IS NULL OR plugin_instances.plugin_definition_id_new = '')
+				`).Error; err != nil {
+					return fmt.Errorf("failed to populate plugin_definition_id_new in plugin_instances: %w", err)
+				}
+				
+				// Step 3: Drop old constraints and columns (check if they exist first)
+				// Check if old columns still exist
+				var hasOldIdColumn bool
+				tx.Raw(`
+					SELECT EXISTS (
+						SELECT 1 FROM information_schema.columns 
+						WHERE table_name = 'plugin_definitions' 
+						AND column_name = 'id' 
+						AND data_type = 'uuid'
+					)
+				`).Scan(&hasOldIdColumn)
+				
+				var hasOldFKColumn bool
+				tx.Raw(`
+					SELECT EXISTS (
+						SELECT 1 FROM information_schema.columns 
+						WHERE table_name = 'plugin_instances' 
+						AND column_name = 'plugin_definition_id' 
+						AND data_type = 'uuid'
+					)
+				`).Scan(&hasOldFKColumn)
+				
+				if hasOldIdColumn && hasOldFKColumn {
+					logging.Info("[MIGRATION] Dropping old UUID columns and constraints")
+					
+					// Find ALL foreign key constraints that reference plugin_definitions(id)
+					type constraintInfo struct {
+						TableName      string `json:"table_name"`
+						ConstraintName string `json:"constraint_name"`
+					}
+					var constraints []constraintInfo
+					
+					tx.Raw(`
+						SELECT 
+							kcu.table_name,
+							kcu.constraint_name
+						FROM information_schema.key_column_usage kcu
+						JOIN information_schema.referential_constraints rc 
+						  ON kcu.constraint_name = rc.constraint_name
+						JOIN information_schema.key_column_usage kcu2 
+						  ON rc.unique_constraint_name = kcu2.constraint_name
+						WHERE kcu2.table_name = 'plugin_definitions' 
+						  AND kcu2.column_name = 'id'
+					`).Scan(&constraints)
+					
+					logging.Info("[MIGRATION] Found foreign key constraints to drop", "count", len(constraints))
+					
+					for _, constraint := range constraints {
+						dropSQL := fmt.Sprintf("ALTER TABLE %s DROP CONSTRAINT IF EXISTS %s", constraint.TableName, constraint.ConstraintName)
+						if err := tx.Exec(dropSQL).Error; err != nil {
+							logging.Warn("[MIGRATION] Failed to drop foreign key constraint", 
+								"table", constraint.TableName, 
+								"constraint", constraint.ConstraintName, 
+								"error", err)
+						} else {
+							logging.Info("[MIGRATION] Dropped foreign key constraint", 
+								"table", constraint.TableName, 
+								"constraint", constraint.ConstraintName)
+						}
+					}
+					
+					if err := tx.Exec("DROP INDEX IF EXISTS idx_plugin_instances_plugin_definition_id").Error; err != nil {
+						logging.Warn("[MIGRATION] Failed to drop index", "error", err)
+					}
+					
+					if err := tx.Exec("ALTER TABLE plugin_definitions DROP CONSTRAINT IF EXISTS plugin_definitions_pkey").Error; err != nil {
+						return fmt.Errorf("failed to drop primary key constraint: %w", err)
+					}
+					
+					if err := tx.Exec("ALTER TABLE plugin_definitions DROP COLUMN id").Error; err != nil {
+						return fmt.Errorf("failed to drop old id column: %w", err)
+					}
+					
+					if err := tx.Exec("ALTER TABLE plugin_instances DROP COLUMN plugin_definition_id").Error; err != nil {
+						return fmt.Errorf("failed to drop old plugin_definition_id column: %w", err)
+					}
+				}
+				
+				// Step 4: Rename new columns and add constraints (check if needed first)
+				var hasNewColumns bool
+				tx.Raw(`
+					SELECT EXISTS (
+						SELECT 1 FROM information_schema.columns 
+						WHERE table_name = 'plugin_definitions' 
+						AND column_name = 'id_new'
+					)
+				`).Scan(&hasNewColumns)
+				
+				if hasNewColumns {
+					logging.Info("[MIGRATION] Renaming new columns to final names")
+					
+					if err := tx.Exec("ALTER TABLE plugin_definitions RENAME COLUMN id_new TO id").Error; err != nil {
+						return fmt.Errorf("failed to rename id_new to id: %w", err)
+					}
+					
+					if err := tx.Exec("ALTER TABLE plugin_instances RENAME COLUMN plugin_definition_id_new TO plugin_definition_id").Error; err != nil {
+						return fmt.Errorf("failed to rename plugin_definition_id_new: %w", err)
+					}
+				}
+				
+				// Step 5: Add new constraints (idempotent)
+				// Check if primary key constraint exists
+				var hasPrimaryKey bool
+				tx.Raw(`
+					SELECT EXISTS (
+						SELECT 1 FROM information_schema.table_constraints 
+						WHERE table_name = 'plugin_definitions' 
+						AND constraint_type = 'PRIMARY KEY'
+					)
+				`).Scan(&hasPrimaryKey)
+				
+				if !hasPrimaryKey {
+					if err := tx.Exec("ALTER TABLE plugin_definitions ADD CONSTRAINT plugin_definitions_pkey PRIMARY KEY (id)").Error; err != nil {
+						return fmt.Errorf("failed to add primary key constraint: %w", err)
+					}
+				}
+				
+				if err := tx.Exec("ALTER TABLE plugin_definitions ALTER COLUMN id SET NOT NULL").Error; err != nil {
+					logging.Warn("[MIGRATION] Failed to set id NOT NULL (may already be set)", "error", err)
+				}
+				
+				if err := tx.Exec("ALTER TABLE plugin_instances ALTER COLUMN plugin_definition_id SET NOT NULL").Error; err != nil {
+					logging.Warn("[MIGRATION] Failed to set plugin_definition_id NOT NULL (may already be set)", "error", err)
+				}
+				
+				// Add foreign key constraint (idempotent)
+				if err := tx.Exec("ALTER TABLE plugin_instances ADD CONSTRAINT fk_plugin_instances_plugin_definition FOREIGN KEY (plugin_definition_id) REFERENCES plugin_definitions(id)").Error; err != nil {
+					logging.Warn("[MIGRATION] Failed to add foreign key constraint (may already exist)", "error", err)
+				}
+				
+				// Add indexes (idempotent)
+				if err := tx.Exec("CREATE INDEX IF NOT EXISTS idx_plugin_instances_plugin_definition_id ON plugin_instances(plugin_definition_id)").Error; err != nil {
+					logging.Warn("[MIGRATION] Failed to create index (may already exist)", "error", err)
+				}
+				
+				logging.Info("[MIGRATION] Successfully converted plugin definition IDs to strings")
+				return nil
+			},
+			Rollback: func(tx *gorm.DB) error {
+				logging.Info("[MIGRATION] Rolling back plugin definition ID conversion")
+				
+				// This rollback is complex and data-lossy, so we'll just log a warning
+				logging.Warn("[MIGRATION] Rollback of string ID conversion is not supported - would require recreating UUIDs")
+				return nil
+			},
+		},
 	}
 
 	// Create migrator with our migrations

@@ -162,7 +162,7 @@ func (w *RenderWorker) processRenderJob(ctx context.Context, job database.Render
 	}
 
 	// Check if plugin definition was loaded correctly
-	if pluginInstance.PluginDefinition.ID == uuid.Nil {
+	if pluginInstance.PluginDefinition.ID == "" {
 		w.markJobCancelled(ctx, job, "plugin definition not found or inactive")
 		return nil
 	}

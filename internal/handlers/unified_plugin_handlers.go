@@ -92,7 +92,7 @@ func GetAvailablePluginDefinitionsHandler(c *gin.Context) {
 			instances := int(instanceCount)
 			
 			unifiedPlugin := UnifiedPluginDefinition{
-				ID:                 privatePlugin.ID.String(),
+				ID:                 privatePlugin.ID,
 				Name:               privatePlugin.Name,
 				Type:               "private",
 				PluginType:         privatePlugin.PluginType,
@@ -258,8 +258,8 @@ func GetPluginInstancesHandler(c *gin.Context) {
 			}
 
 			// Fill plugin info from PluginDefinition
-			if pluginInstance.PluginDefinition.ID != uuid.Nil {
-				instance.Plugin.ID = pluginInstance.PluginDefinition.ID.String()
+			if pluginInstance.PluginDefinition.ID != "" {
+				instance.Plugin.ID = pluginInstance.PluginDefinition.ID
 				instance.Plugin.Name = pluginInstance.PluginDefinition.Name
 				instance.Plugin.Type = pluginInstance.PluginDefinition.PluginType
 				instance.Plugin.Description = pluginInstance.PluginDefinition.Description
@@ -523,7 +523,12 @@ func CreatePluginInstanceFromDefinitionHandler(c *gin.Context) {
 	var pluginDefinition database.PluginDefinition
 	err := db.Where("id = ?", req.DefinitionID).First(&pluginDefinition).Error
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Plugin definition not found"})
+		c.JSON(http.StatusNotFound, gin.H{
+			"error":         "Plugin definition not found",
+			"definition_id": req.DefinitionID,
+			"definition_type": req.DefinitionType,
+			"details":       "The requested plugin definition does not exist in the database. This may indicate that system plugins have not been bootstrapped or the plugin ID is invalid.",
+		})
 		return
 	}
 
@@ -575,7 +580,11 @@ func ValidatePluginSettingsHandler(c *gin.Context) {
 	var pluginDefinition database.PluginDefinition
 	err := db.Where("id = ?", req.DefinitionID).First(&pluginDefinition).Error
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Plugin definition not found"})
+		c.JSON(http.StatusNotFound, gin.H{
+			"error":         "Plugin definition not found",
+			"definition_id": req.DefinitionID,
+			"details":       "The requested plugin definition does not exist in the database. Check that the plugin ID is correct and that system plugins have been bootstrapped.",
+		})
 		return
 	}
 
@@ -629,7 +638,11 @@ func GetPluginDefinitionHandler(c *gin.Context) {
 	// Only allow users to access their own private plugins or system plugins
 	err := db.Where("id = ? AND (owner_id = ? OR plugin_type = 'system')", definitionID, userID).First(&pluginDefinition).Error
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Plugin definition not found"})
+		c.JSON(http.StatusNotFound, gin.H{
+			"error":         "Plugin definition not found",
+			"definition_id": definitionID,
+			"details":       "The requested plugin definition does not exist or you don't have access to it. Check that the plugin ID is correct and that you own the private plugin or it's a system plugin.",
+		})
 		return
 	}
 
@@ -847,7 +860,11 @@ func UpdatePluginDefinitionHandler(c *gin.Context) {
 	// Only allow users to update their own private plugins
 	err = db.Where("id = ? AND owner_id = ? AND plugin_type = 'private'", definitionID, userID).First(&pluginDefinition).Error
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Plugin definition not found or access denied"})
+		c.JSON(http.StatusNotFound, gin.H{
+			"error":         "Plugin definition not found or access denied",
+			"definition_id": definitionID,
+			"details":       "The requested private plugin definition does not exist or you are not the owner. Only the plugin owner can update private plugin definitions.",
+		})
 		return
 	}
 
@@ -934,17 +951,14 @@ func DeletePluginDefinitionHandler(c *gin.Context) {
 		return
 	}
 
-	definitionID, err := uuid.Parse(definitionIDStr)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid definition ID format"})
-		return
-	}
+	// No need to parse as UUID since IDs are now strings
+	definitionID := definitionIDStr
 
 	db := database.GetDB()
 	service := database.NewUnifiedPluginService(db)
 	
 	// Use the service method which properly handles cascading deletions
-	err = service.DeletePluginDefinition(definitionID, &userID)
+	err := service.DeletePluginDefinition(definitionID, &userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete plugin definition: " + err.Error()})
 		return
@@ -1078,7 +1092,7 @@ func getPollingDataForPreview(plugin TestPlugin, formDefaults map[string]interfa
 	// Create a minimal plugin definition for the poller
 	dataStrategy := "polling"
 	pluginDefinition := &database.PluginDefinition{
-		ID:            uuid.New(),
+		ID:            uuid.New().String(),
 		Name:          plugin.Name,
 		DataStrategy:  &dataStrategy,
 		PollingConfig: pollingConfigBytes,
@@ -1483,7 +1497,7 @@ func ExportPluginDefinitionHandler(c *gin.Context) {
 	db := database.GetDB()
 
 	unifiedService := database.NewUnifiedPluginService(db)
-	def, err := unifiedService.GetPluginDefinitionByID(id)
+	def, err := unifiedService.GetPluginDefinitionByID(id.String())
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Plugin not found"})
 		return

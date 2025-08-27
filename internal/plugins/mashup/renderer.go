@@ -8,13 +8,15 @@ import (
 	"github.com/rmitchellscott/stationmaster/internal/database"
 	"github.com/rmitchellscott/stationmaster/internal/logging"
 	"github.com/rmitchellscott/stationmaster/internal/plugins"
+	"github.com/rmitchellscott/stationmaster/internal/rendering"
 )
 
 // MashupRenderer handles combining child plugin data into mashup layouts
 type MashupRenderer struct {
-	layout     string
-	childData  map[string]ChildData
-	slotConfig []database.MashupSlotInfo
+	layout       string
+	childData    map[string]ChildData
+	slotConfig   []database.MashupSlotInfo
+	baseRenderer *rendering.BaseHTMLRenderer
 }
 
 // NewMashupRenderer creates a new mashup renderer
@@ -24,9 +26,10 @@ func NewMashupRenderer(layout string, childData map[string]ChildData) *MashupRen
 	slots, _ := service.GetSlotMetadata(layout)
 	
 	return &MashupRenderer{
-		layout:     layout,
-		childData:  childData,
-		slotConfig: slots,
+		layout:       layout,
+		childData:    childData,
+		slotConfig:   slots,
+		baseRenderer: rendering.NewBaseHTMLRenderer(),
 	}
 }
 
@@ -57,310 +60,78 @@ func (r *MashupRenderer) RenderMashup(ctx plugins.PluginContext) (string, error)
 
 // generateMashupHTML creates the complete HTML document with embedded child data and templates
 func (r *MashupRenderer) generateMashupHTML(childData map[string]interface{}, childTemplates map[string]string, ctx plugins.PluginContext) string {
-	// Marshal child data and templates to JSON for JavaScript embedding
-	childDataJSON, _ := json.Marshal(childData)
-	childTemplatesJSON, _ := json.Marshal(childTemplates)
+	// Prepare mashup data for JavaScript
+	mashupData := map[string]interface{}{
+		"childData":      childData,
+		"childTemplates": childTemplates,
+		"layout":         r.layout,
+		"slotConfig":     r.slotConfig,
+	}
 	
-	// Build slot divs based on layout
-	slotDivs := r.buildSlotDivs()
+	mashupDataJSON, _ := json.Marshal(mashupData)
 	
-	// Create the complete HTML document with embedded JavaScript
-	return fmt.Sprintf(`<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Mashup</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://usetrmnl.com/css/latest/plugins.css">
-    <script src="https://cdn.jsdelivr.net/npm/liquidjs@10.10.1/dist/liquid.browser.umd.js"></script>
-    <!-- TRMNL Scripts for core functionality, filters, and rendering -->
-    <script src="https://usetrmnl.com/js/latest/plugins.js"></script>
-    <script src="https://usetrmnl.com/assets/plugin-bfbd7e9488fd0d6dff2f619b5cb963c0772a24d6d0b537f60089dc53aa4746ff.js"></script>
-    <script src="https://usetrmnl.com/assets/plugin_legacy-0c72702a185603fd7fc5eb915658f49486903cb5c92cd6153a336b8ce3973452.js"></script>
-    <script src="https://usetrmnl.com/assets/plugin_demo-25268352c5a400b970985521a5eaa3dc90c736ce0cbf42d749e7e253f0c227f5.js"></script>
-    <script src="https://usetrmnl.com/assets/plugin-render/plugins-332ca4207dd02576b3641691907cb829ef52a36c4a092a75324a8fc860906967.js"></script>
-    <script src="https://usetrmnl.com/assets/plugin-render/plugins_legacy-a6b0b3aeac32ca71413f1febc053c59a528d4c6bb2173c22bd94ff8e0b9650f1.js"></script>
-    <script src="https://usetrmnl.com/assets/plugin-render/dithering-d697f6229e3bd6e2455425d647e5395bb608999c2039a9837a903c7c7e952d61.js"></script>
-    <script src="https://usetrmnl.com/assets/plugin-render/asset-deduplication-39fa2231b7a5bd5bedf4a1782b6a95d8b87eb3aaaa5e2b6cee287133d858bc96.js"></script>
-    <style>
-        body { 
-            width: %dpx; 
-            height: %dpx; 
-            margin: 0; 
-            padding: 0;
-        }
-        .mashup-error {
-            padding: 10px;
-            background: #fee;
-            border: 1px solid #fcc;
-            color: #c00;
-            font-family: monospace;
-            font-size: 12px;
-        }
-        .mashup-empty-slot {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            height: 100%%;
-            background: #f5f5f5;
-            border: 2px dashed #ccc;
-            color: #999;
-        }
-    </style>
-</head>
-<body>
-    <div class="environment trmnl">
-        <div class="screen">
-            <div class="mashup mashup--%s">
-                %s
-            </div>
-        </div>
-    </div>
-
-    <script>
-        // Child data and templates for client-side processing
-        const childData = %s;
-        const childTemplates = %s;
-        const mashupLayout = "%s";
-
-        // TRMNL Compatibility Layer Functions
-        function preprocessTRNMLTemplate(template) {
-            // Only convert TRMNL's alternative syntax at the START of Liquid expressions
-            let processed = template;
-            
-            // Pattern 1: {{ var: filter, param }} → {{ var | filter: param }}
-            processed = processed.replace(/\{\{\s*([^|}]+?):\s*([^,\s]+)\s*,\s*([^}]+?)\s*\}\}/g, '{{ $1 | $2: $3 }}');
-            
-            // Pattern 2: {{ var: filter }} → {{ var | filter }}  
-            processed = processed.replace(/\{\{\s*([^|}]+?):\s*([^}\s]+)\s*\}\}/g, '{{ $1 | $2 }}');
-            
-            return processed;
-        }
+	// Generate base HTML options
+	baseOpts := rendering.BaseHTMLOptions{
+		Width:              ctx.Device.DeviceModel.ScreenWidth,
+		Height:             ctx.Device.DeviceModel.ScreenHeight,
+		Title:              "Mashup",
+		RemoveBleedMargin:  false,
+		EnableDarkMode:     false,
+		ScriptLoadStrategy: rendering.ScriptLoadSequential,
+	}
+	
+	// Mashup-specific JavaScript
+	mashupJS := `
+        console.log('Mashup JavaScript loaded');
         
-        function convertStrftimeToIntlOptions(format) {
-            const options = {};
+        // Define the function BEFORE the LiquidJS script loads (same pattern as private plugins)
+        async function initializeLiquid() {
+            console.log('initializeLiquid called - starting mashup rendering');
+            // Remove the immediate return to actually process templates
             
-            // Common strftime patterns
-            if (format.includes('%%Y')) options.year = 'numeric';
-            if (format.includes('%%y')) options.year = '2-digit';
-            if (format.includes('%%m')) options.month = '2-digit';
-            if (format.includes('%%B')) options.month = 'long';
-            if (format.includes('%%b')) options.month = 'short';
-            if (format.includes('%%d')) options.day = '2-digit';
-            if (format.includes('%%H')) options.hour = '2-digit';
-            if (format.includes('%%M')) options.minute = '2-digit';
-            if (format.includes('%%S')) options.second = '2-digit';
-            
-            return options;
-        }
+            // Use liquidjs constructor (we know this exists)
+            const engine = new liquidjs.Liquid();
 
-        function registerTRNMLFilters(engine) {
-            // l_date: Localized date formatting
-            engine.registerFilter('l_date', function(dateValue, format, locale) {
-                if (!dateValue) return '';
-                
-                if (!locale && this.context) {
-                    locale = this.context.get(['trmnl', 'user', 'locale']) || 'en';
-                }
-                
-                try {
-                    const date = new Date(dateValue);
-                    if (isNaN(date.getTime())) return dateValue;
-                    
-                    const options = convertStrftimeToIntlOptions(format || '%%Y-%%m-%%d');
-                    return new Intl.DateTimeFormat(locale, options).format(date);
-                } catch (e) {
-                    console.warn('l_date filter error:', e);
-                    return dateValue;
-                }
-            });
-            
-            // json: Convert to JSON
-            engine.registerFilter('json', function(value) {
-                try {
-                    return JSON.stringify(value, null, 2);
-                } catch (e) {
-                    return String(value);
-                }
-            });
-            
-            // parse_json: Parse JSON strings
-            engine.registerFilter('parse_json', function(jsonString) {
-                try {
-                    return JSON.parse(jsonString);
-                } catch (e) {
-                    console.warn('parse_json filter error:', e);
-                    return jsonString;
-                }
-            });
-            
-            // group_by: Group array by key
-            engine.registerFilter('group_by', function(array, key) {
-                if (!Array.isArray(array)) return array;
-                
-                const grouped = {};
-                array.forEach(item => {
-                    const groupKey = item[key] || 'undefined';
-                    if (!grouped[groupKey]) grouped[groupKey] = [];
-                    grouped[groupKey].push(item);
-                });
-                
-                return Object.keys(grouped).map(k => ({
-                    name: k,
-                    items: grouped[k],
-                    size: grouped[k].length
-                }));
-            });
-            
-            // find_by: Find array item by key/value
-            engine.registerFilter('find_by', function(array, key, value) {
-                if (!Array.isArray(array)) return null;
-                return array.find(item => item[key] === value) || null;
-            });
-            
-            // sample: Random array selection
-            engine.registerFilter('sample', function(array) {
-                if (!Array.isArray(array) || array.length === 0) return null;
-                return array[Math.floor(Math.random() * array.length)];
-            });
-            
-            // number_with_delimiter: Format numbers with delimiters
-            engine.registerFilter('number_with_delimiter', function(number, delimiter) {
-                if (isNaN(number)) return number;
-                const delim = delimiter || ',';
-                return Number(number).toLocaleString().replace(/,/g, delim);
-            });
-            
-            // number_to_currency: Convert to localized currency
-            engine.registerFilter('number_to_currency', function(number, currency, locale) {
-                if (isNaN(number)) return number;
-                
-                if (!locale && this.context) {
-                    locale = this.context.get(['trmnl', 'user', 'locale']) || 'en-US';
-                }
-                
-                const options = {
-                    style: 'currency',
-                    currency: currency || 'USD'
-                };
-                
-                try {
-                    return new Intl.NumberFormat(locale, options).format(number);
-                } catch (e) {
-                    return currency + ' ' + number;
-                }
-            });
-            
-            // pluralize: Word inflection based on count
-            engine.registerFilter('pluralize', function(word, count, pluralForm) {
-                if (count === 1) return word;
-                return pluralForm || (word + 's');
-            });
-            
-            // markdown_to_html: Simple markdown conversion
-            engine.registerFilter('markdown_to_html', function(markdown) {
-                if (!markdown) return '';
-                
-                // Basic markdown conversion (extend as needed)
-                return markdown
-                    .replace(/^# (.*$)/gim, '<h1>$1</h1>')
-                    .replace(/^## (.*$)/gim, '<h2>$1</h2>')
-                    .replace(/^### (.*$)/gim, '<h3>$1</h3>')
-                    .replace(/\*\*(.*)\*\*/gim, '<strong>$1</strong>')
-                    .replace(/\*(.*)\*/gim, '<em>$1</em>')
-                    .replace(/\n/gim, '<br>');
-            });
-            
-            // append_random: Generate unique identifiers
-            engine.registerFilter('append_random', function(string) {
-                const randomSuffix = Math.random().toString(36).substring(2, 8);
-                return string + '_' + randomSuffix;
-            });
-            
-            // days_ago: Generate date X days before current
-            engine.registerFilter('days_ago', function(days) {
-                const date = new Date();
-                date.setDate(date.getDate() - parseInt(days));
-                return date.toISOString().split('T')[0];
-            });
-        }
-
-        function enhanceViewClasses(template) {
-            // Process double quotes
-            template = template.replace(/class="([^"]*\bview\b[^"]*)"/g, function(match, classContent) {
-                // Check if already has layout modifiers
-                if (classContent.includes('view--full') || 
-                    classContent.includes('view--half') || 
-                    classContent.includes('view--quadrant')) {
-                    return match;
-                }
-                
-                // Replace standalone 'view' with 'view view--full'
-                const enhancedClasses = classContent.replace(/\bview\b/g, 'view view--full');
-                return 'class="' + enhancedClasses + '"';
-            });
-            
-            // Process single quotes
-            template = template.replace(/class='([^']*\bview\b[^']*)'/g, function(match, classContent) {
-                if (classContent.includes('view--full') || 
-                    classContent.includes('view--half') || 
-                    classContent.includes('view--quadrant')) {
-                    return match;
-                }
-                
-                const enhancedClasses = classContent.replace(/\bview\b/g, 'view view--full');
-                return "class='" + enhancedClasses + "'";
-            });
-            
-            return template;
-        }
-
-        function handleDitheringTiming() {
-            // Check if window.load already fired and handle dithering timing
-            if (document.readyState === 'complete') {
-                // Page already loaded, manually trigger dithering
-                if (typeof window.setup === 'function') {
-                    console.log('Triggering dithering via window.setup()');
-                    window.setup();
-                } else {
-                    // Fallback: dispatch load event to trigger dithering
-                    console.log('Triggering dithering via window load event');
-                    window.dispatchEvent(new Event('load'));
-                }
-            } else {
-                // Wait for page to fully load
-                window.addEventListener('load', function() {
-                    console.log('Page loaded, triggering dithering');
-                    if (typeof window.setup === 'function') {
-                        window.setup();
-                    }
-                });
-            }
-        }
-
-        // Initialize LiquidJS engine
-        const { Liquid } = window.liquidjs;
-        const engine = new Liquid();
-
-        // Register TRMNL custom filters
-        registerTRNMLFilters(engine);
-
-        // Set a timeout fallback in case anything fails
-        setTimeout(() => {
-            if (document.body && !document.body.hasAttribute('data-render-complete')) {
-                console.log('Fallback: Setting completion signal after timeout');
-                document.body.setAttribute('data-render-complete', 'true');
-            }
-        }, 3000);
-
-        // Process each child template with its data
-        document.addEventListener('DOMContentLoaded', async function() {
+            // Register TRMNL custom filters
+            registerTRNMLFilters(engine);
             console.log('Starting mashup template processing...');
             
+            // First, create the mashup container structure in the output div
+            const outputEl = document.getElementById('output');
+            if (!outputEl) {
+                console.error('Output element not found');
+                signalRenderingComplete();
+                return;
+            }
+            
+            // Create mashup structure with slots
+            let slotHTML = '';
+            const slotConfig = renderData.slotConfig || [];
+            for (const slot of slotConfig) {
+                slotHTML += '<div id="slot-' + slot.position + '" class="view ' + slot.view_class + '">' +
+                           '<div class="mashup-loading">Loading ' + slot.display_name + '...</div>' +
+                           '</div>';
+            }
+            
+            outputEl.innerHTML = '<div class="environment trmnl">' +
+                                '<div class="screen">' +
+                                '<div class="mashup mashup--' + renderData.layout + '">' +
+                                slotHTML +
+                                '</div>' +
+                                '</div>' +
+                                '</div>';
+            
+            // Show the output div
+            outputEl.style.display = 'block';
+            document.getElementById('loading').style.display = 'none';
+            
             try {
+                console.log('renderData:', renderData);
+                const childData = renderData.childData;
+                const childTemplates = renderData.childTemplates;
+                console.log('childData:', childData);
+                console.log('childTemplates:', childTemplates);
+                
                 for (const [slot, template] of Object.entries(childTemplates)) {
                     console.log('Processing slot:', slot);
                     const slotElement = document.getElementById('slot-' + slot);
@@ -385,6 +156,9 @@ func (r *MashupRenderer) generateMashupHTML(childData map[string]interface{}, ch
                                 const enhancedHTML = enhanceViewClasses(html);
                                 
                                 slotElement.innerHTML = enhancedHTML;
+                                
+                                // Execute any scripts in the rendered content
+                                executeInnerHTMLScripts(slotElement);
                             }
                         } catch (error) {
                             console.error('Failed to render slot ' + slot + ':', error);
@@ -397,33 +171,30 @@ func (r *MashupRenderer) generateMashupHTML(childData map[string]interface{}, ch
                 
                 console.log('Mashup template processing complete');
                 
-                // Trigger dithering after all templates are processed
-                setTimeout(() => {
-                    handleDitheringTiming();
+                // Load TRMNL scripts (including dithering) then trigger dithering
+                loadTRNMLScriptsSequentially(() => {
+                    console.log('TRMNL scripts loaded, triggering dithering');
                     
-                    // Set completion signal after dithering
+                    // Now handleDitheringTiming will work since scripts are loaded
+                    // handleDitheringTiming is called automatically by loadTRNMLScriptsSequentially
+                    
+                    // Signal completion after dithering
                     setTimeout(() => {
-                        console.log('Setting render completion signal');
-                        document.body.setAttribute('data-render-complete', 'true');
+                        console.log('Mashup processing complete, signaling completion');
+                        signalRenderingComplete();
                     }, 200);
-                }, 100);
+                });
                 
             } catch (error) {
                 console.error('Error during mashup processing:', error);
                 // Always set completion signal even if there are errors
                 document.body.setAttribute('data-render-complete', 'true');
             }
-        });
-    </script>
-</body>
-</html>`,
-		ctx.Device.DeviceModel.ScreenWidth,
-		ctx.Device.DeviceModel.ScreenHeight,
-		r.layout,
-		slotDivs,
-		string(childDataJSON),
-		string(childTemplatesJSON),
-		r.layout)
+        }
+	`
+	
+	// Generate HTML using the base renderer (pass empty content like private plugins)
+	return r.baseRenderer.GenerateHTML(baseOpts, "", mashupDataJSON, mashupJS)
 }
 
 // buildSlotDivs creates the slot div structure based on layout configuration

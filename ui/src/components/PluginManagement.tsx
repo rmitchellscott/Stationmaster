@@ -74,7 +74,9 @@ import { PrivatePluginList } from "./PrivatePluginList";
 import { PluginPreview } from "./PluginPreview";
 import { LiquidEditor } from "./LiquidEditor";
 import { PrivatePluginHelp } from "./PrivatePluginHelp";
-import { MashupCreator } from "./MashupCreator";
+import { AddPluginDropdown } from "./AddPluginDropdown";
+import { MashupSlotGrid } from "./MashupSlotGrid";
+import { MashupLayout, MashupSlotInfo, AvailablePluginInstance, mashupService } from "@/services/mashupService";
 
 interface Plugin {
   id: string;
@@ -195,11 +197,19 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
   // Pending edit state for handling navigation timing issues
   const [pendingEditInstanceId, setPendingEditInstanceId] = useState<string | null>(null);
 
-  // Mashup creator state
-  const [showMashupCreator, setShowMashupCreator] = useState(false);
+
+  // Add plugin dialog mode state
+  const [creationMode, setCreationMode] = useState<'plugin' | 'mashup'>('plugin');
+  const [selectedMashupLayout, setSelectedMashupLayout] = useState<MashupLayout | null>(null);
+  
+  // Mashup creation state
+  const [mashupSlots, setMashupSlots] = useState<MashupSlotInfo[]>([]);
+  const [availablePluginInstances, setAvailablePluginInstances] = useState<AvailablePluginInstance[]>([]);
+  const [mashupAssignments, setMashupAssignments] = useState<Record<string, string>>({});
+  const [mashupDescription, setMashupDescription] = useState("");
 
   // Get active subtab from URL query parameters
-  const activeTab = (searchParams.get('subtab') as 'instances' | 'private' | 'mashup') || 'instances';
+  const activeTab = (searchParams.get('subtab') as 'instances' | 'private') || 'instances';
 
   // Handle subtab change by updating URL query parameters
   const handleSubTabChange = (subtab: string) => {
@@ -274,6 +284,22 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
     }
   };
 
+  const loadMashupData = async (layout: MashupLayout) => {
+    try {
+      const [slotsData, availablePlugins] = await Promise.all([
+        mashupService.getLayoutSlots(layout.id),
+        mashupService.getAvailablePluginInstances()
+      ]);
+      
+      setMashupSlots(slotsData.slots);
+      setAvailablePluginInstances(availablePlugins);
+      setMashupAssignments({});
+    } catch (error) {
+      console.error("Failed to load mashup data:", error);
+      setCreateDialogError("Failed to load mashup configuration");
+    }
+  };
+
   const makeFriendlyError = (errorMessage: string) => {
     return errorMessage
       .replace(/image_url/g, 'Image URL')
@@ -281,7 +307,80 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
       .replace(/validation failed: /, '');
   };
 
+  const createMashupInstance = async () => {
+    if (!selectedMashupLayout || !instanceName.trim()) {
+      setCreateDialogError("Please provide a name for the mashup instance");
+      return;
+    }
+
+    try {
+      setCreateLoading(true);
+      setCreateDialogError(null);
+
+      // Create the mashup definition
+      const mashupResponse = await mashupService.createMashup({
+        name: instanceName.trim(),
+        description: mashupDescription.trim() || undefined,
+        layout: selectedMashupLayout.id,
+      });
+
+      if (!mashupResponse || !mashupResponse.mashup || !mashupResponse.mashup.id) {
+        throw new Error('Invalid response from mashup creation - missing mashup ID');
+      }
+
+      const mashupDefinitionId = mashupResponse.mashup.id;
+
+      // Create a plugin instance from the definition
+      const instanceResponse = await fetch("/api/plugin-instances", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+        body: JSON.stringify({
+          definition_id: mashupDefinitionId,
+          definition_type: "private",
+          name: instanceName.trim(),
+          settings: {},
+          refresh_interval: 3600, // Default 1 hour, will be updated based on children
+        }),
+      });
+
+      if (!instanceResponse.ok) {
+        const errorData = await instanceResponse.json();
+        throw new Error(`Failed to create mashup instance: ${errorData.error || instanceResponse.statusText}`);
+      }
+
+      const instanceData = await instanceResponse.json();
+      if (!instanceData || !instanceData.instance || !instanceData.instance.id) {
+        throw new Error('Invalid response from instance creation - missing instance ID');
+      }
+
+      const mashupInstanceId = instanceData.instance.id;
+
+      // Assign children if any
+      if (Object.keys(mashupAssignments).length > 0) {
+        await mashupService.assignChildren(mashupInstanceId, mashupAssignments);
+      }
+
+      setSuccessMessage("Mashup created successfully!");
+      setShowAddDialog(false);
+      resetAddDialogState();
+      await fetchPluginInstances();
+      onUpdate?.();
+
+    } catch (error) {
+      setCreateDialogError(error instanceof Error ? error.message : "Failed to create mashup");
+    } finally {
+      setCreateLoading(false);
+    }
+  };
+
   const createPluginInstance = async () => {
+    if (creationMode === 'mashup') {
+      return createMashupInstance();
+    }
+
     if (!selectedPlugin || !instanceName.trim()) {
       setCreateDialogError("Please provide a name for the plugin instance");
       return;
@@ -315,11 +414,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
       if (response.ok) {
         setSuccessMessage("Plugin instance created successfully!");
         setShowAddDialog(false);
-        setSelectedPlugin(null);
-        setInstanceName("");
-        setInstanceSettings({});
-        setInstanceRefreshRate(86400);
-        setCreateDialogError(null);
+        resetAddDialogState();
         await fetchPluginInstances();
         onUpdate?.();
       } else {
@@ -332,6 +427,31 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
     } finally {
       setCreateLoading(false);
     }
+  };
+
+  // Validation function to check for unassigned mashup slots
+  const hasUnassignedSlots = () => {
+    if (creationMode !== 'mashup' || !mashupSlots.length) return false;
+    
+    // Check if any slot is unassigned (empty or "__none__")
+    return mashupSlots.some(slot => {
+      const assignment = mashupAssignments[slot.position];
+      return !assignment || assignment === "__none__";
+    });
+  };
+
+  const resetAddDialogState = () => {
+    setSelectedPlugin(null);
+    setInstanceName("");
+    setInstanceSettings({});
+    setInstanceRefreshRate(86400);
+    setCreateDialogError(null);
+    setCreationMode('plugin');
+    setSelectedMashupLayout(null);
+    setMashupSlots([]);
+    setAvailablePluginInstances([]);
+    setMashupAssignments({});
+    setMashupDescription("");
   };
 
   const hasPluginInstanceChanges = () => {
@@ -483,6 +603,13 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
     fetchPlugins();
     fetchRefreshRateOptions();
   }, [selectedDeviceId]);
+
+  // Load mashup data when mashup layout is selected
+  useEffect(() => {
+    if (creationMode === 'mashup' && selectedMashupLayout) {
+      loadMashupData(selectedMashupLayout);
+    }
+  }, [creationMode, selectedMashupLayout]);
 
   useEffect(() => {
     if (successMessage) {
@@ -650,17 +777,6 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
     setPreviewingPrivatePlugin(plugin);
   };
 
-  // Mashup handlers
-  const handleCreateMashup = () => {
-    setShowMashupCreator(true);
-  };
-
-  const handleMashupCreated = (mashupInstanceId: string) => {
-    // Refresh plugin instances to show the new mashup
-    fetchPluginInstances();
-    setSuccessMessage("Mashup created successfully!");
-    setTimeout(() => setSuccessMessage(null), 3000);
-  };
 
   // Helper function to check if a plugin has configuration fields
   const hasConfigurationFields = (plugin: Plugin): boolean => {
@@ -958,7 +1074,6 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
         <TabsList>
           <TabsTrigger value="instances">Plugin Instances</TabsTrigger>
           <TabsTrigger value="private">Private Plugins</TabsTrigger>
-          <TabsTrigger value="mashup">Mashups</TabsTrigger>
         </TabsList>
 
         <TabsContent value="instances" className="space-y-4">
@@ -969,9 +1084,18 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                 Manage your plugin instances for the selected device
               </p>
             </div>
-            <Button onClick={() => setShowAddDialog(true)}>
-              Add Plugin Instance
-            </Button>
+            <AddPluginDropdown
+              onPluginSelect={() => {
+                setCreationMode('plugin');
+                setSelectedMashupLayout(null);
+                setShowAddDialog(true);
+              }}
+              onMashupSelect={(layout) => {
+                setCreationMode('mashup');
+                setSelectedMashupLayout(layout);
+                setShowAddDialog(true);
+              }}
+            />
           </div>
 
           {loading ? (
@@ -986,9 +1110,18 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
             <p className="text-muted-foreground mb-4">
               Create plugin instances to display content on your device.
             </p>
-            <Button onClick={() => setShowAddDialog(true)}>
-              Add Your First Plugin
-            </Button>
+            <AddPluginDropdown
+              onPluginSelect={() => {
+                setCreationMode('plugin');
+                setSelectedMashupLayout(null);
+                setShowAddDialog(true);
+              }}
+              onMashupSelect={(layout) => {
+                setCreationMode('mashup');
+                setSelectedMashupLayout(layout);
+                setShowAddDialog(true);
+              }}
+            />
           </CardContent>
         </Card>
       ) : (
@@ -1078,7 +1211,9 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                       <div>
                         <div>{userPlugin.name}</div>
                         <div className="text-sm lg:hidden flex items-center gap-2">
-                          <span className="text-muted-foreground">{userPlugin.plugin?.name || "Unknown Plugin"}</span>
+                          <span className="text-muted-foreground">
+                            {userPlugin.plugin?.type === "mashup" ? "Mashup" : (userPlugin.plugin?.name || "Unknown Plugin")}
+                          </span>
                           {userPlugin.needs_config_update ? (
                             <Badge 
                               variant="destructive" 
@@ -1124,7 +1259,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                     </TableCell>
                     <TableCell className="hidden lg:table-cell">
                       <div>
-                        {userPlugin.plugin?.name || "Unknown Plugin"}
+                        {userPlugin.plugin?.type === "mashup" ? "Mashup" : (userPlugin.plugin?.name || "Unknown Plugin")}
                       </div>
                     </TableCell>
                     <TableCell className="hidden md:table-cell">
@@ -1252,7 +1387,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
       <Dialog open={showAddDialog} onOpenChange={(open) => {
         setShowAddDialog(open);
         if (!open) {
-          setCreateDialogError(null);
+          resetAddDialogState();
         }
       }}>
         <DialogContent 
@@ -1260,9 +1395,14 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
           onOpenAutoFocus={(e) => e.preventDefault()}
         >
           <DialogHeader className="pb-3">
-            <DialogTitle>Add Plugin Instance</DialogTitle>
+            <DialogTitle>
+              {creationMode === 'mashup' ? 'Create Mashup' : 'Add Plugin Instance'}
+            </DialogTitle>
             <DialogDescription>
-              {selectedPlugin ? `Configure your ${selectedPlugin.name} instance` : "Select a plugin to create an instance for your device"}
+              {creationMode === 'mashup' 
+                ? `Create a mashup using the ${selectedMashupLayout?.name} layout`
+                : (selectedPlugin ? `Configure your ${selectedPlugin.name} instance` : "Select a plugin to create an instance for your device")
+              }
             </DialogDescription>
           </DialogHeader>
 
@@ -1274,8 +1414,97 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                   <AlertDescription>{createDialogError}</AlertDescription>
                 </Alert>
               )}
-              
-              {!selectedPlugin ? (
+
+              {creationMode === 'mashup' && selectedMashupLayout ? (
+                <>
+                  {/* Show selected mashup layout */}
+                  <div className="mb-4">
+                    <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
+                      <div className="flex items-center justify-center">
+                        {(() => {
+                          // Reuse the layout grid function from AddPluginDropdown
+                          const baseClasses = "border border-dashed border-muted-foreground/30 rounded text-xs flex items-center justify-center text-muted-foreground/60 font-medium";
+                          switch (selectedMashupLayout.id) {
+                            case "1Lx1R":
+                              return (
+                                <div className="grid grid-cols-2 gap-1 h-12 w-16">
+                                  <div className={`${baseClasses} bg-muted/20`}>L</div>
+                                  <div className={`${baseClasses} bg-muted/20`}>R</div>
+                                </div>
+                              );
+                            case "1Tx1B":
+                              return (
+                                <div className="grid grid-rows-2 gap-1 h-12 w-16">
+                                  <div className={`${baseClasses} bg-muted/20`}>T</div>
+                                  <div className={`${baseClasses} bg-muted/20`}>B</div>
+                                </div>
+                              );
+                            case "2x2":
+                              return (
+                                <div className="grid grid-cols-2 grid-rows-2 gap-1 h-12 w-16">
+                                  <div className={`${baseClasses} bg-muted/20`}>Q1</div>
+                                  <div className={`${baseClasses} bg-muted/20`}>Q2</div>
+                                  <div className={`${baseClasses} bg-muted/20`}>Q3</div>
+                                  <div className={`${baseClasses} bg-muted/20`}>Q4</div>
+                                </div>
+                              );
+                            // Add other layouts as needed
+                            default:
+                              return <div className={`${baseClasses} h-12 w-16 bg-muted/20`}>Layout</div>;
+                          }
+                        })()}
+                      </div>
+                      <div className="flex-1">
+                        <div className="font-semibold text-sm">{selectedMashupLayout.name}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {selectedMashupLayout.description} • {selectedMashupLayout.slots} slots
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Mashup instance name */}
+                  <div>
+                    <Label htmlFor="mashup-instanceName" className="text-sm">Mashup Name</Label>
+                    <Input
+                      id="mashup-instanceName"
+                      placeholder={`My ${selectedMashupLayout.name} Mashup`}
+                      value={instanceName}
+                      onChange={(e) => setInstanceName(e.target.value)}
+                      className="mt-1"
+                    />
+                  </div>
+
+                  {/* Optional description */}
+                  <div>
+                    <Label htmlFor="mashup-description" className="text-sm">Description (Optional)</Label>
+                    <Textarea
+                      id="mashup-description"
+                      placeholder="Describe what this mashup displays..."
+                      value={mashupDescription}
+                      onChange={(e) => setMashupDescription(e.target.value)}
+                      className="mt-1"
+                      rows={2}
+                    />
+                  </div>
+
+                  {/* Slot assignments */}
+                  {mashupSlots.length > 0 && (
+                    <div>
+                      <Label className="text-sm">Plugin Assignments</Label>
+                      <div className="mt-2">
+                        <MashupSlotGrid
+                          layout={selectedMashupLayout.id}
+                          slots={mashupSlots}
+                          availablePlugins={availablePluginInstances}
+                          assignments={mashupAssignments}
+                          onAssignmentsChange={setMashupAssignments}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : creationMode === 'plugin' && !selectedPlugin ? (
                 <div>
                   <div className="mb-3">
                     <Label className="text-base font-semibold">Available Plugins</Label>
@@ -1370,11 +1599,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                       variant="ghost"
                       size="sm"
                       onClick={() => {
-                        setSelectedPlugin(null);
-                        setInstanceName("");
-                        setInstanceSettings({});
-                        setInstanceRefreshRate(86400);
-                        setCreateDialogError(null);
+                        resetAddDialogState();
                       }}
                       className="mb-2"
                     >
@@ -1442,21 +1667,24 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
               variant="outline"
               onClick={() => {
                 setShowAddDialog(false);
-                setSelectedPlugin(null);
-                setInstanceName("");
-                setInstanceSettings({});
-                setInstanceRefreshRate(86400);
-                setCreateDialogError(null);
+                resetAddDialogState();
               }}
             >
               Cancel
             </Button>
-            {selectedPlugin && (
+            {(selectedPlugin || (creationMode === 'mashup' && selectedMashupLayout)) && (
               <Button
                 onClick={createPluginInstance}
-                disabled={!instanceName.trim() || createLoading}
+                disabled={
+                  !instanceName.trim() || 
+                  createLoading || 
+                  (creationMode === 'mashup' && hasUnassignedSlots())
+                }
               >
-                {createLoading ? "Creating..." : "Create Instance"}
+                {createLoading 
+                  ? (creationMode === 'mashup' ? "Creating Mashup..." : "Creating Instance...") 
+                  : (creationMode === 'mashup' ? "Create Mashup" : "Create Instance")
+                }
               </Button>
             )}
           </DialogFooter>
@@ -1677,126 +1905,6 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
           />
         </TabsContent>
 
-        <TabsContent value="mashup" className="space-y-4">
-          <div className="flex justify-between items-center">
-            <div>
-              <h4 className="font-semibold">Mashup Plugins</h4>
-              <p className="text-sm text-muted-foreground">
-                Create and manage mashups that combine multiple private plugins
-              </p>
-            </div>
-            <Button onClick={handleCreateMashup}>
-              <Layers className="w-4 h-4 mr-2" />
-              Create Mashup
-            </Button>
-          </div>
-
-          {/* Display mashup plugin instances */}
-          <div className="space-y-4">
-            {pluginInstances.filter(instance => instance.plugin?.type === "mashup").length === 0 ? (
-              <Card className="text-center py-8">
-                <CardContent className="space-y-4">
-                  <Layers className="w-12 h-12 mx-auto text-muted-foreground" />
-                  <div>
-                    <h3 className="text-lg font-semibold">No mashups yet</h3>
-                    <p className="text-muted-foreground">
-                      Create your first mashup to combine multiple private plugins into a single layout
-                    </p>
-                  </div>
-                  <Button onClick={handleCreateMashup}>
-                    <Layers className="w-4 h-4 mr-2" />
-                    Create Your First Mashup
-                  </Button>
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="grid gap-4">
-                {pluginInstances
-                  .filter(instance => instance.plugin?.type === "mashup")
-                  .map((instance) => (
-                    <Card key={instance.id} className="hover:shadow-sm transition-shadow">
-                      <CardHeader className="pb-3">
-                        <div className="flex items-start justify-between">
-                          <div className="flex items-center gap-3">
-                            <div className="p-2 rounded-lg bg-primary/10">
-                              <Layers className="w-5 h-5 text-primary" />
-                            </div>
-                            <div>
-                              <CardTitle className="text-base font-semibold">
-                                {instance.name}
-                              </CardTitle>
-                              <div className="flex items-center gap-2 mt-1">
-                                <Badge variant="secondary" className="text-xs">
-                                  Mashup
-                                </Badge>
-                                <span className="text-xs text-muted-foreground">
-                                  Layout: {instance.plugin?.data_strategy || "Unknown"}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => {
-                                    setEditPluginInstance(instance);
-                                    setEditInstanceName(instance.name);
-                                    setEditInstanceSettings(JSON.parse(instance.settings || "{}"));
-                                    setEditInstanceRefreshRate(instance.refresh_interval);
-                                    setShowEditDialog(true);
-                                  }}
-                                >
-                                  <Edit className="w-4 h-4" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>Edit mashup</TooltipContent>
-                            </Tooltip>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => setDeletePluginDialog({ isOpen: true, plugin: instance })}
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>Delete mashup</TooltipContent>
-                            </Tooltip>
-                          </div>
-                        </div>
-                      </CardHeader>
-                      <CardContent className="pt-0">
-                        <div className="flex items-center justify-between text-sm text-muted-foreground">
-                          <div className="flex items-center gap-4">
-                            <span>
-                              Refresh: {instance.refresh_interval >= 3600 
-                                ? `${Math.floor(instance.refresh_interval / 3600)}h` 
-                                : instance.refresh_interval >= 60
-                                ? `${Math.floor(instance.refresh_interval / 60)}m`
-                                : `${instance.refresh_interval}s`}
-                            </span>
-                            <span className={instance.is_active ? "text-green-600" : "text-red-600"}>
-                              {instance.is_active ? "Active" : "Inactive"}
-                            </span>
-                          </div>
-                          {instance.is_used_in_playlists && (
-                            <Badge variant="outline" className="text-xs">
-                              <PlayCircle className="w-3 h-3 mr-1" />
-                              In Playlist
-                            </Badge>
-                          )}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-              </div>
-            )}
-          </div>
-        </TabsContent>
       </Tabs>
 
 
@@ -1809,12 +1917,6 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
         />
       )} */}
 
-      {/* Mashup Creator Dialog */}
-      <MashupCreator
-        open={showMashupCreator}
-        onClose={() => setShowMashupCreator(false)}
-        onSuccess={handleMashupCreated}
-      />
     </div>
   );
 }

@@ -16,13 +16,13 @@ interface AddPluginDropdownProps {
 
 // Single plugin layout representation
 const getSinglePluginGrid = () => {
-  const baseClasses = "border border-dashed border-muted-foreground/30 rounded text-xs flex items-center justify-center text-muted-foreground/60 font-medium bg-muted/60";
+  const baseClasses = "border border-dashed border-muted-foreground/30 rounded text-xs flex items-center justify-center text-muted-foreground/60 font-medium bg-muted";
   return <div className={`${baseClasses} h-16 w-24`}></div>;
 };
 
 // Mashup layout grid representations
 const getMashupLayoutGrid = (layoutId: string) => {
-  const baseClasses = "border border-dashed border-muted-foreground/30 rounded flex items-center justify-center bg-muted/60";
+  const baseClasses = "border border-dashed border-muted-foreground/30 rounded flex items-center justify-center bg-muted";
   
   console.log('Rendering layout:', layoutId); // Debug log
   
@@ -163,7 +163,7 @@ export const AddPluginDropdown: React.FC<AddPluginDropdownProps> = ({
             <div className="grid grid-cols-2 gap-3">
               {/* Single Plugin Option - First in grid */}
               <div 
-                className="p-4 cursor-pointer transition-all duration-200 hover:bg-muted/20 rounded-lg border border-dashed border-muted-foreground/30"
+                className="p-4 cursor-pointer transition-all duration-200 hover:bg-muted/20 rounded-lg border border-muted-foreground/30"
                 onClick={handlePluginSelect}
                 role="button"
                 tabIndex={0}
@@ -187,7 +187,7 @@ export const AddPluginDropdown: React.FC<AddPluginDropdownProps> = ({
                 .map((layout) => (
                   <div
                     key={layout.id}
-                    className="p-4 cursor-pointer transition-all duration-200 hover:bg-muted/20 rounded-lg border border-dashed border-muted-foreground/30"
+                    className="p-4 cursor-pointer transition-all duration-200 hover:bg-muted/20 rounded-lg border border-muted-foreground/30"
                     onClick={() => handleMashupSelect(layout)}
                     role="button"
                     tabIndex={0}

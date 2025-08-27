@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -17,6 +18,7 @@ import (
 	"github.com/rmitchellscott/stationmaster/internal/plugins"
 	"github.com/rmitchellscott/stationmaster/internal/plugins/private"
 	"github.com/rmitchellscott/stationmaster/internal/utils"
+	"github.com/rmitchellscott/stationmaster/internal/validation"
 	"gopkg.in/yaml.v3"
 	"github.com/rmitchellscott/stationmaster/internal/rendering"
 )
@@ -1368,4 +1370,140 @@ func GetPluginInstanceSchemaDiffHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, diff)
+}
+
+// ImportPluginDefinitionHandler imports a TRMNL-compatible ZIP file as a private plugin
+func ImportPluginDefinitionHandler(c *gin.Context) {
+	user, ok := auth.RequireUser(c)
+	if !ok {
+		return
+	}
+
+	// Get uploaded file
+	file, header, err := c.Request.FormFile("file")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No file uploaded", "details": err.Error()})
+		return
+	}
+	defer file.Close()
+
+	// Create ZIP service
+	zipService := NewTRMNLZipService()
+
+	// Validate ZIP structure
+	if err := zipService.ValidateZipStructure(file, header); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ZIP file", "details": err.Error()})
+		return
+	}
+
+	// Reset file position
+	if _, err := file.Seek(0, 0); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process uploaded file"})
+		return
+	}
+
+	// Extract and validate ZIP contents
+	zipData, err := zipService.ExtractTRMNLZip(file, header)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid TRMNL ZIP format", "details": err.Error()})
+		return
+	}
+
+	// Convert to PluginDefinition
+	def, err := zipService.ConvertZipDataToPluginDefinition(zipData)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to process plugin data", "details": err.Error()})
+		return
+	}
+
+	// Validate templates
+	validator := validation.NewTemplateValidator()
+	validationResult := validator.ValidateAllTemplates(
+		safeStringValue(def.MarkupFull),
+		safeStringValue(def.MarkupHalfVert),
+		safeStringValue(def.MarkupHalfHoriz),
+		safeStringValue(def.MarkupQuadrant),
+		safeStringValue(def.SharedMarkup),
+	)
+
+	if !validationResult.Valid {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Template validation failed",
+			"validation_errors": validationResult.Errors,
+			"validation_warnings": validationResult.Warnings,
+		})
+		return
+	}
+
+	// Set ownership
+	def.OwnerID = &user.ID
+
+	// Create the plugin in the unified system
+	db := database.GetDB()
+	unifiedService := database.NewUnifiedPluginService(db)
+
+	if err := unifiedService.CreatePluginDefinition(def); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create private plugin", "details": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"message": "Private plugin imported successfully",
+		"plugin": gin.H{
+			"id":          def.ID,
+			"name":        def.Name,
+			"description": def.Description,
+			"version":     def.Version,
+		},
+	})
+}
+
+// safeStringValue safely extracts string value from pointer
+func safeStringValue(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
+// ExportPluginDefinitionHandler exports a private plugin as a TRMNL-compatible ZIP file
+func ExportPluginDefinitionHandler(c *gin.Context) {
+	user, ok := auth.RequireUser(c)
+	if !ok {
+		return
+	}
+
+	idParam := c.Param("id")
+	id, err := uuid.Parse(idParam)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid plugin ID"})
+		return
+	}
+
+	db := database.GetDB()
+
+	unifiedService := database.NewUnifiedPluginService(db)
+	def, err := unifiedService.GetPluginDefinitionByID(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Plugin not found"})
+		return
+	}
+
+	if def.OwnerID == nil || *def.OwnerID != user.ID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
+		return
+	}
+
+	zipService := NewTRMNLZipService()
+	zipBuffer, err := zipService.CreateTRMNLZip(def)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create ZIP file"})
+		return
+	}
+
+	filename := fmt.Sprintf("%s.zip", strings.ReplaceAll(def.Name, " ", "_"))
+	
+	c.Header("Content-Type", "application/zip")
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
+	c.Data(http.StatusOK, "application/zip", zipBuffer.Bytes())
 }

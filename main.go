@@ -481,6 +481,8 @@ func main() {
 		pluginDefs.POST("/test", handlers.TestPluginDefinitionHandler) // POST /api/plugin-definitions/test - test plugin template rendering
 		pluginDefs.GET("/refresh-rate-options", handlers.GetRefreshRateOptionsHandler) // GET /api/plugin-definitions/refresh-rate-options - get available refresh rates
 		pluginDefs.POST("/validate-settings", handlers.ValidatePluginSettingsHandler) // POST /api/plugin-definitions/validate-settings - validate plugin settings
+		pluginDefs.POST("/import", handlers.ImportPluginDefinitionHandler) // POST /api/plugin-definitions/import - import TRMNL-compatible ZIP file
+		pluginDefs.GET("/:id/export", handlers.ExportPluginDefinitionHandler) // GET /api/plugin-definitions/:id/export - export plugin as TRMNL-compatible ZIP file
 		pluginDefs.GET("/types", handlers.GetAvailablePluginTypesHandler) // GET /api/plugin-definitions/types - get available plugin types
 		pluginDefs.POST("/debug/validate-yaml", handlers.ValidateTRMNLYAMLHandler) // POST /api/plugin-definitions/debug/validate-yaml - validate TRMNL YAML format
 		pluginDefs.POST("/debug/test-conversion", handlers.TestTRMNLConversionHandler) // POST /api/plugin-definitions/debug/test-conversion - test bidirectional TRMNL conversion

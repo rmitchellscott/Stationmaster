@@ -2,6 +2,7 @@ package mashup
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/rmitchellscott/stationmaster/internal/logging"
 	"github.com/rmitchellscott/stationmaster/internal/plugins"
 	"github.com/rmitchellscott/stationmaster/internal/rendering"
+	"github.com/rmitchellscott/stationmaster/internal/utils"
 )
 
 // Register the mashup plugin factory when this package is imported
@@ -110,67 +112,92 @@ func (p *MashupPlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespons
 	
 	logging.Info("[MASHUP] Processing mashup", "layout", layout, "children_count", len(children))
 	
-	// Render each child plugin
-	childResults := make(map[string]ChildRenderResult)
-	factory := plugins.GetPluginFactory()
+	// Build child data directly from stored data (no plugin processing)
+	childData := make(map[string]ChildData)
+	pollingService := database.NewPollingDataService(database.GetDB())
+	webhookService := database.NewWebhookService(database.GetDB())
 	
 	for _, child := range children {
-		// Create child plugin instance
-		var childPlugin plugins.Plugin
-		var childErr error
+		// Build template data for this child
+		templateData := make(map[string]interface{})
 		
-		if child.ChildInstance.PluginDefinition.PluginType == "private" {
-			childPlugin, childErr = factory.CreatePlugin(&child.ChildInstance.PluginDefinition, &child.ChildInstance)
-		} else if child.ChildInstance.PluginDefinition.PluginType == "system" {
-			var exists bool
-			childPlugin, exists = plugins.Get(child.ChildInstance.PluginDefinition.Identifier)
-			if !exists {
-				childErr = fmt.Errorf("system plugin %s not found", child.ChildInstance.PluginDefinition.Identifier)
+		// Parse form field values from instance settings
+		var formFieldValues map[string]interface{}
+		if child.ChildInstance.Settings != nil {
+			if err := json.Unmarshal(child.ChildInstance.Settings, &formFieldValues); err != nil {
+				formFieldValues = make(map[string]interface{})
 			}
 		} else {
-			childErr = fmt.Errorf("unsupported child plugin type: %s", child.ChildInstance.PluginDefinition.PluginType)
+			formFieldValues = make(map[string]interface{})
 		}
 		
-		if childErr != nil {
-			logging.Error("[MASHUP] Failed to create child plugin", "slot", child.SlotPosition, "error", childErr)
-			childResults[child.SlotPosition] = ChildRenderResult{
-				Success: false,
-				Error:   childErr.Error(),
-				HTML:    fmt.Sprintf("<div class='mashup-error'>Failed to load plugin: %s</div>", childErr.Error()),
+		// Fetch external data based on child plugin's data strategy
+		childInstanceID := child.ChildInstance.ID.String()
+		logging.Debug("[MASHUP] Processing child plugin data", 
+			"slot", child.SlotPosition, 
+			"plugin_name", child.ChildInstance.Name,
+			"instance_id", childInstanceID,
+			"data_strategy", child.ChildInstance.PluginDefinition.DataStrategy)
+			
+		switch dataStrategy := child.ChildInstance.PluginDefinition.DataStrategy; {
+		case dataStrategy != nil && *dataStrategy == "polling":
+			// Use stored polling data
+			logging.Debug("[MASHUP] Querying stored polling data", "instance_id", childInstanceID)
+			if storedData, err := pollingService.GetPollingDataTemplate(childInstanceID); err == nil {
+				logging.Debug("[MASHUP] Retrieved polling data", 
+					"instance_id", childInstanceID,
+					"data_keys", getMapKeys(storedData),
+					"full_data", storedData)
+				for key, value := range storedData {
+					templateData[key] = value
+				}
+			} else {
+				logging.Warn("[MASHUP] Failed to get polling data for child", "slot", child.SlotPosition, "instance_id", childInstanceID, "error", err)
+			}
+		case dataStrategy != nil && *dataStrategy == "webhook":
+			// Use stored webhook data
+			if webhookData, err := webhookService.GetWebhookDataTemplate(childInstanceID); err == nil {
+				for key, value := range webhookData {
+					templateData[key] = value
+				}
+			} else {
+				logging.Warn("[MASHUP] Failed to get webhook data for child", "slot", child.SlotPosition, "error", err)
+			}
+		case dataStrategy != nil && *dataStrategy == "static":
+			// Static strategy uses only form fields and trmnl struct
+			// No external data fetching needed
+		}
+		
+		// Create TRMNL data structure for this child (same as private plugins)
+		trmnlData := p.buildTRNMLData(ctx, &child.ChildInstance, formFieldValues)
+		templateData["trmnl"] = trmnlData
+		
+		// Get appropriate template markup based on slot position
+		templateMarkup := p.getTemplateMarkupForSlot(layout, child.SlotPosition, &child.ChildInstance.PluginDefinition)
+		if templateMarkup == "" {
+			logging.Error("[MASHUP] No template markup found for child", "slot", child.SlotPosition)
+			childData[child.SlotPosition] = ChildData{
+				Success:  false,
+				Error:    "No template markup available",
+				Template: "<div class='mashup-error'>Template not found</div>",
+				Data:     make(map[string]interface{}),
 			}
 			continue
 		}
 		
-		// Create plugin context for child (same user, device, etc.)
-		childPluginCtx := plugins.PluginContext{
-			Device: ctx.Device,
-			User:   ctx.User,
-		}
-		
-		childResponse, childErr := childPlugin.Process(childPluginCtx)
-		if childErr != nil {
-			logging.Error("[MASHUP] Child plugin processing failed", "slot", child.SlotPosition, "error", childErr)
-			childResults[child.SlotPosition] = ChildRenderResult{
-				Success: false,
-				Error:   childErr.Error(),
-				HTML:    fmt.Sprintf("<div class='mashup-error'>Plugin error: %s</div>", childErr.Error()),
-			}
-			continue
-		}
-		
-		// Store the response for mashup rendering
-		childResults[child.SlotPosition] = ChildRenderResult{
+		// Store child data for rendering
+		childData[child.SlotPosition] = ChildData{
 			Success:  true,
-			Response: childResponse,
-			Plugin:   childPlugin,
+			Template: templateMarkup,
+			Data:     templateData,
 			Instance: &child.ChildInstance,
 		}
 		
-		logging.Info("[MASHUP] Child plugin processed successfully", "slot", child.SlotPosition, "plugin", child.ChildInstance.Name)
+		logging.Info("[MASHUP] Child data prepared successfully", "slot", child.SlotPosition, "plugin", child.ChildInstance.Name)
 	}
 	
-	// Generate mashup HTML using the real MashupRenderer with child plugin data
-	renderer := NewMashupRenderer(layout, childResults)
+	// Generate mashup HTML using the MashupRenderer with child data
+	renderer := NewMashupRenderer(layout, childData)
 	finalHTML, err := renderer.RenderMashup(ctx)
 	if err != nil {
 		return plugins.CreateErrorResponse(fmt.Sprintf("Failed to render mashup: %v", err)),
@@ -221,12 +248,246 @@ func (p *MashupPlugin) GetInstance() *database.PluginInstance {
 }
 
 
-// ChildRenderResult represents the result of rendering a child plugin
-type ChildRenderResult struct {
-	Success  bool                         // Whether rendering was successful
+// ChildData represents the data and template for a child plugin in mashup
+type ChildData struct {
+	Success  bool                         // Whether data preparation was successful
 	Error    string                       // Error message if failed
-	HTML     string                       // Rendered HTML content (for errors)
-	Response plugins.PluginResponse       // Full plugin response (for success)
-	Plugin   plugins.Plugin               // Plugin instance (for rendering context)
+	Template string                       // Template markup for this child
+	Data     map[string]interface{}       // Template data including TRMNL structure
 	Instance *database.PluginInstance     // Plugin instance data
+}
+
+// buildTRNMLData creates the TRMNL data structure for a child plugin (same as private plugins)
+func (p *MashupPlugin) buildTRNMLData(ctx plugins.PluginContext, instance *database.PluginInstance, formFieldValues map[string]interface{}) map[string]interface{} {
+	trmnlData := map[string]interface{}{}
+
+	// Add system information - Unix timestamp
+	systemData := map[string]interface{}{
+		"timestamp_utc": time.Now().Unix(),
+	}
+	trmnlData["system"] = systemData
+
+	// Add device information if available
+	if ctx.Device != nil {
+		deviceData := map[string]interface{}{
+			"friendly_id": ctx.Device.FriendlyID,
+		}
+
+		// Add device model dimensions if available
+		if ctx.Device.DeviceModel != nil {
+			deviceData["width"] = ctx.Device.DeviceModel.ScreenWidth
+			deviceData["height"] = ctx.Device.DeviceModel.ScreenHeight
+		}
+
+		// Add battery information if available
+		if ctx.Device.BatteryVoltage > 0 {
+			batteryPercentage := plugins.BatteryVoltageToPercentage(ctx.Device.BatteryVoltage)
+			deviceData["percent_charged"] = batteryPercentage
+		}
+
+		// Add WiFi information if available  
+		if ctx.Device.RSSI != 0 {
+			wifiPercentage := plugins.RSSIToWifiStrengthPercentage(ctx.Device.RSSI)
+			deviceData["wifi_strength"] = wifiPercentage
+		}
+
+		trmnlData["device"] = deviceData
+	}
+
+	// Add user information if available
+	if ctx.User != nil {
+		// Calculate UTC offset in seconds
+		utcOffset := int64(0)
+		locale := "en" // Default locale
+		timezone := "UTC" // Default timezone IANA
+		timezoneFriendly := "UTC" // Default friendly name
+		
+		if ctx.User.Timezone != "" {
+			timezone = ctx.User.Timezone
+			timezoneFriendly = utils.GetTimezoneFriendlyName(ctx.User.Timezone)
+			// Parse timezone and calculate UTC offset
+			loc, err := time.LoadLocation(ctx.User.Timezone)
+			if err == nil {
+				_, offset := time.Now().In(loc).Zone()
+				utcOffset = int64(offset)
+			}
+		}
+		
+		if ctx.User.Locale != "" {
+			// Convert "en-US" to "en" format if needed
+			if len(ctx.User.Locale) >= 2 {
+				locale = ctx.User.Locale[:2]
+			}
+		}
+
+		// Build user full name
+		firstName := ctx.User.FirstName
+		lastName := ctx.User.LastName
+		fullName := ""
+		if firstName != "" && lastName != "" {
+			fullName = firstName + " " + lastName
+		} else if firstName != "" {
+			fullName = firstName
+		} else if lastName != "" {
+			fullName = lastName
+		} else {
+			// Fallback to username if no names available
+			fullName = ctx.User.Username
+		}
+
+		userData := map[string]interface{}{
+			"name":           fullName,
+			"first_name":     firstName,
+			"last_name":      lastName,
+			"locale":         locale,
+			"time_zone":      timezoneFriendly,
+			"time_zone_iana": timezone,
+			"utc_offset":     utcOffset,
+		}
+		
+		trmnlData["user"] = userData
+	}
+
+	// Add plugin settings - this contains plugin metadata, not user form data
+	pluginSettings := map[string]interface{}{
+		"instance_name": instance.Name,
+	}
+	
+	// Add data strategy if available
+	if instance.PluginDefinition.DataStrategy != nil {
+		pluginSettings["strategy"] = *instance.PluginDefinition.DataStrategy
+	}
+	
+	// Add polling config if this is a polling plugin
+	if instance.PluginDefinition.DataStrategy != nil && *instance.PluginDefinition.DataStrategy == "polling" {
+		pluginSettings["polling_url"] = ""
+		pluginSettings["polling_headers"] = ""
+		
+		// Parse polling config if available
+		if instance.PluginDefinition.PollingConfig != nil {
+			var pollingConfig map[string]interface{}
+			if err := json.Unmarshal(instance.PluginDefinition.PollingConfig, &pollingConfig); err == nil {
+				// Handle both legacy single URL format and new URLs array format
+				if urls, ok := pollingConfig["urls"].([]interface{}); ok && len(urls) > 0 {
+					// New format with URLs array
+					if urlObj, ok := urls[0].(map[string]interface{}); ok {
+						if url, ok := urlObj["url"].(string); ok {
+							pluginSettings["polling_url"] = url
+						}
+						if headers, ok := urlObj["headers"]; ok {
+							pluginSettings["polling_headers"] = fmt.Sprintf("%v", headers)
+						}
+					}
+				} else {
+					// Legacy format with single URL
+					if url, ok := pollingConfig["url"].(string); ok {
+						pluginSettings["polling_url"] = url
+					}
+					if headers, ok := pollingConfig["headers"].(string); ok {
+						pluginSettings["polling_headers"] = headers
+					}
+				}
+			}
+		}
+	}
+	
+	// Add default plugin configuration
+	pluginSettings["dark_mode"] = "no"
+	pluginSettings["no_screen_padding"] = "no"
+	
+	// Add custom_fields_values containing form field values (TRMNL compatibility)
+	pluginSettings["custom_fields_values"] = formFieldValues
+	
+	trmnlData["plugin_settings"] = pluginSettings
+	
+	return trmnlData
+}
+
+// getTemplateMarkupForSlot returns the appropriate template markup based on slot position and layout
+func (p *MashupPlugin) getTemplateMarkupForSlot(layout string, slotPosition string, definition *database.PluginDefinition) string {
+	// Map slot positions to template types based on their ViewClass from slot metadata
+	templateType := p.getTemplateTypeForSlot(layout, slotPosition)
+	
+	switch templateType {
+	case "half_vertical":
+		if definition.MarkupHalfVert != nil {
+			return *definition.MarkupHalfVert
+		}
+	case "half_horizontal":
+		if definition.MarkupHalfHoriz != nil {
+			return *definition.MarkupHalfHoriz
+		}
+	case "quadrant":
+		if definition.MarkupQuadrant != nil {
+			return *definition.MarkupQuadrant
+		}
+	}
+	
+	// Fallback to MarkupFull if no appropriate template found
+	if definition.MarkupFull != nil {
+		return *definition.MarkupFull
+	}
+	
+	return ""
+}
+
+// getTemplateTypeForSlot determines the template type based on layout and slot position
+func (p *MashupPlugin) getTemplateTypeForSlot(layout string, slotPosition string) string {
+	switch layout {
+	case "1Lx1R":
+		// Both left and right use half_vertical
+		return "half_vertical"
+		
+	case "1Tx1B":
+		// Both top and bottom use half_horizontal
+		return "half_horizontal"
+		
+	case "1Lx2R":
+		switch slotPosition {
+		case "left":
+			return "half_vertical"
+		case "right-top", "right-bottom":
+			return "quadrant"
+		}
+		
+	case "2Lx1R":
+		switch slotPosition {
+		case "left-top", "left-bottom":
+			return "quadrant"
+		case "right":
+			return "half_vertical"
+		}
+		
+	case "2Tx1B":
+		switch slotPosition {
+		case "top-left", "top-right":
+			return "quadrant"
+		case "bottom":
+			return "half_horizontal"
+		}
+		
+	case "1Tx2B":
+		switch slotPosition {
+		case "top":
+			return "half_horizontal"
+		case "bottom-left", "bottom-right":
+			return "quadrant"
+		}
+		
+	case "2x2":
+		// All quadrants use quadrant template
+		return "quadrant"
+	}
+	
+	// Default fallback
+	return "full"
+}
+
+// getMapKeys returns the keys of a map for debugging purposes
+func getMapKeys(m map[string]interface{}) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
 }

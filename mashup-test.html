@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Mashup Test</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://usetrmnl.com/css/latest/plugins.css">
+    <script src="https://cdn.jsdelivr.net/npm/liquidjs@10.10.1/dist/liquid.browser.umd.js"></script>
+    <!-- TRMNL Scripts for dithering and other functionality -->
+    <script src="https://usetrmnl.com/assets/plugin-render/plugins-332ca4207dd02576b3641691907cb829ef52a36c4a092a75324a8fc860906967.js"></script>
+    <script src="https://usetrmnl.com/assets/plugin-render/plugins_legacy-a6b0b3aeac32ca71413f1febc053c59a528d4c6bb2173c22bd94ff8e0b9650f1.js"></script>
+    <script src="https://usetrmnl.com/assets/plugin-render/dithering-d697f6229e3bd6e2455425d647e5395bb608999c2039a9837a903c7c7e952d61.js"></script>
+    <script src="https://usetrmnl.com/assets/plugin-render/asset-deduplication-39fa2231b7a5bd5bedf4a1782b6a95d8b87eb3aaaa5e2b6cee287133d858bc96.js"></script>
+    <style>
+        body { 
+            width: 480px; 
+            height: 320px; 
+            margin: 0; 
+            padding: 0;
+        }
+        .mashup-error {
+            padding: 10px;
+            background: #fee;
+            border: 1px solid #fcc;
+            color: #c00;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .mashup-empty-slot {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            background: #f5f5f5;
+            border: 2px dashed #ccc;
+            color: #999;
+        }
+        .mashup-loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            background: #f0f0f0;
+            color: #666;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="environment trmnl">
+        <div class="screen">
+            <div class="mashup mashup--1Lx1R">
+                <div id="slot-left" class="view view--half_vertical">
+                    <!-- Child content will be rendered here by JavaScript -->
+                    <div class="mashup-loading">Loading Left Panel...</div>
+                </div>
+                <div id="slot-right" class="view view--half_vertical">
+                    <!-- Child content will be rendered here by JavaScript -->
+                    <div class="mashup-loading">Loading Right Panel...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Real pokemash child data from database
+        const childData = {
+            "left": {
+                "trmnl": {
+                    "system": {
+                        "timestamp_utc": Math.floor(Date.now() / 1000)
+                    },
+                    "device": {
+                        "friendly_id": "6B4F9C",
+                        "width": 480,
+                        "height": 320,
+                        "percent_charged": 85,
+                        "wifi_strength": 75
+                    },
+                    "user": {
+                        "name": "Mitchell Scott",
+                        "first_name": "Mitchell",
+                        "last_name": "Scott",
+                        "locale": "en",
+                        "time_zone": "America/Denver",
+                        "time_zone_iana": "America/Denver",
+                        "utc_offset": -21600
+                    },
+                    "plugin_settings": {
+                        "instance_name": "Daily Pokémon",
+                        "strategy": "polling",
+                        "dark_mode": "no",
+                        "no_screen_padding": "no",
+                        "custom_fields_values": {}
+                    }
+                },
+                // Real polling data from database
+                "id": 442,
+                "url": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/442.png",
+                "name": "#442 Spiritomb",
+                "description": "A Pokémon that was formed by 108 spirits. It is bound to a fissure in an odd keystone."
+            },
+            "right": {
+                "trmnl": {
+                    "system": {
+                        "timestamp_utc": Math.floor(Date.now() / 1000)
+                    },
+                    "device": {
+                        "friendly_id": "6B4F9C",
+                        "width": 480,
+                        "height": 320,
+                        "percent_charged": 85,
+                        "wifi_strength": 75
+                    },
+                    "user": {
+                        "name": "Mitchell Scott",
+                        "first_name": "Mitchell",
+                        "last_name": "Scott",
+                        "locale": "en",
+                        "time_zone": "America/Denver",
+                        "time_zone_iana": "America/Denver",
+                        "utc_offset": -21600
+                    },
+                    "plugin_settings": {
+                        "instance_name": "Who's That Pokémon?",
+                        "strategy": "polling",
+                        "dark_mode": "no",
+                        "no_screen_padding": "no",
+                        "custom_fields_values": {}
+                    }
+                },
+                // Real polling data from database
+                "timestamp": "2025-08-26T12:53:01.269264",
+                "pokemon_data": {
+                    "name": "Flaaffy",
+                    "types": "Electric",
+                    "height": "0.8 m",
+                    "weight": "13.3 kg",
+                    "artwork": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/180.png",
+                    "species": "Wool Pokémon",
+                    "abilities": "Static, Plus"
+                }
+            }
+        };
+        
+        const childTemplates = {
+            "left": `<div class="layout">
+  <table style="width:300px; border-collapse:collapse; font-family:Arial, sans-serif;">
+    <tr>
+      <td>
+        <img class="image-dither" src="{{ url }}" alt="{{ name }}" width="300" height="300" style="display:block;" />
+      </td>
+    </tr>
+    
+    <tr>
+      <td style="text-align:left; padding:15px 30px 20px 25px;">
+        <h2 style="margin:0 0 6px 0; font-size:1rem;">{{ name }}</h2>
+        <p style="margin:0; font-size:0.75rem; line-height:1.2; word-wrap:break-word;">{{ description }}</p>
+      </td>
+    </tr>
+  </table>
+</div>
+<div class="title_bar">
+  <img class="image" src="https://usetrmnl.com/images/plugins/trmnl--render.svg">
+  <span class="title">{{ trmnl.plugin_settings.instance_name }}</span>
+</div>`,
+            "right": `<div class="layout layout--col layout--stretch">
+  <!-- First Row: Details -->
+  <div class="flex flex--col flex--center-x flex--center-y flex--stretch gap--medium">
+    <!-- Pokémon Details -->
+    <div class="item">
+      <div class="meta"></div>
+      <div class="content">
+        <span class="value value--xxsmall">{{ pokemon_data.types }}</span>
+        <span class="label label--small">Type</span>
+      </div>
+    </div>
+
+    <div class="item">
+      <div class="meta"></div>
+      <div class="content">
+        <span class="value value--xxsmall">{{ pokemon_data.species }}</span>
+        <span class="label label--small">Species</span>
+      </div>
+    </div>
+
+    <div class="flex flex--stretch gap--xsmall">
+      <div class="item">
+        <div class="meta"></div>
+        <div class="content">
+          <span class="value value--xxsmall">{{ pokemon_data.height }}</span>
+          <span class="label label--small">Height</span>
+        </div>
+      </div>
+      <div class="item">
+        <div class="meta"></div>
+        <div class="content">
+          <span class="value value--xxsmall">{{ pokemon_data.weight }}</span>
+          <span class="label label--small">Weight</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Second Row: Artwork -->
+  <div class="flex flex--col flex--stretch flex--center-x flex--center-y" style="max-height: 50%;">
+    <div class="flex flex--center-x" style="max-height: 80%; width: auto;">
+      <img 
+        src="{{ pokemon_data.artwork }}" 
+        alt="pokemon Artwork" 
+        class="image-dither" />
+    </div>
+
+    <!-- Pokémon Name -->
+    <div class="flex flex--center-x">
+      <span class="value value--xxsmall" data-value-fit="true" style="font-weight: bold;">{{ pokemon_data.name }}</span>
+    </div>
+  </div>
+</div>
+
+<div class="title_bar">
+  <img class="image" src="https://upload.wikimedia.org/wikipedia/commons/2/23/Pok%C3%A9_Ball.svg" />
+  <span class="title">Who's That Pokémon?</span>
+</div>`
+        };
+        
+        const mashupLayout = "1Lx1R";
+
+        // TRMNL Compatibility Layer Functions
+        function preprocessTRNMLTemplate(template) {
+            // Only convert TRMNL's alternative syntax at the START of Liquid expressions
+            let processed = template;
+            
+            // Pattern 1: {{ var: filter, param }} → {{ var | filter: param }}
+            processed = processed.replace(/\{\{\s*([^|}]+?):\s*([^,\s]+)\s*,\s*([^}]+?)\s*\}\}/g, '{{ $1 | $2: $3 }}');
+            
+            // Pattern 2: {{ var: filter }} → {{ var | filter }}  
+            processed = processed.replace(/\{\{\s*([^|}]+?):\s*([^}\s]+)\s*\}\}/g, '{{ $1 | $2 }}');
+            
+            return processed;
+        }
+        
+        function convertStrftimeToIntlOptions(format) {
+            const options = {};
+            
+            // Common strftime patterns
+            if (format.includes('%Y')) options.year = 'numeric';
+            if (format.includes('%y')) options.year = '2-digit';
+            if (format.includes('%m')) options.month = '2-digit';
+            if (format.includes('%B')) options.month = 'long';
+            if (format.includes('%b')) options.month = 'short';
+            if (format.includes('%d')) options.day = '2-digit';
+            if (format.includes('%H')) options.hour = '2-digit';
+            if (format.includes('%M')) options.minute = '2-digit';
+            if (format.includes('%S')) options.second = '2-digit';
+            
+            return options;
+        }
+
+        function registerTRNMLFilters(engine) {
+            // l_date: Localized date formatting
+            engine.registerFilter('l_date', function(dateValue, format, locale) {
+                if (!dateValue) return '';
+                
+                if (!locale && this.context) {
+                    locale = this.context.get(['trmnl', 'user', 'locale']) || 'en';
+                }
+                
+                try {
+                    const date = new Date(dateValue);
+                    if (isNaN(date.getTime())) return dateValue;
+                    
+                    const options = convertStrftimeToIntlOptions(format || '%Y-%m-%d');
+                    return new Intl.DateTimeFormat(locale, options).format(date);
+                } catch (e) {
+                    console.warn('l_date filter error:', e);
+                    return dateValue;
+                }
+            });
+            
+            // json: Convert to JSON
+            engine.registerFilter('json', function(value) {
+                try {
+                    return JSON.stringify(value, null, 2);
+                } catch (e) {
+                    return String(value);
+                }
+            });
+            
+            // parse_json: Parse JSON strings
+            engine.registerFilter('parse_json', function(jsonString) {
+                try {
+                    return JSON.parse(jsonString);
+                } catch (e) {
+                    console.warn('parse_json filter error:', e);
+                    return jsonString;
+                }
+            });
+        }
+
+        function enhanceViewClasses(template) {
+            // Process double quotes
+            template = template.replace(/class="([^"]*\bview\b[^"]*)"/g, function(match, classContent) {
+                // Check if already has layout modifiers
+                if (classContent.includes('view--full') || 
+                    classContent.includes('view--half') || 
+                    classContent.includes('view--quadrant')) {
+                    return match;
+                }
+                
+                // Replace standalone 'view' with 'view view--full'
+                const enhancedClasses = classContent.replace(/\bview\b/g, 'view view--full');
+                return 'class="' + enhancedClasses + '"';
+            });
+            
+            // Process single quotes
+            template = template.replace(/class='([^']*\bview\b[^']*)'/g, function(match, classContent) {
+                if (classContent.includes('view--full') || 
+                    classContent.includes('view--half') || 
+                    classContent.includes('view--quadrant')) {
+                    return match;
+                }
+                
+                const enhancedClasses = classContent.replace(/\bview\b/g, 'view view--full');
+                return "class='" + enhancedClasses + "'";
+            });
+            
+            return template;
+        }
+
+        // Initialize LiquidJS engine
+        const { Liquid } = window.liquidjs;
+        const engine = new Liquid();
+
+        // Register TRMNL custom filters
+        registerTRNMLFilters(engine);
+
+        // Process each child template with its data
+        document.addEventListener('DOMContentLoaded', async function() {
+            console.log('Starting template processing...');
+            
+            for (const [slot, template] of Object.entries(childTemplates)) {
+                console.log('Processing slot:', slot);
+                const slotElement = document.getElementById('slot-' + slot);
+                
+                if (slotElement && childData[slot]) {
+                    try {
+                        if (childData[slot].error) {
+                            // Handle error case
+                            console.log('Error in slot', slot, ':', childData[slot].error);
+                            slotElement.innerHTML = template;
+                        } else {
+                            // Preprocess template for TRMNL syntax compatibility
+                            const processedTemplate = preprocessTRNMLTemplate(template);
+                            console.log('Processing template for', slot, ':', processedTemplate);
+                            console.log('Data for', slot, ':', childData[slot]);
+                            
+                            // Render template with TRMNL filters
+                            const html = await engine.parseAndRender(processedTemplate, childData[slot]);
+                            console.log('Rendered HTML for', slot, ':', html);
+                            
+                            // Enhance view classes like the server does
+                            const enhancedHTML = enhanceViewClasses(html);
+                            
+                            slotElement.innerHTML = enhancedHTML;
+                        }
+                    } catch (error) {
+                        console.error('Failed to render slot ' + slot + ':', error);
+                        slotElement.innerHTML = '<div class="mashup-error">Template Error: ' + error.message + '</div>';
+                    }
+                } else {
+                    console.error('Missing slot element or data for:', slot);
+                }
+            }
+            
+            console.log('Template processing complete');
+            
+            // Trigger dithering after all templates are processed
+            setTimeout(() => {
+                handleDitheringTiming();
+            }, 100);
+        });
+
+        function handleDitheringTiming() {
+            // Check if window.load already fired and handle dithering timing
+            if (document.readyState === 'complete') {
+                // Page already loaded, manually trigger dithering
+                if (typeof window.setup === 'function') {
+                    console.log('Triggering dithering via window.setup()');
+                    window.setup();
+                } else {
+                    // Fallback: dispatch load event to trigger dithering
+                    console.log('Triggering dithering via window load event');
+                    window.dispatchEvent(new Event('load'));
+                }
+            } else {
+                // Wait for page to fully load
+                window.addEventListener('load', function() {
+                    console.log('Page loaded, triggering dithering');
+                    if (typeof window.setup === 'function') {
+                        window.setup();
+                    }
+                });
+            }
+        }
+    </script>
+</body>
+</html>

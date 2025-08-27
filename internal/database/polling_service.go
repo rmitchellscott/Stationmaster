@@ -53,7 +53,7 @@ func (s *PollingDataService) StorePollingData(data *PrivatePluginPollingData) er
 func (s *PollingDataService) GetLatestPollingData(pluginInstanceID string) (*PrivatePluginPollingData, error) {
 	var pollingData PrivatePluginPollingData
 	
-	if err := s.db.Where("plugin_instance_id = ?", pluginInstanceID).First(&pollingData).Error; err != nil {
+	if err := s.db.Where("plugin_instance_id = ?", pluginInstanceID).Order("polled_at DESC").First(&pollingData).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, nil // No polling data found
 		}

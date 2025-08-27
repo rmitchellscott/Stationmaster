@@ -305,27 +305,28 @@ func (w *RenderWorker) renderForDevice(ctx context.Context, pluginInstance datab
 		if imageData, ok := plugins.GetImageData(response); ok {
 			var processedImageData []byte
 
-			// For private plugins, we need to process the image to correct bit depth
-			if pluginInstance.PluginDefinition.PluginType == "private" {
+			// For private plugins and mashups, we need to process the image to correct bit depth
+			if pluginInstance.PluginDefinition.PluginType == "private" || pluginInstance.PluginDefinition.PluginType == "mashup" {
 				// Decode the raw PNG image from browserless
 				img, _, err := image.Decode(bytes.NewReader(imageData))
 				if err != nil {
-					return fmt.Errorf("failed to decode private plugin image: %w", err)
+					return fmt.Errorf("failed to decode browserless plugin image: %w", err)
 				}
 
 				// Convert to grayscale and quantize to target bit depth (no dithering)
 				quantizedImg := imageprocessing.QuantizeToGrayscalePalette(img, device.DeviceModel.BitDepth)
 				if quantizedImg == nil {
-					return fmt.Errorf("failed to quantize private plugin image")
+					return fmt.Errorf("failed to quantize browserless plugin image")
 				}
 
 				// Encode as PNG with correct bit depth
 				processedImageData, err = imageprocessing.EncodePalettedPNG(quantizedImg, device.DeviceModel.BitDepth)
 				if err != nil {
-					return fmt.Errorf("failed to encode private plugin image: %w", err)
+					return fmt.Errorf("failed to encode browserless plugin image: %w", err)
 				}
 
-				logging.Debug("[RENDER_WORKER] Processed private plugin image", 
+				logging.Debug("[RENDER_WORKER] Processed browserless plugin image", 
+					"plugin_type", pluginInstance.PluginDefinition.PluginType, 
 					"device", device.FriendlyID,
 					"original_size", len(imageData), 
 					"processed_size", len(processedImageData),

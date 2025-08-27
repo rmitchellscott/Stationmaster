@@ -4,321 +4,68 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/rmitchellscott/stationmaster/internal/database"
 	"github.com/rmitchellscott/stationmaster/internal/logging"
 	"github.com/rmitchellscott/stationmaster/internal/plugins"
-	"github.com/rmitchellscott/stationmaster/internal/plugins/private"
 )
 
-// MashupRenderer handles combining child plugin outputs into mashup layouts
+// MashupRenderer handles combining child plugin data into mashup layouts
 type MashupRenderer struct {
-	layout       string
-	childResults map[string]ChildRenderResult
-	slotConfig   []database.MashupSlotInfo
+	layout     string
+	childData  map[string]ChildData
+	slotConfig []database.MashupSlotInfo
 }
 
 // NewMashupRenderer creates a new mashup renderer
-func NewMashupRenderer(layout string, childResults map[string]ChildRenderResult) *MashupRenderer {
+func NewMashupRenderer(layout string, childData map[string]ChildData) *MashupRenderer {
 	// Generate slot configuration for this layout
 	service := database.NewMashupService(database.GetDB())
 	slots, _ := service.GetSlotMetadata(layout)
 	
 	return &MashupRenderer{
-		layout:       layout,
-		childResults: childResults,
-		slotConfig:   slots,
+		layout:     layout,
+		childData:  childData,
+		slotConfig: slots,
 	}
 }
 
-// RenderMashup combines child plugin outputs into a single mashup HTML
+// RenderMashup creates a single HTML document with embedded child data and templates
 func (r *MashupRenderer) RenderMashup(ctx plugins.PluginContext) (string, error) {
-	logging.Info("[MASHUP_RENDERER] Starting mashup render", "layout", r.layout, "children_count", len(r.childResults))
+	logging.Info("[MASHUP_RENDERER] Creating mashup HTML with embedded child data", "layout", r.layout, "children_count", len(r.childData))
 	
-	// Generate individual child HTML
-	childHTML := make(map[string]string)
+	// Build JavaScript objects for client-side processing
+	childDataJS := make(map[string]interface{})
+	childTemplatesJS := make(map[string]string)
 	
-	for slot, result := range r.childResults {
-		if !result.Success {
-			// Use error HTML
-			childHTML[slot] = r.wrapChildContent(result.HTML, slot, "error")
+	for slot, childInfo := range r.childData {
+		if !childInfo.Success {
+			// Handle error cases
+			childDataJS[slot] = map[string]interface{}{"error": childInfo.Error}
+			childTemplatesJS[slot] = fmt.Sprintf(`<div class="mashup-error">%s</div>`, childInfo.Error)
 			continue
 		}
 		
-		// Render successful child plugin
-		html, err := r.renderChildPlugin(result, ctx, slot)
-		if err != nil {
-			logging.Error("[MASHUP_RENDERER] Failed to render child", "slot", slot, "error", err)
-			errorHTML := fmt.Sprintf("<div class='mashup-error'>Render error: %s</div>", err.Error())
-			childHTML[slot] = r.wrapChildContent(errorHTML, slot, "error")
-		} else {
-			childHTML[slot] = r.wrapChildContent(html, slot, "success")
-		}
+		// Add successful child data and template
+		childDataJS[slot] = childInfo.Data
+		childTemplatesJS[slot] = childInfo.Template
 	}
 	
-	// Combine into final mashup layout
-	return r.combineIntoLayout(childHTML, ctx), nil
+	// Generate the complete mashup HTML with embedded JavaScript
+	return r.generateMashupHTML(childDataJS, childTemplatesJS, ctx), nil
 }
 
-// renderChildPlugin renders a child plugin appropriately based on its type
-func (r *MashupRenderer) renderChildPlugin(result ChildRenderResult, ctx plugins.PluginContext, slot string) (string, error) {
-	if result.Instance.PluginDefinition.PluginType == "private" {
-		return r.renderPrivateChildPlugin(result, ctx, slot)
-	} else if result.Instance.PluginDefinition.PluginType == "system" {
-		return r.renderSystemChildPlugin(result, ctx, slot)
-	}
+// generateMashupHTML creates the complete HTML document with embedded child data and templates
+func (r *MashupRenderer) generateMashupHTML(childData map[string]interface{}, childTemplates map[string]string, ctx plugins.PluginContext) string {
+	// Marshal child data and templates to JSON for JavaScript embedding
+	childDataJSON, _ := json.Marshal(childData)
+	childTemplatesJSON, _ := json.Marshal(childTemplates)
 	
-	return "", fmt.Errorf("unsupported child plugin type: %s", result.Instance.PluginDefinition.PluginType)
-}
-
-// renderPrivateChildPlugin renders a private plugin child by accessing its stored data directly
-func (r *MashupRenderer) renderPrivateChildPlugin(result ChildRenderResult, ctx plugins.PluginContext, slot string) (string, error) {
-	// Access stored data directly instead of calling Process() to avoid duplicate API calls
-	def := result.Instance.PluginDefinition
-	instanceID := result.Instance.ID.String()
+	// Build slot divs based on layout
+	slotDivs := r.buildSlotDivs()
 	
-	// Get the shared markup if available
-	sharedMarkup := ""
-	if def.SharedMarkup != nil {
-		sharedMarkup = *def.SharedMarkup
-	}
-	
-	if def.MarkupFull == nil {
-		return "", fmt.Errorf("private child plugin has no template markup")
-	}
-	
-	// Build base template data structure (TRMNL compatibility)
-	templateData := make(map[string]interface{})
-	
-	// Add system information - Unix timestamp
-	systemData := map[string]interface{}{
-		"timestamp_utc": time.Now().Unix(),
-	}
-	
-	// Add device information
-	deviceData := map[string]interface{}{
-		"friendly_id": ctx.Device.FriendlyID,
-		"width":       ctx.Device.DeviceModel.ScreenWidth,
-		"height":      ctx.Device.DeviceModel.ScreenHeight,
-	}
-	
-	// Add battery information if available
-	if ctx.Device.BatteryVoltage > 0 {
-		batteryPercentage := plugins.BatteryVoltageToPercentage(ctx.Device.BatteryVoltage)
-		deviceData["percent_charged"] = batteryPercentage
-	}
-	
-	// Add WiFi information if available
-	if ctx.Device.RSSI != 0 {
-		wifiPercentage := plugins.RSSIToWifiStrengthPercentage(ctx.Device.RSSI)
-		deviceData["wifi_strength"] = wifiPercentage
-	}
-	
-	// Add user information if available
-	userData := map[string]interface{}{}
-	if ctx.User != nil {
-		// Build user full name
-		firstName := ctx.User.FirstName
-		lastName := ctx.User.LastName
-		fullName := ""
-		if firstName != "" && lastName != "" {
-			fullName = firstName + " " + lastName
-		} else if firstName != "" {
-			fullName = firstName
-		} else if lastName != "" {
-			fullName = lastName
-		} else {
-			fullName = ctx.User.Username
-		}
-		
-		// Calculate timezone info
-		utcOffset := int64(0)
-		locale := "en"
-		timezone := "UTC"
-		timezoneFriendly := "UTC"
-		
-		if ctx.User.Timezone != "" {
-			timezone = ctx.User.Timezone
-			timezoneFriendly = timezone // TODO: Get friendly name
-			if loc, err := time.LoadLocation(ctx.User.Timezone); err == nil {
-				_, offset := time.Now().In(loc).Zone()
-				utcOffset = int64(offset)
-			}
-		}
-		
-		if ctx.User.Locale != "" && len(ctx.User.Locale) >= 2 {
-			locale = ctx.User.Locale[:2]
-		}
-		
-		userData = map[string]interface{}{
-			"name":           fullName,
-			"first_name":     firstName,
-			"last_name":      lastName,
-			"locale":         locale,
-			"time_zone":      timezoneFriendly,
-			"time_zone_iana": timezone,
-			"utc_offset":     utcOffset,
-		}
-	}
-	
-	// Parse form field values from instance settings
-	var formFieldValues map[string]interface{}
-	if result.Instance.Settings != nil {
-		if err := json.Unmarshal(result.Instance.Settings, &formFieldValues); err != nil {
-			formFieldValues = make(map[string]interface{})
-		}
-	} else {
-		formFieldValues = make(map[string]interface{})
-	}
-	
-	// Add plugin settings
-	pluginSettings := map[string]interface{}{
-		"instance_name":        result.Instance.Name,
-		"custom_fields_values": formFieldValues,
-		"dark_mode":            "no",
-		"no_screen_padding":    "no",
-	}
-	
-	// Add data strategy if available
-	if def.DataStrategy != nil {
-		pluginSettings["strategy"] = *def.DataStrategy
-	}
-	
-	// Fetch external data based on data strategy - accessing stored data directly
-	switch dataStrategy := def.DataStrategy; {
-	case dataStrategy != nil && *dataStrategy == "polling":
-		// Access stored polling data
-		pollingService := database.NewPollingDataService(database.GetDB())
-		if storedData, err := pollingService.GetPollingDataTemplate(instanceID); err == nil {
-			// Merge stored polling data into template data
-			for key, value := range storedData {
-				templateData[key] = value
-			}
-			logging.Debug("[MASHUP_RENDERER] Using stored polling data for child", "instance_id", instanceID, "slot", slot)
-		} else {
-			logging.Warn("[MASHUP_RENDERER] No stored polling data available for child", "instance_id", instanceID, "slot", slot, "error", err)
-		}
-		
-	case dataStrategy != nil && *dataStrategy == "webhook":
-		// Access stored webhook data
-		webhookService := database.NewWebhookService(database.GetDB())
-		if webhookData, err := webhookService.GetWebhookDataTemplate(instanceID); err == nil && webhookData != nil {
-			// Merge stored webhook data into template data
-			for key, value := range webhookData {
-				templateData[key] = value
-			}
-			logging.Debug("[MASHUP_RENDERER] Using stored webhook data for child", "instance_id", instanceID, "slot", slot)
-		} else {
-			logging.Warn("[MASHUP_RENDERER] No stored webhook data available for child", "instance_id", instanceID, "slot", slot, "error", err)
-		}
-		
-	case dataStrategy != nil && *dataStrategy == "static":
-		// Static strategy uses only form fields and TRMNL struct - no external data
-		logging.Debug("[MASHUP_RENDERER] Using static data strategy for child", "instance_id", instanceID, "slot", slot)
-	}
-	
-	// Build final TRMNL data structure
-	trmnlData := map[string]interface{}{
-		"system":          systemData,
-		"device":          deviceData,
-		"user":            userData,
-		"plugin_settings": pluginSettings,
-	}
-	templateData["trmnl"] = trmnlData
-	
-	// Use the private plugin renderer to generate the HTML
-	htmlRenderer := private.NewPrivatePluginRenderer()
-	html, err := htmlRenderer.RenderToClientSideHTML(private.RenderOptions{
-		SharedMarkup:      sharedMarkup,
-		LayoutTemplate:    *def.MarkupFull,
-		Data:              templateData,
-		Width:             ctx.Device.DeviceModel.ScreenWidth,
-		Height:            ctx.Device.DeviceModel.ScreenHeight,
-		PluginName:        def.Name,
-		InstanceID:        instanceID,
-		InstanceName:      result.Instance.Name,
-		RemoveBleedMargin: def.RemoveBleedMargin != nil && *def.RemoveBleedMargin,
-		EnableDarkMode:    def.EnableDarkMode != nil && *def.EnableDarkMode,
-	})
-	
-	if err != nil {
-		return "", fmt.Errorf("failed to render private child plugin HTML: %w", err)
-	}
-	
-	return html, nil
-}
-
-// renderSystemChildPlugin renders a system plugin child
-func (r *MashupRenderer) renderSystemChildPlugin(result ChildRenderResult, ctx plugins.PluginContext, slot string) (string, error) {
-	// For system plugins, we expect they return HTML or image data
-	// For now, assume they return HTML that we can use directly
-	
-	if htmlContent, ok := plugins.GetHTMLContent(result.Response); ok {
-		return htmlContent, nil
-	}
-	
-	// If not HTML, try to handle as image response (not implemented yet)
-	return "", fmt.Errorf("system child plugin did not return HTML content")
-}
-
-// getSlotInfo returns slot information for a given slot position
-func (r *MashupRenderer) getSlotInfo(slotPosition string) *database.MashupSlotInfo {
-	for i := range r.slotConfig {
-		if r.slotConfig[i].Position == slotPosition {
-			return &r.slotConfig[i]
-		}
-	}
-	return nil
-}
-
-// wrapChildContent wraps child content in appropriate mashup view classes
-func (r *MashupRenderer) wrapChildContent(content string, slot string, status string) string {
-	slotInfo := r.getSlotInfo(slot)
-	if slotInfo == nil {
-		return fmt.Sprintf("<div class='mashup-error'>Unknown slot: %s</div>", slot)
-	}
-	
-	// Apply mashup view classes
-	classes := []string{"view", slotInfo.ViewClass}
-	if status == "error" {
-		classes = append(classes, "mashup-child-error")
-	}
-	
-	return fmt.Sprintf(`<div class="%s">
-		<div class="layout">
-			%s
-		</div>
-	</div>`, strings.Join(classes, " "), content)
-}
-
-// combineIntoLayout combines child HTML into the final mashup layout structure
-func (r *MashupRenderer) combineIntoLayout(childHTML map[string]string, ctx plugins.PluginContext) string {
-	// Build the mashup container
-	var children []string
-	
-	// Add children in the correct order based on layout
-	for _, slot := range r.slotConfig {
-		if html, exists := childHTML[slot.Position]; exists {
-			children = append(children, html)
-		} else {
-			// Empty slot
-			placeholder := fmt.Sprintf(`<div class="view %s">
-				<div class="layout">
-					<div class="mashup-empty-slot">
-						<span class="label">Empty Slot: %s</span>
-					</div>
-				</div>
-			</div>`, slot.ViewClass, slot.DisplayName)
-			children = append(children, placeholder)
-		}
-	}
-	
-	// Combine into mashup structure
-	mashupContent := strings.Join(children, "\n")
-	
-	// Wrap in mashup container with proper CSS classes
-	finalHTML := fmt.Sprintf(`<!DOCTYPE html>
+	// Create the complete HTML document with embedded JavaScript
+	return fmt.Sprintf(`<!DOCTYPE html>
 <html>
 <head>
     <meta charset="utf-8">
@@ -328,6 +75,12 @@ func (r *MashupRenderer) combineIntoLayout(childHTML map[string]string, ctx plug
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://usetrmnl.com/css/latest/plugins.css">
+    <script src="https://cdn.jsdelivr.net/npm/liquidjs@10.10.1/dist/liquid.browser.umd.js"></script>
+    <!-- TRMNL Scripts for dithering and other functionality -->
+    <script src="https://usetrmnl.com/assets/plugin-render/plugins-332ca4207dd02576b3641691907cb829ef52a36c4a092a75324a8fc860906967.js"></script>
+    <script src="https://usetrmnl.com/assets/plugin-render/plugins_legacy-a6b0b3aeac32ca71413f1febc053c59a528d4c6bb2173c22bd94ff8e0b9650f1.js"></script>
+    <script src="https://usetrmnl.com/assets/plugin-render/dithering-d697f6229e3bd6e2455425d647e5395bb608999c2039a9837a903c7c7e952d61.js"></script>
+    <script src="https://usetrmnl.com/assets/plugin-render/asset-deduplication-39fa2231b7a5bd5bedf4a1782b6a95d8b87eb3aaaa5e2b6cee287133d858bc96.js"></script>
     <style>
         body { 
             width: %dpx; 
@@ -352,9 +105,6 @@ func (r *MashupRenderer) combineIntoLayout(childHTML map[string]string, ctx plug
             border: 2px dashed #ccc;
             color: #999;
         }
-        .mashup-child-error {
-            background: rgba(255, 0, 0, 0.1);
-        }
     </style>
 </head>
 <body>
@@ -365,78 +115,240 @@ func (r *MashupRenderer) combineIntoLayout(childHTML map[string]string, ctx plug
             </div>
         </div>
     </div>
+
+    <script>
+        // Child data and templates for client-side processing
+        const childData = %s;
+        const childTemplates = %s;
+        const mashupLayout = "%s";
+
+        // TRMNL Compatibility Layer Functions
+        function preprocessTRNMLTemplate(template) {
+            // Only convert TRMNL's alternative syntax at the START of Liquid expressions
+            let processed = template;
+            
+            // Pattern 1: {{ var: filter, param }} → {{ var | filter: param }}
+            processed = processed.replace(/\{\{\s*([^|}]+?):\s*([^,\s]+)\s*,\s*([^}]+?)\s*\}\}/g, '{{ $1 | $2: $3 }}');
+            
+            // Pattern 2: {{ var: filter }} → {{ var | filter }}  
+            processed = processed.replace(/\{\{\s*([^|}]+?):\s*([^}\s]+)\s*\}\}/g, '{{ $1 | $2 }}');
+            
+            return processed;
+        }
+        
+        function convertStrftimeToIntlOptions(format) {
+            const options = {};
+            
+            // Common strftime patterns
+            if (format.includes('%%Y')) options.year = 'numeric';
+            if (format.includes('%%y')) options.year = '2-digit';
+            if (format.includes('%%m')) options.month = '2-digit';
+            if (format.includes('%%B')) options.month = 'long';
+            if (format.includes('%%b')) options.month = 'short';
+            if (format.includes('%%d')) options.day = '2-digit';
+            if (format.includes('%%H')) options.hour = '2-digit';
+            if (format.includes('%%M')) options.minute = '2-digit';
+            if (format.includes('%%S')) options.second = '2-digit';
+            
+            return options;
+        }
+
+        function registerTRNMLFilters(engine) {
+            // l_date: Localized date formatting
+            engine.registerFilter('l_date', function(dateValue, format, locale) {
+                if (!dateValue) return '';
+                
+                if (!locale && this.context) {
+                    locale = this.context.get(['trmnl', 'user', 'locale']) || 'en';
+                }
+                
+                try {
+                    const date = new Date(dateValue);
+                    if (isNaN(date.getTime())) return dateValue;
+                    
+                    const options = convertStrftimeToIntlOptions(format || '%%Y-%%m-%%d');
+                    return new Intl.DateTimeFormat(locale, options).format(date);
+                } catch (e) {
+                    console.warn('l_date filter error:', e);
+                    return dateValue;
+                }
+            });
+            
+            // json: Convert to JSON
+            engine.registerFilter('json', function(value) {
+                try {
+                    return JSON.stringify(value, null, 2);
+                } catch (e) {
+                    return String(value);
+                }
+            });
+            
+            // parse_json: Parse JSON strings
+            engine.registerFilter('parse_json', function(jsonString) {
+                try {
+                    return JSON.parse(jsonString);
+                } catch (e) {
+                    console.warn('parse_json filter error:', e);
+                    return jsonString;
+                }
+            });
+        }
+
+        function enhanceViewClasses(template) {
+            // Process double quotes
+            template = template.replace(/class="([^"]*\bview\b[^"]*)"/g, function(match, classContent) {
+                // Check if already has layout modifiers
+                if (classContent.includes('view--full') || 
+                    classContent.includes('view--half') || 
+                    classContent.includes('view--quadrant')) {
+                    return match;
+                }
+                
+                // Replace standalone 'view' with 'view view--full'
+                const enhancedClasses = classContent.replace(/\bview\b/g, 'view view--full');
+                return 'class="' + enhancedClasses + '"';
+            });
+            
+            // Process single quotes
+            template = template.replace(/class='([^']*\bview\b[^']*)'/g, function(match, classContent) {
+                if (classContent.includes('view--full') || 
+                    classContent.includes('view--half') || 
+                    classContent.includes('view--quadrant')) {
+                    return match;
+                }
+                
+                const enhancedClasses = classContent.replace(/\bview\b/g, 'view view--full');
+                return "class='" + enhancedClasses + "'";
+            });
+            
+            return template;
+        }
+
+        function handleDitheringTiming() {
+            // Check if window.load already fired and handle dithering timing
+            if (document.readyState === 'complete') {
+                // Page already loaded, manually trigger dithering
+                if (typeof window.setup === 'function') {
+                    console.log('Triggering dithering via window.setup()');
+                    window.setup();
+                } else {
+                    // Fallback: dispatch load event to trigger dithering
+                    console.log('Triggering dithering via window load event');
+                    window.dispatchEvent(new Event('load'));
+                }
+            } else {
+                // Wait for page to fully load
+                window.addEventListener('load', function() {
+                    console.log('Page loaded, triggering dithering');
+                    if (typeof window.setup === 'function') {
+                        window.setup();
+                    }
+                });
+            }
+        }
+
+        // Initialize LiquidJS engine
+        const { Liquid } = window.liquidjs;
+        const engine = new Liquid();
+
+        // Register TRMNL custom filters
+        registerTRNMLFilters(engine);
+
+        // Set a timeout fallback in case anything fails
+        setTimeout(() => {
+            if (document.body && !document.body.hasAttribute('data-render-complete')) {
+                console.log('Fallback: Setting completion signal after timeout');
+                document.body.setAttribute('data-render-complete', 'true');
+            }
+        }, 3000);
+
+        // Process each child template with its data
+        document.addEventListener('DOMContentLoaded', async function() {
+            console.log('Starting mashup template processing...');
+            
+            try {
+                for (const [slot, template] of Object.entries(childTemplates)) {
+                    console.log('Processing slot:', slot);
+                    const slotElement = document.getElementById('slot-' + slot);
+                    
+                    if (slotElement && childData[slot]) {
+                        try {
+                            if (childData[slot].error) {
+                                // Handle error case
+                                console.log('Error in slot', slot, ':', childData[slot].error);
+                                slotElement.innerHTML = template;
+                            } else {
+                                // Preprocess template for TRMNL syntax compatibility
+                                const processedTemplate = preprocessTRNMLTemplate(template);
+                                console.log('Processing template for', slot, ':', processedTemplate);
+                                console.log('Data for', slot, ':', childData[slot]);
+                                
+                                // Render template with TRMNL filters
+                                const html = await engine.parseAndRender(processedTemplate, childData[slot]);
+                                console.log('Rendered HTML for', slot, ':', html);
+                                
+                                // Enhance view classes like the server does
+                                const enhancedHTML = enhanceViewClasses(html);
+                                
+                                slotElement.innerHTML = enhancedHTML;
+                            }
+                        } catch (error) {
+                            console.error('Failed to render slot ' + slot + ':', error);
+                            slotElement.innerHTML = '<div class="mashup-error">Template Error: ' + error.message + '</div>';
+                        }
+                    } else {
+                        console.error('Missing slot element or data for:', slot);
+                    }
+                }
+                
+                console.log('Mashup template processing complete');
+                
+                // Trigger dithering after all templates are processed
+                setTimeout(() => {
+                    handleDitheringTiming();
+                    
+                    // Set completion signal after dithering
+                    setTimeout(() => {
+                        console.log('Setting render completion signal');
+                        document.body.setAttribute('data-render-complete', 'true');
+                    }, 200);
+                }, 100);
+                
+            } catch (error) {
+                console.error('Error during mashup processing:', error);
+                // Always set completion signal even if there are errors
+                document.body.setAttribute('data-render-complete', 'true');
+            }
+        });
+    </script>
 </body>
 </html>`,
 		ctx.Device.DeviceModel.ScreenWidth,
 		ctx.Device.DeviceModel.ScreenHeight,
 		r.layout,
-		mashupContent)
-	
-	return finalHTML
+		slotDivs,
+		string(childDataJSON),
+		string(childTemplatesJSON),
+		r.layout)
 }
 
-// createTRNMLData creates TRMNL-compatible data structure for child plugins
-func (r *MashupRenderer) createTRNMLData(ctx plugins.PluginContext, instance *database.PluginInstance) map[string]interface{} {
-	trmnlData := make(map[string]interface{})
+// buildSlotDivs creates the slot div structure based on layout configuration
+func (r *MashupRenderer) buildSlotDivs() string {
+	var slotDivs []string
 	
-	// Add system information
-	systemData := map[string]interface{}{
-		"timestamp_utc": ctx.Device.LastSeen.Unix(),
-	}
-	trmnlData["system"] = systemData
-	
-	// Add device information
-	if ctx.Device != nil {
-		deviceData := map[string]interface{}{
-			"friendly_id": ctx.Device.FriendlyID,
-		}
-		
-		if ctx.Device.DeviceModel != nil {
-			deviceData["width"] = ctx.Device.DeviceModel.ScreenWidth
-			deviceData["height"] = ctx.Device.DeviceModel.ScreenHeight
-		}
-		
-		if ctx.Device.BatteryVoltage > 0 {
-			batteryPercentage := plugins.BatteryVoltageToPercentage(ctx.Device.BatteryVoltage)
-			deviceData["percent_charged"] = batteryPercentage
-		}
-		
-		if ctx.Device.RSSI != 0 {
-			wifiPercentage := plugins.RSSIToWifiStrengthPercentage(ctx.Device.RSSI)
-			deviceData["wifi_strength"] = wifiPercentage
-		}
-		
-		trmnlData["device"] = deviceData
+	for _, slot := range r.slotConfig {
+		// Create slot div with proper TRMNL classes
+		slotDiv := fmt.Sprintf(`<div id="slot-%s" class="view %s">
+			<!-- Child content will be rendered here by JavaScript -->
+			<div class="mashup-loading">Loading %s...</div>
+		</div>`, 
+			slot.Position, 
+			slot.ViewClass,
+			slot.DisplayName)
+			
+		slotDivs = append(slotDivs, slotDiv)
 	}
 	
-	// Add user information
-	if ctx.User != nil {
-		userData := map[string]interface{}{
-			"name":       ctx.User.Username,
-			"first_name": ctx.User.FirstName,
-			"last_name":  ctx.User.LastName,
-			"locale":     ctx.User.Locale,
-		}
-		trmnlData["user"] = userData
-	}
-	
-	// Add plugin settings
-	pluginSettings := map[string]interface{}{
-		"instance_name": instance.Name,
-		"strategy":      "mashup_child",
-		"dark_mode":     "no",
-		"no_screen_padding": "no",
-	}
-	
-	// Add form field values from instance settings
-	if len(instance.Settings) > 0 {
-		var settingsMap map[string]interface{}
-		if err := json.Unmarshal(instance.Settings, &settingsMap); err == nil {
-			pluginSettings["custom_fields_values"] = settingsMap
-		}
-	}
-	
-	trmnlData["plugin_settings"] = pluginSettings
-	
-	return trmnlData
+	return strings.Join(slotDivs, "\n")
 }
+

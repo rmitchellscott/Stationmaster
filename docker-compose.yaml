@@ -40,6 +40,7 @@ services:
       - OIDC_REDIRECT_URI=${OIDC_REDIRECT_URI}
       - LOG_LEVEL=DEBUG
       - ALLOW_INSECURE=true
+      - ALLOW_EXTERNAL_SCRIPTS=true
       # SMTP Configuration (optional)
       - SMTP_ENABLED=${SMTP_ENABLED:-false}
       - SMTP_HOST=${SMTP_HOST}

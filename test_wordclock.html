@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Word Clock Test</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://usetrmnl.com/css/latest/plugins.css">
+    <script src="https://cdn.jsdelivr.net/npm/liquidjs@10.10.1/dist/liquid.browser.umd.js"></script>
+    <!-- TRMNL Scripts for core functionality, filters, and rendering -->
+    <script src="https://usetrmnl.com/js/latest/plugins.js"></script>
+    <script src="https://usetrmnl.com/assets/plugin-bfbd7e9488fd0d6dff2f619b5cb963c0772a24d6d0b537f60089dc53aa4746ff.js"></script>
+    <script src="https://usetrmnl.com/assets/plugin_legacy-0c72702a185603fd7fc5eb915658f49486903cb5c92cd6153a336b8ce3973452.js"></script>
+    <script src="https://usetrmnl.com/assets/plugin_demo-25268352c5a400b970985521a5eaa3dc90c736ce0cbf42d749e7e253f0c227f5.js"></script>
+    <script src="https://usetrmnl.com/assets/plugin-render/plugins-332ca4207dd02576b3641691907cb829ef52a36c4a092a75324a8fc860906967.js"></script>
+    <script src="https://usetrmnl.com/assets/plugin-render/plugins_legacy-a6b0b3aeac32ca71413f1febc053c59a528d4c6bb2173c22bd94ff8e0b9650f1.js"></script>
+    <script src="https://usetrmnl.com/assets/plugin-render/dithering-d697f6229e3bd6e2455425d647e5395bb608999c2039a9837a903c7c7e952d61.js"></script>
+    <script src="https://usetrmnl.com/assets/plugin-render/asset-deduplication-39fa2231b7a5bd5bedf4a1782b6a95d8b87eb3aaaa5e2b6cee287133d858bc96.js"></script>
+    <style>
+        body { 
+            width: 800px; 
+            height: 480px; 
+            margin: 0; 
+            padding: 0;
+        }
+        #loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            font-family: Arial, sans-serif;
+            color: #666;
+        }
+        #error {
+            display: none;
+            padding: 20px;
+            background: #fee;
+            border: 1px solid #fcc;
+            color: #c00;
+            font-family: monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+        }
+        .mashup-error {
+            padding: 10px;
+            background: #fee;
+            border: 1px solid #fcc;
+            color: #c00;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .mashup-empty-slot {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            background: #f5f5f5;
+            border: 2px dashed #ccc;
+            color: #999;
+        }
+        /* Dark mode inversion CSS */
+        .screen--dark-mode {
+            filter: invert(1);
+        }
+        .screen--dark-mode .image {
+            filter: invert(1);
+        }
+    </style>
+</head>
+<body>
+    <div id="loading">Loading template...</div>
+    <div id="error"></div>
+    <div id="output" style="display: none;"></div>
+    
+    <script>
+        // Template and data definitions (global scope)
+        const template = "{% assign user_offset =  trmnl.user.utc_offset | times: 1000 %}\n\n<link rel=\"preconnect\" href=\"https://fonts.googleapis.com\">\n<link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin>\n<link href=\"https://fonts.googleapis.com/css2?family=Chivo+Mono:ital,wght@0,100..900;1,100..900&display=swap\" rel=\"stylesheet\">\n\n<style>\n  .clock {\n    font-family: \"Chivo Mono\";\n    font-size: 40px;\n    font-weight: bold;     \n    color: rgba(0,0 0, 0);\n    letter-spacing: 30px;     \n  } \n  .highlighted {\n    color: #000;\n  }\n</style>\n\n<div class=\"layout layout--col layout--center-y\">\n  <div class=\"clock text--gray-6\">\n    <div class=\"row\">\n      <p id=\"twenty\">TWENTY</p>\n      <p id=\"ddash\">&ndash;</p>\n      <p id=\"minute_five\">FIVE</p>\n      <p>CL</p>\n    </div>\n    <div class=\"row\">\n      <p id=\"topa\">A</p>\n      <p>S</p>\n      <p id=\"quarter\">QUARTER</p>\n      <p id=\"half\">HALF</p>\n    </div>\n    <div class=\"row\">\n      <p id=\"minute_ten\">TEN</p>\n      <p>T</p>\n      <p id=\"pas_past\" >PAS</p>\n      <p id=\"t_past_to\">T</p>\n      <p id=\"o_to\">O</p>\n      <p>A</p>\n      <p id=\"hour_ten\">TEN</p>\n    </div>\n    <div class=\"row\">\n      <p id=\"tw_two\">TW</p>\n      <p id=\"o_two_one\">O</p>\n      <p id=\"n_one\">N</p>\n      <p id=\"e_one_eight\">E</p>\n      <p id=\"igh_eight\">IGH</p>\n      <p id=\"t_eight_three\">T</p>\n      <p id=\"hree_three\">HREE</p>\n    </div>\n    <div class=\"row\">\n      <p id=\"midnight\">MIDNIGHT</p>\n      <p>X</p>\n      <p id=\"noon\">NOON</p>\n    </div>\n    <div class=\"row\">\n      <p id=\"four\">FOUR</p>\n      <p id=\"fiv_five\">FIV</p>\n      <p id=\"e_five_eleven\">E</p>\n      <p id=\"leven_eleven\">LEVEN</p>\n    </div>\n    <div class=\"row\">\n      <p id=\"twelve\">TWELVE</p>\n      <p id=\"six\">SIX</p>\n      <p id=\"nine\">NINE</p>\n    </div>\n    <div class=\"row\">\n      <p id=\"seven\">SEVEN</p>\n      <p>RK</p>\n      <p id=\"oclock\">OCLOCK</p>\n    </div>\n  </div>\n</div>\n<div class=\"title_bar\">\n  <img class=\"image\" src=\"https://usetrmnl.com/images/plugins/trmnl--render.svg\" />\n  <span class=\"title\">Word Clock</span>\n  <span class=\"instance\">{{trmnl.user.time_zone}}</span>\n</div>\n\n<script type=\"text/javascript\">\n\n  /*\n    1 bit worldclock by delhoume@gmail.com\n    this code is free\n    */\n\n  const highlight = (name) => {\n    const names = name instanceof Array ? name : [ name ];\n    for (var n = 0; n < names.length; ++n) {\n      const element = document.getElementById(names[n]);\n      if (element) element.className = \"highlighted\";\n      else console.log(\"no such element\", name);\n    }\n  }\n\n  const showTimeEnglish = () => {\n    var now = new Date(); // normal mode\n    const utc_offset = now.getTimezoneOffset() * 60 * 1000; // in seconds\n    now = new Date(now.getTime() + utc_offset + {{user_offset}});\n\n    const hour = now.getHours();\n    const minutes = now.getMinutes();\n    var displayed_hour = hour;\n\n    const num_five = Math.floor(minutes / 5);\n\n\n    if (num_five > 6) {\n      displayed_hour = hour + 1;\n    }\n    switch (displayed_hour) {\n      case 0: case 24: { highlight(\"midnight\"); } break\n      case 1: case 13: { highlight([\"o_two_one\", \"n_one\", \"e_one_eight\"]); break; }\n      case 2: case 14: { highlight([\"tw_two\", \"o_two_one\"]); break; }\n      case 3: case 15: { highlight([\"t_eight_three\", \"hree_three\"]); break; }\n      case 4: case 16: { highlight(\"four\"); break };\n      case 5: case 17: { highlight([\"fiv_five\", \"e_five_eleven\"]); break; };\n      case 6: case 18: { highlight(\"six\"); break };\n      case 7: case 19: { highlight(\"seven\"); break };\n      case 8: case 20: { highlight([\"e_one_eight\", \"igh_eight\", \"t_eight_three\"]); break };\n      case 9: case 21: { highlight(\"nine\"); break };\n      case 10: case 22: { highlight(\"hour_ten\"); break };\n      case 11: case 23: { highlight([\"e_five_eleven\", \"leven_eleven\"]); break };\n      case 12: { highlight(\"noon\"); break }\n    }\n\n    switch (num_five) {\n      case 0:\n        if (hour != 0 && hour != 12) {\n          highlight(\"oclock\");\n        }\n        break;\n      case 1:\n        highlight([\"pas_past\", \"t_past_to\", \"minute_five\"]); break;\n      case 2:\n        highlight([\"pas_past\", \"t_past_to\", \"minute_ten\"]); break;\n      case 3:\n        highlight([\"pas_past\",\"t_past_to\", \"quarter\"]); break;\n      case 4: {\n        highlight([\"pas_past\",\"t_past_to\",\"twenty\"]);\n      } break;\n      case 5: {\n        highlight([\"pas_past\",\"t_past_to\", \"twenty\",\"ddash\",\"minute_five\"]);\n      } break;\n      case 6: {\n        highlight([\"pas_past\",\"t_past_to\",\"half\"]);\n      } break;\n      case 7: {\n        highlight([\"t_past_to\",\"o_to\",\"twenty\",\"ddash\",\"minute_five\"]);\n      } break;\n      case 8: {\n        highlight([\"t_past_to\",\"o_to\",\"twenty\"]);\n      } break;\n      case 9: {\n        highlight([\"t_past_to\",\"o_to\",\"quarter\"]);\n      } break;\n      case 10: {\n        highlight([\"t_past_to\",\"o_to\",\"minute_ten\"]);\n      } break;\n      case 11: {\n        highlight([\"t_past_to\",\"o_to\",\"minute_five\"]);\n      } break;\n    }\n  }\n  document.addEventListener(\"DOMContentLoaded\", function (e) {\n    showTimeEnglish();\n  });\n\n\n<\/script>";
+        const data = {"trmnl":{"system":{"timestamp_utc":1735254154},"device":{"friendly_id":"test-device","width":800,"height":480,"percent_charged":85,"wifi_strength":75},"user":{"name":"Test User","first_name":"Test","last_name":"User","locale":"en","time_zone":"Pacific Time","time_zone_iana":"America/Los_Angeles","utc_offset":-28800},"plugin_settings":{"instance_name":"Word Clock Test","strategy":"static","dark_mode":"no","no_screen_padding":"no","custom_fields_values":{}}}};
+        const instanceId = "test-instance-123";
+        const removeBleedMargin = false;
+        const enableDarkMode = false;
+        
+        // Set a timeout fallback in case anything fails
+        setTimeout(() => {
+            if (document.body && !document.body.hasAttribute('data-render-complete')) {
+                console.log('Fallback: Setting completion signal after timeout');
+                document.body.setAttribute('data-render-complete', 'true');
+            }
+        }, 3000);
+        
+        // TRMNL Compatibility Layer Functions
+        function preprocessTRNMLTemplate(template) {
+            // Only convert TRMNL's alternative syntax at the START of Liquid expressions
+            // Look for {{ variable: filter }} patterns where there are NO pipes before the colon
+            let processed = template;
+            
+            // Pattern 1: {{ var: filter, param }} → {{ var | filter: param }}
+            // Only match if there's no | before the first :
+            processed = processed.replace(/\{\{\s*([^|}]+?):\s*([^,\s]+)\s*,\s*([^}]+?)\s*\}\}/g, '{{ $1 | $2: $3 }}');
+            
+            // Pattern 2: {{ var: filter }} → {{ var | filter }}  
+            // Only match if there's no | before the first :
+            processed = processed.replace(/\{\{\s*([^|}]+?):\s*([^}\s]+)\s*\}\}/g, '{{ $1 | $2 }}');
+            
+            return processed;
+        }
+        
+        function registerTRNMLFilters(engine) {
+            
+            // l_date: Localized date formatting with strftime syntax
+            engine.registerFilter('l_date', function(dateValue, format, locale) {
+                if (!dateValue) return '';
+                
+                // Use locale from context if not provided
+                if (!locale && this.context) {
+                    locale = this.context.get(['trmnl', 'user', 'locale']) || 'en';
+                }
+                
+                try {
+                    const date = new Date(dateValue);
+                    if (isNaN(date.getTime())) return dateValue;
+                    
+                    // Convert strftime format to Intl.DateTimeFormat options
+                    const options = convertStrftimeToIntlOptions(format || '%Y-%m-%d');
+                    return new Intl.DateTimeFormat(locale, options).format(date);
+                } catch (e) {
+                    console.warn('l_date filter error:', e);
+                    return dateValue;
+                }
+            });
+            
+            // l_word: Localize common words
+            engine.registerFilter('l_word', async function(word, locale) {
+                if (!locale && this.context) {
+                    locale = this.context.get(['trmnl', 'user', 'locale']) || 'en';
+                }
+                
+                try {
+                    const localeData = await loadLocaleData(locale);
+                    
+                    // Look for the word in the locale data
+                    if (localeData[word]) {
+                        return localeData[word];
+                    }
+                    
+                    // Fallback to hardcoded translations for common words
+                    const fallbackTranslations = getTRNMLWordTranslations();
+                    const localeKey = locale.toLowerCase().split('-')[0];
+                    
+                    if (fallbackTranslations[word] && fallbackTranslations[word][localeKey]) {
+                        return fallbackTranslations[word][localeKey];
+                    }
+                } catch (e) {
+                    console.warn('l_word filter error:', e);
+                }
+                
+                return word; // Return original if no translation found
+            });
+            
+            // json: Convert to JSON
+            engine.registerFilter('json', function(value) {
+                try {
+                    return JSON.stringify(value, null, 2);
+                } catch (e) {
+                    return String(value);
+                }
+            });
+            
+            // parse_json: Parse JSON strings
+            engine.registerFilter('parse_json', function(jsonString) {
+                try {
+                    return JSON.parse(jsonString);
+                } catch (e) {
+                    console.warn('parse_json filter error:', e);
+                    return jsonString;
+                }
+            });
+            
+            // group_by: Group array by key
+            engine.registerFilter('group_by', function(array, key) {
+                if (!Array.isArray(array)) return array;
+                
+                const grouped = {};
+                array.forEach(item => {
+                    const groupKey = item[key] || 'undefined';
+                    if (!grouped[groupKey]) grouped[groupKey] = [];
+                    grouped[groupKey].push(item);
+                });
+                
+                return Object.keys(grouped).map(k => ({
+                    name: k,
+                    items: grouped[k],
+                    size: grouped[k].length
+                }));
+            });
+            
+            // find_by: Find array item by key/value
+            engine.registerFilter('find_by', function(array, key, value) {
+                if (!Array.isArray(array)) return null;
+                return array.find(item => item[key] === value) || null;
+            });
+            
+            // sample: Random array selection
+            engine.registerFilter('sample', function(array) {
+                if (!Array.isArray(array) || array.length === 0) return null;
+                return array[Math.floor(Math.random() * array.length)];
+            });
+            
+            // number_with_delimiter: Format numbers with delimiters
+            engine.registerFilter('number_with_delimiter', function(number, delimiter) {
+                if (isNaN(number)) return number;
+                const delim = delimiter || ',';
+                return Number(number).toLocaleString().replace(/,/g, delim);
+            });
+            
+            // number_to_currency: Convert to localized currency
+            engine.registerFilter('number_to_currency', function(number, currency, locale) {
+                if (isNaN(number)) return number;
+                
+                if (!locale && this.context) {
+                    locale = this.context.get(['trmnl', 'user', 'locale']) || 'en-US';
+                }
+                
+                const options = {
+                    style: 'currency',
+                    currency: currency || 'USD'
+                };
+                
+                try {
+                    return new Intl.NumberFormat(locale, options).format(number);
+                } catch (e) {
+                    return currency + ' ' + number;
+                }
+            });
+            
+            // pluralize: Word inflection based on count
+            engine.registerFilter('pluralize', function(word, count, pluralForm) {
+                if (count === 1) return word;
+                return pluralForm || (word + 's');
+            });
+            
+            // markdown_to_html: Simple markdown conversion
+            engine.registerFilter('markdown_to_html', function(markdown) {
+                if (!markdown) return '';
+                
+                // Basic markdown conversion (extend as needed)
+                return markdown
+                    .replace(/^# (.*$)/gim, '<h1>$1</h1>')
+                    .replace(/^## (.*$)/gim, '<h2>$1</h2>')
+                    .replace(/^### (.*$)/gim, '<h3>$1</h3>')
+                    .replace(/\*\*(.*)\*\*/gim, '<strong>$1</strong>')
+                    .replace(/\*(.*)\*/gim, '<em>$1</em>')
+                    .replace(/\n/gim, '<br>');
+            });
+            
+            // append_random: Generate unique identifiers
+            engine.registerFilter('append_random', function(string) {
+                const randomSuffix = Math.random().toString(36).substring(2, 8);
+                return string + '_' + randomSuffix;
+            });
+            
+            // days_ago: Generate date X days before current
+            engine.registerFilter('days_ago', function(days) {
+                const date = new Date();
+                date.setDate(date.getDate() - parseInt(days));
+                return date.toISOString().split('T')[0];
+            });
+            
+        }
+        
+        function convertStrftimeToIntlOptions(format) {
+            // Convert common strftime patterns to Intl.DateTimeFormat options
+            const options = {};
+            
+            if (format.includes('%A')) options.weekday = 'long';
+            else if (format.includes('%a')) options.weekday = 'short';
+            
+            if (format.includes('%B')) options.month = 'long';
+            else if (format.includes('%b')) options.month = 'short';
+            else if (format.includes('%m')) options.month = '2-digit';
+            
+            if (format.includes('%d')) options.day = '2-digit';
+            else if (format.includes('%e')) options.day = 'numeric';
+            
+            if (format.includes('%Y')) options.year = 'numeric';
+            else if (format.includes('%y')) options.year = '2-digit';
+            
+            if (format.includes('%H')) options.hour = '2-digit';
+            else if (format.includes('%I')) {
+                options.hour = '2-digit';
+                options.hour12 = true;
+            }
+            
+            if (format.includes('%M')) options.minute = '2-digit';
+            if (format.includes('%S')) options.second = '2-digit';
+            
+            return options;
+        }
+        
+        // Global locale cache for translations
+        let localeCache = {};
+        
+        async function loadLocaleData(locale) {
+            // Check cache first
+            if (localeCache[locale]) {
+                return localeCache[locale];
+            }
+            
+            try {
+                const response = await fetch('/api/locales/' + locale);
+                if (response.ok) {
+                    const localeData = await response.json();
+                    localeCache[locale] = localeData;
+                    return localeData;
+                }
+            } catch (e) {
+                console.warn('Failed to load locale data for ' + locale + ':', e);
+            }
+            
+            // Fallback to English if locale fails
+            if (locale !== 'en') {
+                return loadLocaleData('en');
+            }
+            
+            return {};
+        }
+        
+        function getTRNMLWordTranslations() {
+            // This is now just a fallback - real translations come from loadLocaleData
+            return {
+                'today': { 'en': 'today' },
+                'tomorrow': { 'en': 'tomorrow' }, 
+                'yesterday': { 'en': 'yesterday' }
+            };
+        }
+        
+        // Define the function BEFORE the LiquidJS script loads
+        function initializeLiquid() {
+            
+            // Use liquidjs constructor (we know this exists)
+            const engine = new liquidjs.Liquid();
+            
+            // Register TRMNL custom filters for compatibility
+            registerTRNMLFilters(engine);
+            
+            // Preprocess template for TRMNL syntax compatibility
+            const processedTemplate = preprocessTRNMLTemplate(template);
+        
+            // Render template
+            engine.parseAndRender(processedTemplate, data)
+                .then(renderedContent => {
+                    
+                    // Process the rendered content similar to server-side processing
+                    let processedTemplate = renderedContent;
+                    
+                    // Handle view_type variables (fallback)
+                    processedTemplate = processedTemplate.replace(/\{\{\s*view_type\s*\}\}/g, 'view--full');
+                    
+                    // Enhance view classes (same logic as server-side)
+                    function enhanceViewClasses(template) {
+                        // Process double quotes
+                        template = template.replace(/class="([^"]*\bview\b[^"]*)"/g, function(match, classContent) {
+                            // Check if already has layout modifiers
+                            if (classContent.includes('view--full') || 
+                                classContent.includes('view--half') || 
+                                classContent.includes('view--quadrant')) {
+                                return match;
+                            }
+                            
+                            // Replace standalone 'view' with 'view view--full'
+                            const enhancedClasses = classContent.replace(/\bview\b/g, 'view view--full');
+                            return 'class="' + enhancedClasses + '"';
+                        });
+                        
+                        // Process single quotes
+                        template = template.replace(/class='([^']*\bview\b[^']*)'/g, function(match, classContent) {
+                            // Check if already has layout modifiers
+                            if (classContent.includes('view--full') || 
+                                classContent.includes('view--half') || 
+                                classContent.includes('view--quadrant')) {
+                                return match;
+                            }
+                            
+                            // Replace standalone 'view' with 'view view--full'
+                            const enhancedClasses = classContent.replace(/\bview\b/g, 'view view--full');
+                            return "class='" + enhancedClasses + "'";
+                        });
+                        
+                        return template;
+                    }
+                    
+                    processedTemplate = enhanceViewClasses(processedTemplate);
+                    
+                    // Check if template has view classes (after enhancement)
+                    const hasViewClass = processedTemplate.includes('class="view') || 
+                                       processedTemplate.includes("class='view");
+                    
+                    
+                    // Build screen classes based on options
+                    let screenClasses = ['screen'];
+                    if (removeBleedMargin) {
+                        screenClasses.push('screen--no-bleed');
+                    }
+                    if (enableDarkMode) {
+                        screenClasses.push('screen--dark-mode');
+                    }
+                    const screenClassString = screenClasses.join(' ');
+                    
+                    // Wrap user template in TRMNL framework structure
+                    let wrappedContent;
+                    if (hasViewClass) {
+                        wrappedContent = '<div id="plugin-' + instanceId + '" class="environment trmnl">' +
+                            '<div class="' + screenClassString + '">' + processedTemplate + '</div>' +
+                            '</div>';
+                    } else {
+                        wrappedContent = '<div id="plugin-' + instanceId + '" class="environment trmnl">' +
+                            '<div class="' + screenClassString + '">' +
+                            '<div class="view view--full">' + processedTemplate + '</div>' +
+                            '</div>' +
+                            '</div>';
+                    }
+                    
+                    // Hide loading, show output - wait for DOM to be ready
+                    function waitForDOMAndShow() {
+                        
+                        if (document.readyState === 'loading') {
+                            // DOM still loading, wait a bit more
+                            setTimeout(waitForDOMAndShow, 10);
+                            return;
+                        }
+                        
+                        const loadingEl = document.getElementById('loading');
+                        const outputEl = document.getElementById('output');
+                        
+                        if (loadingEl) {
+                            loadingEl.style.display = 'none';
+                        }
+                        
+                        if (outputEl) {
+                            outputEl.style.display = 'block';
+                            outputEl.innerHTML = wrappedContent;
+                            
+                            // Load all TRMNL scripts AFTER content is shown
+                            const scriptUrls = [
+                                // Main plugins.js (layout/typography utilities)
+                                'https://usetrmnl.com/js/latest/plugins.js',
+                                
+                                // Core Plugin Files
+                                'https://usetrmnl.com/assets/plugin-bfbd7e9488fd0d6dff2f619b5cb963c0772a24d6d0b537f60089dc53aa4746ff.js',
+                                'https://usetrmnl.com/assets/plugin_legacy-0c72702a185603fd7fc5eb915658f49486903cb5c92cd6153a336b8ce3973452.js',
+                                'https://usetrmnl.com/assets/plugin_demo-25268352c5a400b970985521a5eaa3dc90c736ce0cbf42d749e7e253f0c227f5.js',
+                                
+                                // Plugin Render Files
+                                'https://usetrmnl.com/assets/plugin-render/plugins-332ca4207dd02576b3641691907cb829ef52a36c4a092a75324a8fc860906967.js',
+                                'https://usetrmnl.com/assets/plugin-render/plugins_legacy-a6b0b3aeac32ca71413f1febc053c59a528d4c6bb2173c22bd94ff8e0b9650f1.js',
+                                'https://usetrmnl.com/assets/plugin-render/dithering-d697f6229e3bd6e2455425d647e5395bb608999c2039a9837a903c7c7e952d61.js',
+                                'https://usetrmnl.com/assets/plugin-render/asset-deduplication-39fa2231b7a5bd5bedf4a1782b6a95d8b87eb3aaaa5e2b6cee287133d858bc96.js'
+                            ];
+                            
+                            function loadScriptsSequentially(urls, index = 0) {
+                                if (index >= urls.length) {
+                                    // All scripts loaded - handle dithering timing
+                                    setTimeout(() => {
+                                        handleDitheringTiming();
+                                    }, 100);
+                                    return;
+                                }
+                                
+                                const script = document.createElement('script');
+                                script.src = urls[index];
+                                script.onload = () => loadScriptsSequentially(urls, index + 1);
+                                script.onerror = (e) => {
+                                    console.error('TRMNL script failed to load:', urls[index], e);
+                                    loadScriptsSequentially(urls, index + 1); // Continue loading other scripts
+                                };
+                                document.head.appendChild(script);
+                            }
+                            
+                            function handleDitheringTiming() {
+                                // Check if window.load already fired and handle dithering timing
+                                if (document.readyState === 'complete') {
+                                    // Page already loaded, manually trigger dithering
+                                    if (typeof window.setup === 'function') {
+                                        window.setup();
+                                    } else {
+                                        // Fallback: dispatch load event to trigger dithering
+                                        window.dispatchEvent(new Event('load'));
+                                    }
+                                }
+                                // If readyState is not complete, dithering will trigger on natural window.load
+                            }
+                            
+                            loadScriptsSequentially(scriptUrls);
+                        }
+                    }
+                    
+                    waitForDOMAndShow();
+                    
+                    // Wait for fonts to load before setting completion signal
+                    function waitForFontsAndComplete() {
+                        // Check if fonts are loaded using document.fonts API
+                        if (document.fonts && document.fonts.status === 'loaded') {
+                            if (document.body) {
+                                document.body.setAttribute('data-render-complete', 'true');
+                            }
+                        } else {
+                            // Fallback: wait a bit more for fonts
+                            setTimeout(waitForFontsAndComplete, 100);
+                        }
+                    }
+                    
+                    // Start font loading check, but also set a maximum wait time
+                    waitForFontsAndComplete();
+                    
+                    // Fallback: set completion signal after 2 seconds even if fonts aren't loaded
+                    setTimeout(() => {
+                        if (document.body && !document.body.hasAttribute('data-render-complete')) {
+                            document.body.setAttribute('data-render-complete', 'true');
+                        }
+                    }, 2000);
+                })
+                .catch(err => {
+                    console.error('Liquid rendering error:', err);
+                    console.error('Error details:', {
+                        message: err.message,
+                        stack: err.stack,
+                        name: err.name
+                    });
+                    
+                    const loadingEl = document.getElementById('loading');
+                    const errorEl = document.getElementById('error');
+                    
+                    if (loadingEl) loadingEl.style.display = 'none';
+                    if (errorEl) {
+                        errorEl.style.display = 'block';
+                        errorEl.textContent = 'Template Error: ' + err.message + '\n\nStack: ' + (err.stack || 'No stack trace available');
+                    }
+                    
+                    // Set completion signal even in error case so browserless doesn't hang
+                    if (document.body) {
+                        document.body.setAttribute('data-render-complete', 'true');
+                    }
+                });
+        }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/liquidjs/dist/liquid.browser.min.js" onload="initializeLiquid()"></script>
+    
+    <script>
+        // Fallback: If LiquidJS CDN fails to load
+        setTimeout(() => {
+            if (typeof liquidjs === 'undefined') {
+                console.error('LiquidJS failed to load from CDN');
+                const loadingEl = document.getElementById('loading');
+                const errorEl = document.getElementById('error');
+                
+                if (loadingEl) loadingEl.style.display = 'none';
+                if (errorEl) {
+                    errorEl.style.display = 'block';
+                    errorEl.textContent = 'LiquidJS library failed to load from CDN';
+                }
+                if (document.body) {
+                    document.body.setAttribute('data-render-complete', 'true');
+                }
+            }
+        }, 5000);
+    </script>
+</body>
+</html>

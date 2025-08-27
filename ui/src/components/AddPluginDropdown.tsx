@@ -5,8 +5,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { ChevronDown, Puzzle, Grid2x2, Columns2, Rows2 } from "lucide-react";
 import { MashupLayout, mashupService } from "@/services/mashupService";
 
@@ -18,13 +16,13 @@ interface AddPluginDropdownProps {
 
 // Single plugin layout representation
 const getSinglePluginGrid = () => {
-  const baseClasses = "border border-dashed border-muted-foreground/30 rounded text-xs flex items-center justify-center text-muted-foreground/60 font-medium bg-muted/20";
+  const baseClasses = "border border-dashed border-muted-foreground/30 rounded text-xs flex items-center justify-center text-muted-foreground/60 font-medium bg-muted/60";
   return <div className={`${baseClasses} h-16 w-24`}></div>;
 };
 
 // Mashup layout grid representations
 const getMashupLayoutGrid = (layoutId: string) => {
-  const baseClasses = "border border-dashed border-muted-foreground/30 rounded flex items-center justify-center bg-muted/20";
+  const baseClasses = "border border-dashed border-muted-foreground/30 rounded flex items-center justify-center bg-muted/60";
   
   console.log('Rendering layout:', layoutId); // Debug log
   
@@ -45,7 +43,7 @@ const getMashupLayoutGrid = (layoutId: string) => {
       );
     case "1Lx2R": // Left | Top-Right / Bottom-Right
       return (
-        <div className="grid grid-cols-[2fr_1fr] gap-1 h-16 w-24">
+        <div className="grid grid-cols-2 gap-1 h-16 w-24">
           <div className={baseClasses}></div>
           <div className="grid grid-rows-2 gap-1">
             <div className={baseClasses}></div>
@@ -55,7 +53,7 @@ const getMashupLayoutGrid = (layoutId: string) => {
       );
     case "2Lx1R": // Left-Top / Left-Bottom | Right
       return (
-        <div className="grid grid-cols-[1fr_2fr] gap-1 h-16 w-24">
+        <div className="grid grid-cols-2 gap-1 h-16 w-24">
           <div className="grid grid-rows-2 gap-1">
             <div className={baseClasses}></div>
             <div className={baseClasses}></div>
@@ -65,7 +63,7 @@ const getMashupLayoutGrid = (layoutId: string) => {
       );
     case "2Tx1B": // Top-Left | Top-Right / Bottom
       return (
-        <div className="grid grid-rows-[1fr_2fr] gap-1 h-16 w-24">
+        <div className="grid grid-rows-2 gap-1 h-16 w-24">
           <div className="grid grid-cols-2 gap-1">
             <div className={baseClasses}></div>
             <div className={baseClasses}></div>
@@ -75,7 +73,7 @@ const getMashupLayoutGrid = (layoutId: string) => {
       );
     case "1Tx2B": // Top / Bottom-Left | Bottom-Right
       return (
-        <div className="grid grid-rows-[2fr_1fr] gap-1 h-16 w-24">
+        <div className="grid grid-rows-2 gap-1 h-16 w-24">
           <div className={baseClasses}></div>
           <div className="grid grid-cols-2 gap-1">
             <div className={baseClasses}></div>
@@ -157,53 +155,56 @@ export const AddPluginDropdown: React.FC<AddPluginDropdownProps> = ({
         aria-label="Plugin selection menu"
       >
         <div className="p-4">
-          
-          {/* Single Plugin Option */}
-          <div 
-            className="mb-4 p-4 cursor-pointer transition-all duration-200 hover:bg-muted/20 rounded-lg border border-dashed border-muted-foreground/30"
-            onClick={handlePluginSelect}
-            role="button"
-            tabIndex={0}
-            aria-label="Create single plugin instance"
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                handlePluginSelect();
-              }
-            }}
-          >
-            <div className="flex items-center justify-center">
-              {getSinglePluginGrid()}
-            </div>
-          </div>
-
-          {/* Mashup Layouts */}
           {loading ? (
             <div className="text-center py-4 text-sm text-muted-foreground">
               Loading layouts...
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-3">
-              {layouts.map((layout) => (
-                <div
-                  key={layout.id}
-                  className="p-4 cursor-pointer transition-all duration-200 hover:bg-muted/20 rounded-lg border border-dashed border-muted-foreground/30"
-                  onClick={() => handleMashupSelect(layout)}
-                  role="button"
-                  tabIndex={0}
-                  aria-label={`Create mashup with ${layout.name} layout`}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      handleMashupSelect(layout);
-                    }
-                  }}
-                >
-                  <div className="flex items-center justify-center">
-                    {getMashupLayoutGrid(layout.id)}
-                  </div>
+              {/* Single Plugin Option - First in grid */}
+              <div 
+                className="p-4 cursor-pointer transition-all duration-200 hover:bg-muted/20 rounded-lg border border-dashed border-muted-foreground/30"
+                onClick={handlePluginSelect}
+                role="button"
+                tabIndex={0}
+                aria-label="Create single plugin instance"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    handlePluginSelect();
+                  }
+                }}
+              >
+                <div className="flex items-center justify-center">
+                  {getSinglePluginGrid()}
                 </div>
-              ))}
+              </div>
+              
+              {/* Ordered Mashup Layouts */}
+              {['1Lx1R', '1Lx2R', '2Lx1R', '1Tx1B', '1Tx2B', '2Tx1B', '2x2']
+                .map(layoutId => layouts.find(l => l.id === layoutId))
+                .filter(Boolean)
+                .map((layout) => (
+                  <div
+                    key={layout.id}
+                    className="p-4 cursor-pointer transition-all duration-200 hover:bg-muted/20 rounded-lg border border-dashed border-muted-foreground/30"
+                    onClick={() => handleMashupSelect(layout)}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Create mashup with ${layout.name} layout`}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        handleMashupSelect(layout);
+                      }
+                    }}
+                  >
+                    <div className="flex items-center justify-center">
+                      {getMashupLayoutGrid(layout.id)}
+                    </div>
+                  </div>
+                ))
+              }
             </div>
           )}
         </div>

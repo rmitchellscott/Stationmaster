@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Completion Test</title>
+    <style>
+        body { 
+            width: 600px; 
+            height: 448px; 
+            margin: 0; 
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+    <div>Test Content</div>
+    
+    <script>
+        // Global data and configuration
+        const renderData = {"test": true};
+        const removeBleedMargin = false;
+        const enableDarkMode = false;
+        const scriptLoadStrategy = 0;
+        
+        // CRITICAL: Immediate fallback timer - starts when page loads regardless of other code
+        setTimeout(() => {
+            if (document.body && !document.body.hasAttribute('data-render-complete')) {
+                console.log('FALLBACK: Setting completion signal after 3-second timeout');
+                document.body.setAttribute('data-render-complete', 'true');
+            }
+        }, 3000);
+        
+        // Additional logging to debug JavaScript execution
+        console.log('Base renderer JavaScript loaded successfully');
+        console.log('renderData available:', typeof renderData !== 'undefined');
+        console.log('LiquidJS loading...');
+        
+        // Global error handler for uncaught errors
+        window.addEventListener('error', function(e) {
+            console.error('UNCAUGHT ERROR during rendering:', e.error, e);
+            console.error('Error occurred at:', e.filename, 'line:', e.lineno);
+            if (document.body && !document.body.hasAttribute('data-render-complete')) {
+                console.log('Setting completion signal due to JavaScript error');
+                document.body.setAttribute('data-render-complete', 'true');
+            }
+        });
+        
+        // Test the completion signal immediately
+        setTimeout(() => {
+            console.log('Setting completion signal immediately for test');
+            document.body.setAttribute('data-render-complete', 'true');
+        }, 100);
+    </script>
+</body>
+</html>

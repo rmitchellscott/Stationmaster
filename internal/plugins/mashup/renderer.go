@@ -92,8 +92,8 @@ func (r *MashupRenderer) generateMashupHTML(childData map[string]interface{}, ch
             // Use liquidjs constructor (we know this exists)
             const engine = new liquidjs.Liquid();
 
-            // Register TRMNL custom filters
-            registerTRNMLFilters(engine);
+            // Register TRMNL custom filters and tags
+            registerTRNMLExtensions(engine);
             console.log('Starting mashup template processing...');
             
             // First, create the mashup container structure in the output div

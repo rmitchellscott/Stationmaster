@@ -236,7 +236,7 @@ func (r *BaseHTMLRenderer) generateSharedJavaScriptFunctions() string {
             return processed;
         }
         
-        function registerTRNMLFilters(engine) {
+        function registerTRNMLExtensions(engine) {
             
             // l_date: Localized date formatting with strftime syntax
             engine.registerFilter('l_date', function(dateValue, format, locale) {
@@ -397,6 +397,220 @@ func (r *BaseHTMLRenderer) generateSharedJavaScriptFunctions() string {
                 return date.toISOString().split('T')[0];
             });
             
+            // Apply TRMNL template processing (two-pass approach)
+            processTRNMLTemplates(engine);
+        }
+        
+        function processTRNMLTemplates(engine) {
+            // Two-pass TRMNL template processing
+            // This function will be called before template rendering to extract and register templates
+            
+            // Store original parseAndRender method
+            const originalParseAndRender = engine.parseAndRender.bind(engine);
+            
+            // Override parseAndRender to implement two-pass processing
+            engine.parseAndRender = async function(template, data) {
+                console.log('TRMNL two-pass template processing...');
+                
+                // PASS 1: Extract template definitions using regex
+                const templates = {};
+                const templateRegex = /\{%\s*template\s+([a-zA-Z0-9_\/]+)\s*%\}([\s\S]*?)\{%\s*endtemplate\s*%\}/g;
+                let match;
+                
+                while ((match = templateRegex.exec(template)) !== null) {
+                    const templateName = match[1];
+                    const templateContent = match[2].trim();
+                    templates[templateName] = templateContent;
+                    console.log('Extracted TRMNL template:', templateName);
+                }
+                
+                // PASS 2: Create new engine with extracted templates if any were found
+                if (Object.keys(templates).length > 0) {
+                    console.log('Creating engine with', Object.keys(templates).length, 'TRMNL templates');
+                    
+                    // Create new engine with extracted templates
+                    const templatedEngine = new liquidjs.Liquid({
+                        templates: templates
+                    });
+                    
+                    // Re-register all TRMNL filters on the new engine
+                    registerTRNMLFiltersOnly(templatedEngine);
+                    
+                    // Remove template definitions from main template
+                    const cleanedTemplate = template.replace(templateRegex, '').trim();
+                    console.log('Rendering cleaned template with', Object.keys(templates).length, 'registered templates');
+                    
+                    // Render using the new engine with templates
+                    return await templatedEngine.parseAndRender(cleanedTemplate, data);
+                } else {
+                    console.log('No TRMNL templates found, using original rendering');
+                    // No templates found, use original rendering
+                    return await originalParseAndRender(template, data);
+                }
+            };
+        }
+        
+        // Separate function to register only the filters (not the template processing)
+        function registerTRNMLFiltersOnly(engine) {
+            
+            // l_date: Localized date formatting with strftime syntax
+            engine.registerFilter('l_date', function(dateValue, format, locale) {
+                if (!dateValue) return '';
+                
+                // Use locale from context if not provided
+                if (!locale && this.context) {
+                    locale = this.context.get(['trmnl', 'user', 'locale']) || 'en';
+                }
+                
+                try {
+                    const date = new Date(dateValue);
+                    if (isNaN(date.getTime())) return dateValue;
+                    
+                    // Convert strftime format to Intl.DateTimeFormat options
+                    const options = convertStrftimeToIntlOptions(format || '%%Y-%%m-%%d');
+                    return new Intl.DateTimeFormat(locale, options).format(date);
+                } catch (e) {
+                    console.warn('l_date filter error:', e);
+                    return dateValue;
+                }
+            });
+            
+            // l_word: Localize common words
+            engine.registerFilter('l_word', async function(word, locale) {
+                if (!locale && this.context) {
+                    locale = this.context.get(['trmnl', 'user', 'locale']) || 'en';
+                }
+                
+                try {
+                    const localeData = await loadLocaleData(locale);
+                    
+                    // Look for the word in the locale data
+                    if (localeData[word]) {
+                        return localeData[word];
+                    }
+                    
+                    // Fallback to hardcoded translations for common words
+                    const fallbackTranslations = getTRNMLWordTranslations();
+                    const localeKey = locale.toLowerCase().split('-')[0];
+                    
+                    if (fallbackTranslations[word] && fallbackTranslations[word][localeKey]) {
+                        return fallbackTranslations[word][localeKey];
+                    }
+                } catch (e) {
+                    console.warn('l_word filter error:', e);
+                }
+                
+                return word; // Return original if no translation found
+            });
+            
+            // json: Convert to JSON
+            engine.registerFilter('json', function(value) {
+                try {
+                    return JSON.stringify(value, null, 2);
+                } catch (e) {
+                    return String(value);
+                }
+            });
+            
+            // parse_json: Parse JSON strings
+            engine.registerFilter('parse_json', function(jsonString) {
+                try {
+                    return JSON.parse(jsonString);
+                } catch (e) {
+                    console.warn('parse_json filter error:', e);
+                    return jsonString;
+                }
+            });
+            
+            // group_by: Group array by key
+            engine.registerFilter('group_by', function(array, key) {
+                if (!Array.isArray(array)) return array;
+                
+                const grouped = {};
+                array.forEach(item => {
+                    const groupKey = item[key] || 'undefined';
+                    if (!grouped[groupKey]) grouped[groupKey] = [];
+                    grouped[groupKey].push(item);
+                });
+                
+                return Object.keys(grouped).map(k => ({
+                    name: k,
+                    items: grouped[k],
+                    size: grouped[k].length
+                }));
+            });
+            
+            // find_by: Find array item by key/value
+            engine.registerFilter('find_by', function(array, key, value) {
+                if (!Array.isArray(array)) return null;
+                return array.find(item => item[key] === value) || null;
+            });
+            
+            // sample: Random array selection
+            engine.registerFilter('sample', function(array) {
+                if (!Array.isArray(array) || array.length === 0) return null;
+                return array[Math.floor(Math.random() * array.length)];
+            });
+            
+            // number_with_delimiter: Format numbers with delimiters
+            engine.registerFilter('number_with_delimiter', function(number, delimiter) {
+                if (isNaN(number)) return number;
+                const delim = delimiter || ',';
+                return Number(number).toLocaleString().replace(/,/g, delim);
+            });
+            
+            // number_to_currency: Convert to localized currency
+            engine.registerFilter('number_to_currency', function(number, currency, locale) {
+                if (isNaN(number)) return number;
+                
+                if (!locale && this.context) {
+                    locale = this.context.get(['trmnl', 'user', 'locale']) || 'en-US';
+                }
+                
+                const options = {
+                    style: 'currency',
+                    currency: currency || 'USD'
+                };
+                
+                try {
+                    return new Intl.NumberFormat(locale, options).format(number);
+                } catch (e) {
+                    return currency + ' ' + number;
+                }
+            });
+            
+            // pluralize: Word inflection based on count
+            engine.registerFilter('pluralize', function(word, count, pluralForm) {
+                if (count === 1) return word;
+                return pluralForm || (word + 's');
+            });
+            
+            // markdown_to_html: Simple markdown conversion
+            engine.registerFilter('markdown_to_html', function(markdown) {
+                if (!markdown) return '';
+                
+                // Basic markdown conversion (extend as needed)
+                return markdown
+                    .replace(/^# (.*$)/gim, '<h1>$1</h1>')
+                    .replace(/^## (.*$)/gim, '<h2>$1</h2>')
+                    .replace(/^### (.*$)/gim, '<h3>$1</h3>')
+                    .replace(/\*\*(.*)\*\*/gim, '<strong>$1</strong>')
+                    .replace(/\*(.*)\*/gim, '<em>$1</em>')
+                    .replace(/\n/gim, '<br>');
+            });
+            
+            // append_random: Generate unique identifiers
+            engine.registerFilter('append_random', function(string) {
+                const randomSuffix = Math.random().toString(36).substring(2, 8);
+                return string + '_' + randomSuffix;
+            });
+            
+            // days_ago: Generate date X days before current
+            engine.registerFilter('days_ago', function(days) {
+                const date = new Date();
+                date.setDate(date.getDate() - parseInt(days));
+                return date.toISOString().split('T')[0];
+            });
         }
         
         function convertStrftimeToIntlOptions(format) {

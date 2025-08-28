@@ -86,8 +86,8 @@ func (r *PrivatePluginRenderer) RenderToClientSideHTML(opts RenderOptions) (stri
             // Use liquidjs constructor (we know this exists)
             const engine = new liquidjs.Liquid();
             
-            // Register TRMNL custom filters for compatibility
-            registerTRNMLFilters(engine);
+            // Register TRMNL custom filters and tags for compatibility
+            registerTRNMLExtensions(engine);
             
             // Preprocess template for TRMNL syntax compatibility
             const processedTemplate = preprocessTRNMLTemplate(renderData.template);

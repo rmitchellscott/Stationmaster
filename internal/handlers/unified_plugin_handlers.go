@@ -79,8 +79,8 @@ func GetAvailablePluginDefinitionsHandler(c *gin.Context) {
 	if pluginType != "" {
 		query = query.Where("plugin_type = ?", pluginType)
 	} else {
-		// Default: get private and mashup plugins (don't mix with system)
-		query = query.Where("plugin_type IN ?", []string{"private", "mashup"})
+		// Default: get only private plugins (exclude mashups and don't mix with system)
+		query = query.Where("plugin_type = ?", "private")
 	}
 	
 	err := query.Find(&privatePlugins).Error
@@ -231,9 +231,23 @@ func GetPluginInstancesHandler(c *gin.Context) {
 	err := db.Preload("PluginDefinition").Where("user_id = ? AND is_active = ?", userID, true).Find(&unifiedInstances).Error
 	if err == nil {
 		for _, pluginInstance := range unifiedInstances {
-			// Check if used in playlists
+			// Check if used in playlists directly
 			var playlistCount int64
 			db.Model(&database.PlaylistItem{}).Where("plugin_instance_id = ?", pluginInstance.ID).Count(&playlistCount)
+			
+			// Also check if used indirectly as a child of a mashup that's in playlists
+			var mashupPlaylistCount int64
+			if playlistCount == 0 {
+				// Only check mashup parents if not already directly in playlists
+				db.Raw(`
+					SELECT COUNT(*) 
+					FROM playlist_items pi 
+					JOIN mashup_children mc ON pi.plugin_instance_id = mc.mashup_instance_id 
+					WHERE mc.child_instance_id = ?
+				`, pluginInstance.ID).Count(&mashupPlaylistCount)
+			}
+			
+			isUsedInPlaylists := playlistCount > 0 || mashupPlaylistCount > 0
 
 			// Convert settings map to JSON string
 			settingsJSON := "{}"
@@ -252,7 +266,7 @@ func GetPluginInstancesHandler(c *gin.Context) {
 				IsActive:          pluginInstance.IsActive,
 				CreatedAt:         pluginInstance.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 				UpdatedAt:         pluginInstance.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
-				IsUsedInPlaylists: playlistCount > 0,
+				IsUsedInPlaylists: isUsedInPlaylists,
 				NeedsConfigUpdate: pluginInstance.NeedsConfigUpdate,
 				LastSchemaVersion: pluginInstance.LastSchemaVersion,
 			}
@@ -743,7 +757,7 @@ func CreatePluginDefinitionHandler(c *gin.Context) {
 		Name:               req.Name,
 		Description:        req.Description,
 		Version:            req.Version,
-		Author:             req.Author,
+		Author:             user.Username,
 		ConfigSchema:       configSchema, // Use converted JSON schema
 		RequiresProcessing: true, // Private plugins always require processing
 		MarkupFull:         &req.MarkupFull,
@@ -878,7 +892,7 @@ func UpdatePluginDefinitionHandler(c *gin.Context) {
 	}
 	pluginDefinition.Description = req.Description
 	pluginDefinition.Version = req.Version
-	pluginDefinition.Author = req.Author
+	pluginDefinition.Author = user.Username
 	pluginDefinition.ConfigSchema = configSchema // Use converted JSON schema
 	pluginDefinition.MarkupFull = &req.MarkupFull
 	pluginDefinition.MarkupHalfVert = &req.MarkupHalfVert
@@ -1456,6 +1470,7 @@ func ImportPluginDefinitionHandler(c *gin.Context) {
 
 	// Set ownership
 	def.OwnerID = &user.ID
+	def.Author = user.Username
 
 	// Create the plugin in the unified system
 	db := database.GetDB()

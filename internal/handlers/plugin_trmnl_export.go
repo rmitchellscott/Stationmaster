@@ -70,6 +70,7 @@ func (f *FlexibleHeaders) UnmarshalYAML(value *yaml.Node) error {
 type FlexibleOptions struct {
 	Options []string
 	OptionsMap map[string]string
+	KeyOrder []string // Preserves original YAML sequence order for consistent iteration
 }
 
 // UnmarshalYAML implements custom YAML unmarshaling for FlexibleOptions
@@ -77,6 +78,7 @@ func (f *FlexibleOptions) UnmarshalYAML(value *yaml.Node) error {
 	// Initialize empty structures
 	f.Options = nil
 	f.OptionsMap = make(map[string]string)
+	f.KeyOrder = nil
 	
 	// If it's an empty string or just whitespace, set to empty
 	if value.Kind == yaml.ScalarNode && strings.TrimSpace(value.Value) == "" {
@@ -96,9 +98,10 @@ func (f *FlexibleOptions) UnmarshalYAML(value *yaml.Node) error {
 					return fmt.Errorf("failed to decode option map: %w", err)
 				}
 				
-				// Add each key-value pair to the options map
+				// Add each key-value pair to the options map and preserve key order
 				for key, value := range itemMap {
 					f.OptionsMap[key] = value
+					f.KeyOrder = append(f.KeyOrder, key)
 				}
 			}
 		}
@@ -110,15 +113,18 @@ func (f *FlexibleOptions) UnmarshalYAML(value *yaml.Node) error {
 }
 
 // MarshalYAML implements custom YAML marshaling for FlexibleOptions
-// Always outputs in TRMNL format: array of single-key maps
+// Always outputs in TRMNL format: array of single-key maps with preserved order
 func (f *FlexibleOptions) MarshalYAML() (interface{}, error) {
-	// If we have a map (key-value pairs), convert to TRMNL format
+	// If we have a map (key-value pairs), convert to TRMNL format using KeyOrder
 	if len(f.OptionsMap) > 0 {
 		var options []map[string]string
-		for key, value := range f.OptionsMap {
-			optionMap := make(map[string]string)
-			optionMap[key] = value
-			options = append(options, optionMap)
+		// Use KeyOrder to maintain original sequence
+		for _, key := range f.KeyOrder {
+			if value, exists := f.OptionsMap[key]; exists {
+				optionMap := make(map[string]string)
+				optionMap[key] = value
+				options = append(options, optionMap)
+			}
 		}
 		return options, nil
 	}
@@ -139,16 +145,20 @@ func (f *FlexibleOptions) MarshalYAML() (interface{}, error) {
 }
 
 // ToStringSlice converts FlexibleOptions to a simple string slice for backward compatibility
+// Uses KeyOrder to ensure consistent ordering with GetDisplayNames()
 func (f *FlexibleOptions) ToStringSlice() []string {
 	if len(f.Options) > 0 {
 		return f.Options
 	}
 	
 	// If we have a map, convert VALUES to strings (for enum field values)
+	// CRITICAL: Use KeyOrder to maintain consistent ordering
 	if len(f.OptionsMap) > 0 {
 		result := make([]string, 0, len(f.OptionsMap))
-		for _, value := range f.OptionsMap {
-			result = append(result, value)
+		for _, key := range f.KeyOrder {
+			if value, exists := f.OptionsMap[key]; exists {
+				result = append(result, value)
+			}
 		}
 		return result
 	}
@@ -157,6 +167,7 @@ func (f *FlexibleOptions) ToStringSlice() []string {
 }
 
 // GetDisplayNames returns the display names (keys) from the options map
+// Uses KeyOrder to ensure consistent ordering with ToStringSlice()
 func (f *FlexibleOptions) GetDisplayNames() []string {
 	if len(f.Options) > 0 {
 		// For simple string options, display names are the same as values
@@ -164,10 +175,13 @@ func (f *FlexibleOptions) GetDisplayNames() []string {
 	}
 	
 	// If we have a map, return the keys (display names)
+	// CRITICAL: Use KeyOrder to maintain consistent ordering
 	if len(f.OptionsMap) > 0 {
 		result := make([]string, 0, len(f.OptionsMap))
-		for key := range f.OptionsMap {
-			result = append(result, key)
+		for _, key := range f.KeyOrder {
+			if _, exists := f.OptionsMap[key]; exists {
+				result = append(result, key)
+			}
 		}
 		return result
 	}
@@ -511,8 +525,17 @@ func (s *TRMNLExportService) ConvertFromTRMNLSettings(settings *TRMNLSettings) (
 			}
 			
 			def.FormFields = formFieldsJSON
-			logging.Info("[TRMNL IMPORT] Successfully converted form fields to YAML format", 
-				"field_count", len(filteredFields), "yaml_length", len(yamlString))
+			
+			// Also generate JSON schema for UI form rendering
+			configSchemaJSON, err := s.convertFormFieldsFromTRMNL(filteredFields)
+			if err != nil {
+				logging.Error("[TRMNL IMPORT] Failed to convert form fields to JSON schema", "error", err, "field_count", len(filteredFields))
+				return nil, fmt.Errorf("failed to convert form fields to JSON schema: %w", err)
+			}
+			def.ConfigSchema = string(configSchemaJSON)
+			
+			logging.Info("[TRMNL IMPORT] Successfully converted form fields to both YAML and JSON schema", 
+				"field_count", len(filteredFields), "yaml_length", len(yamlString), "schema_length", len(configSchemaJSON))
 		} else {
 			logging.Info("[TRMNL IMPORT] No form fields to convert after filtering author_bio fields")
 		}
@@ -687,8 +710,8 @@ func (s *TRMNLExportService) convertFormFieldsFromTRMNL(trmnlFields []TRMNLFormF
 		if len(optionsList) > 0 {
 			fieldDef["enum"] = optionsList
 			
-			// Add display names if they differ from values (i.e., we have a map)
-			if len(field.Options.OptionsMap) > 0 && len(displayNames) == len(optionsList) {
+			// Add display names when we have an OptionsMap (key-value pairs)
+			if len(field.Options.OptionsMap) > 0 {
 				fieldDef["enumNames"] = displayNames
 				logging.Info("[TRMNL IMPORT] Added options with display names", 
 					"field", id, 
@@ -733,12 +756,76 @@ func (s *TRMNLExportService) convertFormFieldsFromTRMNL(trmnlFields []TRMNLFormF
 }
 
 // convertTRMNLFieldsToYAML converts TRMNL form fields back to YAML string for UI display
+// Creates clean YAML output that matches core TRMNL format exactly
 func (s *TRMNLExportService) convertTRMNLFieldsToYAML(trmnlFields []TRMNLFormField) (string, error) {
 	if len(trmnlFields) == 0 {
 		return "", nil
 	}
 	
-	yamlBytes, err := yaml.Marshal(trmnlFields)
+	// Create clean field structures that only include TRMNL format fields
+	var cleanFields []map[string]interface{}
+	
+	for _, field := range trmnlFields {
+		cleanField := make(map[string]interface{})
+		
+		// Use TRMNL field names with fallback to legacy names
+		keyname := field.Keyname
+		if keyname == "" {
+			keyname = field.ID
+		}
+		
+		fieldType := field.FieldType
+		if fieldType == "" {
+			fieldType = field.Type
+		}
+		
+		name := field.Name
+		if name == "" {
+			name = field.Label
+		}
+		
+		// Only include fields that have values to match TRMNL format
+		if keyname != "" {
+			cleanField["keyname"] = keyname
+		}
+		if fieldType != "" {
+			cleanField["field_type"] = fieldType
+		}
+		if name != "" {
+			cleanField["name"] = name
+		}
+		if field.Description != "" {
+			cleanField["description"] = field.Description
+		}
+		if field.HelpText != "" {
+			cleanField["help_text"] = field.HelpText
+		}
+		if field.Placeholder != "" {
+			cleanField["placeholder"] = field.Placeholder
+		}
+		if field.Default != nil {
+			cleanField["default"] = field.Default
+		}
+		
+		// Handle optional field (only include if true to match TRMNL format)
+		if field.Optional {
+			cleanField["optional"] = field.Optional
+		}
+		
+		// Handle options using proper TRMNL format (array of single-key maps)
+		if len(field.Options.OptionsMap) > 0 || len(field.Options.Options) > 0 {
+			// Use the MarshalYAML method to get proper TRMNL format
+			options, err := field.Options.MarshalYAML()
+			if err != nil {
+				return "", fmt.Errorf("failed to marshal options for field %s: %w", keyname, err)
+			}
+			cleanField["options"] = options
+		}
+		
+		cleanFields = append(cleanFields, cleanField)
+	}
+	
+	yamlBytes, err := yaml.Marshal(cleanFields)
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal TRMNL fields to YAML: %w", err)
 	}

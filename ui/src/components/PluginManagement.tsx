@@ -226,6 +226,11 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
     // Ensure main tab is set to plugins
     newSearchParams.set('tab', 'plugins');
     setSearchParams(newSearchParams);
+    
+    // Refresh plugins when switching to instances tab to catch any newly created private plugins
+    if (subtab === 'instances') {
+      fetchPlugins();
+    }
   };
 
   // Helper function to generate instance webhook URL
@@ -682,6 +687,16 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
     fetchPlugins();
     fetchRefreshRateOptions();
   }, [selectedDeviceId]);
+
+  // Refresh plugins when window gains focus (catches returns from private plugin editing)
+  useEffect(() => {
+    const handleFocus = () => {
+      fetchPlugins();
+    };
+
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, []);
 
   // Load mashup data when mashup layout is selected
   useEffect(() => {

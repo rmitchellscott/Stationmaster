@@ -185,6 +185,8 @@ type TRMNLFormField struct {
 	Name        string      `yaml:"name"`
 	FieldType   string      `yaml:"field_type"`
 	Description string      `yaml:"description,omitempty"`
+	Optional    bool        `yaml:"optional,omitempty"`
+	HelpText    string      `yaml:"help_text,omitempty"`
 	
 	// Legacy fields for backward compatibility
 	ID          string         `yaml:"id"`
@@ -423,19 +425,24 @@ func (s *TRMNLExportService) ConvertFromTRMNLSettings(settings *TRMNLSettings) (
 		logging.Info("[TRMNL IMPORT] Converting form_fields", "field_count", len(settings.FormFields))
 	}
 
-	// Extract "About This Plugin" description from custom fields
+	// Extract description from any author_bio field (not just about_plugin keyname)
 	if fieldsToConvert != nil {
 		for _, field := range fieldsToConvert {
-			if field.Keyname == "about_plugin" && field.FieldType == "author_bio" {
+			// TRMNL format: any field with field_type: author_bio
+			if field.FieldType == "author_bio" && field.Description != "" {
 				def.Description = field.Description
-				logging.Info("[TRMNL IMPORT] Extracted about_plugin description", "description", field.Description)
+				logging.Info("[TRMNL IMPORT] Extracted author_bio description", 
+					"keyname", field.Keyname, 
+					"description", field.Description)
 				break
 			}
-			// Also check for legacy field names
-			if field.ID == "about_plugin" && field.Type == "author_bio" {
+			// Legacy format: any field with type: author_bio  
+			if field.Type == "author_bio" && field.Description != "" {
 				if def.Description == "" {
 					def.Description = field.Description
-					logging.Info("[TRMNL IMPORT] Extracted about_plugin description from legacy field", "description", field.Description)
+					logging.Info("[TRMNL IMPORT] Extracted author_bio description from legacy field", 
+						"id", field.ID,
+						"description", field.Description)
 				}
 				break
 			}
@@ -443,29 +450,42 @@ func (s *TRMNLExportService) ConvertFromTRMNLSettings(settings *TRMNLSettings) (
 	}
 
 	if fieldsToConvert != nil && len(fieldsToConvert) > 0 {
-		// Filter out about_plugin fields since they're handled separately
+		// Filter out author_bio fields since they're handled separately as description
 		var filteredFields []TRMNLFormField
 		for _, field := range fieldsToConvert {
-			// Skip about_plugin fields - they're converted to description above
-			if field.Keyname == "about_plugin" && field.FieldType == "author_bio" {
+			// Skip any author_bio fields - they're converted to description above
+			if field.FieldType == "author_bio" {
 				continue
 			}
-			if field.ID == "about_plugin" && field.Type == "author_bio" {
+			if field.Type == "author_bio" {
 				continue
 			}
 			filteredFields = append(filteredFields, field)
 		}
 		
 		if len(filteredFields) > 0 {
-			formFieldsJSON, err := s.convertFormFieldsFromTRMNL(filteredFields)
+			// Convert TRMNL fields back to YAML for UI display
+			yamlString, err := s.convertTRMNLFieldsToYAML(filteredFields)
 			if err != nil {
-				logging.Error("[TRMNL IMPORT] Failed to convert form fields", "error", err, "field_count", len(filteredFields))
-				return nil, fmt.Errorf("failed to convert form fields: %w", err)
+				logging.Error("[TRMNL IMPORT] Failed to convert form fields to YAML", "error", err, "field_count", len(filteredFields))
+				return nil, fmt.Errorf("failed to convert form fields to YAML: %w", err)
 			}
+			
+			// Store form fields in the format expected by UI: {yaml: "..."}
+			formFieldsWrapper := map[string]string{
+				"yaml": yamlString,
+			}
+			formFieldsJSON, err := json.Marshal(formFieldsWrapper)
+			if err != nil {
+				logging.Error("[TRMNL IMPORT] Failed to marshal form fields wrapper", "error", err)
+				return nil, fmt.Errorf("failed to marshal form fields wrapper: %w", err)
+			}
+			
 			def.FormFields = formFieldsJSON
-			logging.Info("[TRMNL IMPORT] Successfully converted form fields", "field_count", len(filteredFields))
+			logging.Info("[TRMNL IMPORT] Successfully converted form fields to YAML format", 
+				"field_count", len(filteredFields), "yaml_length", len(yamlString))
 		} else {
-			logging.Info("[TRMNL IMPORT] No form fields to convert after filtering about_plugin")
+			logging.Info("[TRMNL IMPORT] No form fields to convert after filtering author_bio fields")
 		}
 	} else {
 		logging.Info("[TRMNL IMPORT] No form fields to convert")
@@ -591,6 +611,8 @@ func (s *TRMNLExportService) convertFormFieldsFromTRMNL(trmnlFields []TRMNLFormF
 			"field_type", field.FieldType,
 			"name", field.Name,
 			"description", field.Description,
+			"help_text", field.HelpText,
+			"optional", field.Optional,
 			"id", id,
 			"type", fieldType,
 			"label", label,
@@ -618,8 +640,11 @@ func (s *TRMNLExportService) convertFormFieldsFromTRMNL(trmnlFields []TRMNLFormF
 			logging.Info("[TRMNL IMPORT] Added default value", "field", id, "default", field.Default)
 		}
 
-		// Use description from TRMNL or placeholder as description
+		// Use description from TRMNL, help_text, or placeholder as description
 		description := field.Description
+		if description == "" && field.HelpText != "" {
+			description = field.HelpText
+		}
 		if description == "" && field.Placeholder != "" {
 			description = field.Placeholder
 		}
@@ -647,7 +672,18 @@ func (s *TRMNLExportService) convertFormFieldsFromTRMNL(trmnlFields []TRMNLFormF
 
 		properties[id] = fieldDef
 
-		if field.Required {
+		// Handle required logic: field is required if not explicitly marked as optional
+		// Support both TRMNL format (optional) and legacy format (required)
+		isRequired := false
+		if field.FieldType != "" || field.Keyname != "" {
+			// TRMNL format: required unless explicitly optional
+			isRequired = !field.Optional
+		} else {
+			// Legacy format: use explicit Required field
+			isRequired = field.Required
+		}
+		
+		if isRequired {
 			required = append(required, id)
 		}
 	}
@@ -665,6 +701,20 @@ func (s *TRMNLExportService) convertFormFieldsFromTRMNL(trmnlFields []TRMNLFormF
 
 	logging.Info("[TRMNL IMPORT] Successfully converted form fields to JSON schema")
 	return result, nil
+}
+
+// convertTRMNLFieldsToYAML converts TRMNL form fields back to YAML string for UI display
+func (s *TRMNLExportService) convertTRMNLFieldsToYAML(trmnlFields []TRMNLFormField) (string, error) {
+	if len(trmnlFields) == 0 {
+		return "", nil
+	}
+	
+	yamlBytes, err := yaml.Marshal(trmnlFields)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal TRMNL fields to YAML: %w", err)
+	}
+	
+	return string(yamlBytes), nil
 }
 
 // convertTypeToTRMNL converts JSON schema types to TRMNL form field types

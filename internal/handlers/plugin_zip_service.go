@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"gopkg.in/yaml.v3"
 	"github.com/rmitchellscott/stationmaster/internal/database"
 	"github.com/rmitchellscott/stationmaster/internal/logging"
 )
@@ -277,30 +278,44 @@ func (s *TRMNLZipService) ConvertZipDataToPluginDefinition(zipData *ZipExportDat
 	requiresProcessing := true
 	def.RequiresProcessing = requiresProcessing
 
-	// Validate form fields if they exist to ensure valid JSON schema
+	// Generate ConfigSchema separately - FormFields now contains {yaml: "..."} format
+	// but ConfigSchema needs JSON schema format for UI rendering
 	if def.FormFields != nil {
-		// Convert form fields to interface{} for validation
-		var formFieldsInterface interface{}
-		if err := json.Unmarshal(def.FormFields, &formFieldsInterface); err != nil {
-			logging.Error("[TRMNL IMPORT] Failed to unmarshal form fields for validation", "error", err)
-			return nil, fmt.Errorf("invalid form fields JSON: %w", err)
+		// Parse the FormFields to extract the YAML and convert it to JSON schema
+		var formFieldsWrapper map[string]interface{}
+		if err := json.Unmarshal(def.FormFields, &formFieldsWrapper); err == nil {
+			if yamlContent, exists := formFieldsWrapper["yaml"].(string); exists && yamlContent != "" {
+				// Parse YAML back to TRMNL fields and convert to JSON schema for ConfigSchema
+				var trmnlFields []TRMNLFormField
+				if err := yaml.Unmarshal([]byte(yamlContent), &trmnlFields); err == nil {
+					configSchemaJSON, err := s.exportService.convertFormFieldsFromTRMNL(trmnlFields)
+					if err == nil {
+						def.ConfigSchema = string(configSchemaJSON)
+						logging.Info("[TRMNL IMPORT] Generated ConfigSchema from YAML", 
+							"config_schema_size", len(def.ConfigSchema))
+					}
+				}
+			}
 		}
 		
-		// Validate form fields using existing validation logic
-		_, err := ValidateFormFields(formFieldsInterface)
-		if err != nil {
-			logging.Error("[TRMNL IMPORT] Form fields validation failed", "error", err)
-			return nil, fmt.Errorf("form fields validation failed: %w", err)
+		// Fallback to empty schema if parsing failed
+		if def.ConfigSchema == "" {
+			def.ConfigSchema = `{"type": "object", "properties": {}}`
+			logging.Warn("[TRMNL IMPORT] Failed to generate ConfigSchema, using empty schema")
 		}
+	} else {
+		// If no FormFields, provide empty schema for UI
+		def.ConfigSchema = `{"type": "object", "properties": {}}`
 		
-		logging.Info("[TRMNL IMPORT] Form fields validation passed")
+		logging.Info("[TRMNL IMPORT] Set empty ConfigSchema (no form fields)")
 	}
 
 	logging.Info("[TRMNL IMPORT] Successfully converted ZIP data to PluginDefinition", 
 		"plugin_name", def.Name,
 		"plugin_type", def.PluginType,
 		"requires_processing", def.RequiresProcessing,
-		"has_form_fields", def.FormFields != nil)
+		"has_form_fields", def.FormFields != nil,
+		"has_config_schema", def.ConfigSchema != "")
 
 	return def, nil
 }

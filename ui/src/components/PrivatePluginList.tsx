@@ -331,12 +331,10 @@ export function PrivatePluginList({
               onClick={() => document.getElementById('import-file')?.click()}
               disabled={importDialog.isUploading}
             >
-              <Upload className="h-4 w-4 mr-2" />
               {importDialog.isUploading ? "Importing..." : "Import"}
             </Button>
           </div>
           <Button onClick={onCreatePlugin}>
-            <Plus className="h-4 w-4 mr-2" />
             Create Private Plugin
           </Button>
         </div>
@@ -369,12 +367,10 @@ export function PrivatePluginList({
                   onClick={() => document.getElementById('import-file-empty')?.click()}
                   disabled={importDialog.isUploading}
                 >
-                  <Upload className="h-4 w-4 mr-2" />
                   {importDialog.isUploading ? "Importing..." : "Import"}
                 </Button>
               </div>
               <Button onClick={onCreatePlugin}>
-                <Plus className="h-4 w-4 mr-2" />
                 Create Your First Private Plugin
               </Button>
             </div>

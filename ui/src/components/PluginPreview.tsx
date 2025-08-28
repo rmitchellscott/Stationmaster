@@ -219,8 +219,10 @@ export function PluginPreview({ plugin, isOpen, onClose }: PluginPreviewProps) {
         plugin: testPlugin,
         layout: selectedLayout,
         sample_data: parsedData,
-        device_width: currentLayout.width,
-        device_height: currentLayout.height,
+        device_width: 800,  // Always use full screen width
+        device_height: 480, // Always use full screen height
+        layout_width: currentLayout.width,   // Layout-specific dimensions for content positioning
+        layout_height: currentLayout.height, // Layout-specific dimensions for content positioning
       };
       console.log('[PluginPreview] Sending API request payload:', requestPayload);
       
@@ -413,7 +415,7 @@ export function PluginPreview({ plugin, isOpen, onClose }: PluginPreviewProps) {
                   <CardTitle className="flex items-center justify-between">
                     <span>{currentLayout.label} Layout Preview</span>
                     <span className="text-sm font-normal text-muted-foreground">
-                      {currentLayout.width} × {currentLayout.height}px
+                      800 × 480px (Full Screen)
                     </span>
                   </CardTitle>
                 </CardHeader>
@@ -421,8 +423,8 @@ export function PluginPreview({ plugin, isOpen, onClose }: PluginPreviewProps) {
                   <div className="flex justify-center p-4 bg-muted/20 rounded-lg">
                     {loading ? (
                       <div className="flex items-center justify-center" style={{ 
-                        width: Math.min(currentLayout.width, 600), 
-                        height: Math.min(currentLayout.height, 360) 
+                        width: 600,   // Always use full screen proportions
+                        height: 360   // Maintain 800:480 aspect ratio (600 * 480/800 = 360)
                       }}>
                         <div className="text-center">
                           <Loader2 className="h-8 w-8 animate-spin mx-auto mb-2" />
@@ -433,8 +435,8 @@ export function PluginPreview({ plugin, isOpen, onClose }: PluginPreviewProps) {
                       <div 
                         className="border border-gray-300 bg-white"
                         style={{ 
-                          width: Math.min(currentLayout.width, 600), 
-                          height: Math.min(currentLayout.height, 360) 
+                          width: 600,   // Always use full screen proportions
+                          height: 360   // Maintain 800:480 aspect ratio (600 * 480/800 = 360)
                         }}
                       >
                         <img
@@ -446,8 +448,8 @@ export function PluginPreview({ plugin, isOpen, onClose }: PluginPreviewProps) {
                       </div>
                     ) : (
                       <div className="flex items-center justify-center text-muted-foreground" style={{ 
-                        width: Math.min(currentLayout.width, 600), 
-                        height: Math.min(currentLayout.height, 360) 
+                        width: 600,   // Always use full screen proportions
+                        height: 360   // Maintain 800:480 aspect ratio (600 * 480/800 = 360)
                       }}>
                         <div className="text-center">
                           <Eye className="h-8 w-8 mx-auto mb-2" />

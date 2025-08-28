@@ -1135,6 +1135,8 @@ func TestPluginDefinitionHandler(c *gin.Context) {
 		SampleData   map[string]interface{} `json:"sample_data"`
 		DeviceWidth  int                    `json:"device_width"`
 		DeviceHeight int                    `json:"device_height"`
+		LayoutWidth  int                    `json:"layout_width"`  // Layout-specific dimensions for content positioning
+		LayoutHeight int                    `json:"layout_height"` // Layout-specific dimensions for content positioning
 	}
 
 	var req TestRequest
@@ -1306,6 +1308,9 @@ func TestPluginDefinitionHandler(c *gin.Context) {
 		Height:         req.DeviceHeight,
 		PluginName:     req.Plugin.Name,
 		InstanceID:     instanceID,
+		Layout:         req.Layout,         // Pass layout info for proper mashup structure
+		LayoutWidth:    req.LayoutWidth,    // Layout-specific dimensions
+		LayoutHeight:   req.LayoutHeight,   // Layout-specific dimensions
 	})
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Template render error: %v", err)})

@@ -19,6 +19,9 @@ type RenderOptions struct {
 	InstanceName      string
 	RemoveBleedMargin bool
 	EnableDarkMode    bool
+	Layout            string // Layout type for proper mashup CSS structure (e.g. "full", "half_vertical", "quadrant")
+	LayoutWidth       int    // Layout-specific width for positioning
+	LayoutHeight      int    // Layout-specific height for positioning
 }
 
 // PrivatePluginRenderer handles HTML generation for private plugins
@@ -30,6 +33,20 @@ type PrivatePluginRenderer struct {
 func NewPrivatePluginRenderer() *PrivatePluginRenderer {
 	return &PrivatePluginRenderer{
 		baseRenderer: rendering.NewBaseHTMLRenderer(),
+	}
+}
+
+// getLayoutMashupInfo returns mashup CSS class and slot position for a given layout
+func getLayoutMashupInfo(layout string) (string, string) {
+	switch layout {
+	case "half_vertical":
+		return "mashup--1Lx1R", "left" // Could also be "right", but "left" works for preview
+	case "half_horizontal":
+		return "mashup--1Tx1B", "top"  // Could also be "bottom", but "top" works for preview
+	case "quadrant":
+		return "mashup--2Lx2R", "q1"   // Top-left quadrant for preview
+	default:
+		return "", "" // Full layout doesn't need mashup wrapper
 	}
 }
 
@@ -55,12 +72,18 @@ func (r *PrivatePluginRenderer) RenderToClientSideHTML(opts RenderOptions) (stri
 		templateData[k] = v
 	}
 	
+	// Get layout mashup info
+	mashupClass, slotPosition := getLayoutMashupInfo(opts.Layout)
+	
 	// Add template and instance info to data
 	privatePluginData := map[string]interface{}{
-		"template":     combinedTemplate,
-		"data":         templateData,
-		"instanceId":   opts.InstanceID,
-		"instanceName": opts.InstanceName,
+		"template":      combinedTemplate,
+		"data":          templateData,
+		"instanceId":    opts.InstanceID,
+		"instanceName":  opts.InstanceName,
+		"layout":        opts.Layout,
+		"mashupClass":   mashupClass,
+		"slotPosition":  slotPosition,
 	}
 	
 	dataJSON, err := json.Marshal(privatePluginData)
@@ -122,16 +145,45 @@ func (r *PrivatePluginRenderer) RenderToClientSideHTML(opts RenderOptions) (stri
                     
                     // Wrap user template in TRMNL framework structure
                     let wrappedContent;
-                    if (hasViewClass) {
-                        wrappedContent = '<div id="plugin-' + renderData.instanceId + '" class="environment trmnl">' +
-                            '<div class="' + screenClassString + '">' + processedTemplate + '</div>' +
-                            '</div>';
-                    } else {
+                    
+                    // Check if this is a non-full layout that needs mashup structure
+                    if (renderData.mashupClass && renderData.slotPosition) {
+                        // Create mashup structure for positioned layouts
+                        let innerContent;
+                        if (hasViewClass) {
+                            innerContent = processedTemplate;
+                        } else {
+                            // Wrap in appropriate view class based on layout
+                            let viewClass = 'view--full';
+                            if (renderData.layout === 'half_vertical') viewClass = 'view--half_vertical';
+                            else if (renderData.layout === 'half_horizontal') viewClass = 'view--half_horizontal';
+                            else if (renderData.layout === 'quadrant') viewClass = 'view--quadrant';
+                            
+                            innerContent = '<div class="view ' + viewClass + '">' + processedTemplate + '</div>';
+                        }
+                        
                         wrappedContent = '<div id="plugin-' + renderData.instanceId + '" class="environment trmnl">' +
                             '<div class="' + screenClassString + '">' +
-                            '<div class="view view--full">' + processedTemplate + '</div>' +
+                            '<div class="mashup ' + renderData.mashupClass + '">' +
+                            '<div id="slot-' + renderData.slotPosition + '" class="view-slot">' +
+                            innerContent +
+                            '</div>' +
+                            '</div>' +
                             '</div>' +
                             '</div>';
+                    } else {
+                        // Standard full layout structure
+                        if (hasViewClass) {
+                            wrappedContent = '<div id="plugin-' + renderData.instanceId + '" class="environment trmnl">' +
+                                '<div class="' + screenClassString + '">' + processedTemplate + '</div>' +
+                                '</div>';
+                        } else {
+                            wrappedContent = '<div id="plugin-' + renderData.instanceId + '" class="environment trmnl">' +
+                                '<div class="' + screenClassString + '">' +
+                                '<div class="view view--full">' + processedTemplate + '</div>' +
+                                '</div>' +
+                                '</div>';
+                        }
                     }
                     
                     // Hide loading, show output - wait for DOM to be ready

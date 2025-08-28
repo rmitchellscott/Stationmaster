@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageCard, PageCardContent, PageCardHeader, PageCardTitle } from "@/components/ui/page-card";
 import { Button } from "@/components/ui/button";
 import {
   Alert,
@@ -129,11 +130,11 @@ export function PrivatePluginEditorPage() {
     return (
       <div className="bg-background pt-0 pb-8 px-0 sm:px-8">
         <div className="max-w-6xl mx-0 sm:mx-auto space-y-6">
-          <Card>
-            <CardContent className="flex items-center justify-center py-8">
+          <PageCard>
+            <PageCardContent className="flex items-center justify-center py-8">
               <div className="text-muted-foreground">Loading plugin...</div>
-            </CardContent>
-          </Card>
+            </PageCardContent>
+          </PageCard>
         </div>
       </div>
     );
@@ -157,8 +158,8 @@ export function PrivatePluginEditorPage() {
           </Alert>
         )}
 
-        <Card>
-          <CardHeader>
+        <PageCard>
+          <PageCardHeader>
             <div>
               <button 
                 onClick={navigateBackToPlugins}
@@ -167,21 +168,21 @@ export function PrivatePluginEditorPage() {
                 <ArrowLeft className="h-3 w-3" />
                 Back to Plugin Management
               </button>
-              <CardTitle className="flex items-center gap-2 text-2xl">
+              <PageCardTitle className="flex items-center gap-2 text-2xl">
                 <Settings className="h-5 w-5" />
                 {isEditing ? 'Edit Private Plugin' : 'Create Private Plugin'}
-              </CardTitle>
+              </PageCardTitle>
             </div>
-          </CardHeader>
-          <CardContent>
+          </PageCardHeader>
+          <PageCardContent>
             <PrivatePluginCreator
               plugin={plugin}
               onSave={handleSavePlugin}
               onCancel={handleCancel}
               saving={saving}
             />
-          </CardContent>
-        </Card>
+          </PageCardContent>
+        </PageCard>
       </div>
     </div>
   );

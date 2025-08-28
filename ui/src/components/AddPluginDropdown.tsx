@@ -7,6 +7,7 @@ import {
 } from "@/components/ui/popover";
 import { ChevronDown, Puzzle, Grid2x2, Columns2, Rows2 } from "lucide-react";
 import { MashupLayout, mashupService } from "@/services/mashupService";
+import { getMashupLayoutGrid, getSinglePluginGrid } from "./MashupLayoutGrid";
 
 interface AddPluginDropdownProps {
   onPluginSelect: () => void;
@@ -14,87 +15,6 @@ interface AddPluginDropdownProps {
   disabled?: boolean;
 }
 
-// Single plugin layout representation
-const getSinglePluginGrid = () => {
-  const baseClasses = "border border-dashed border-muted-foreground/30 rounded text-xs flex items-center justify-center text-muted-foreground/60 font-medium bg-muted";
-  return <div className={`${baseClasses} h-16 w-24`}></div>;
-};
-
-// Mashup layout grid representations
-const getMashupLayoutGrid = (layoutId: string) => {
-  const baseClasses = "border border-dashed border-muted-foreground/30 rounded flex items-center justify-center bg-muted";
-  
-  console.log('Rendering layout:', layoutId); // Debug log
-  
-  switch (layoutId) {
-    case "1Lx1R": // Left | Right
-      return (
-        <div className="grid grid-cols-2 gap-1 h-16 w-24">
-          <div className={baseClasses}></div>
-          <div className={baseClasses}></div>
-        </div>
-      );
-    case "1Tx1B": // Top / Bottom
-      return (
-        <div className="grid grid-rows-2 gap-1 h-16 w-24">
-          <div className={baseClasses}></div>
-          <div className={baseClasses}></div>
-        </div>
-      );
-    case "1Lx2R": // Left | Top-Right / Bottom-Right
-      return (
-        <div className="grid grid-cols-2 gap-1 h-16 w-24">
-          <div className={baseClasses}></div>
-          <div className="grid grid-rows-2 gap-1">
-            <div className={baseClasses}></div>
-            <div className={baseClasses}></div>
-          </div>
-        </div>
-      );
-    case "2Lx1R": // Left-Top / Left-Bottom | Right
-      return (
-        <div className="grid grid-cols-2 gap-1 h-16 w-24">
-          <div className="grid grid-rows-2 gap-1">
-            <div className={baseClasses}></div>
-            <div className={baseClasses}></div>
-          </div>
-          <div className={baseClasses}></div>
-        </div>
-      );
-    case "2Tx1B": // Top-Left | Top-Right / Bottom
-      return (
-        <div className="grid grid-rows-2 gap-1 h-16 w-24">
-          <div className="grid grid-cols-2 gap-1">
-            <div className={baseClasses}></div>
-            <div className={baseClasses}></div>
-          </div>
-          <div className={baseClasses}></div>
-        </div>
-      );
-    case "1Tx2B": // Top / Bottom-Left | Bottom-Right
-      return (
-        <div className="grid grid-rows-2 gap-1 h-16 w-24">
-          <div className={baseClasses}></div>
-          <div className="grid grid-cols-2 gap-1">
-            <div className={baseClasses}></div>
-            <div className={baseClasses}></div>
-          </div>
-        </div>
-      );
-    case "2x2": // Quadrant grid
-      return (
-        <div className="grid grid-cols-2 grid-rows-2 gap-1 h-16 w-24">
-          <div className={baseClasses}></div>
-          <div className={baseClasses}></div>
-          <div className={baseClasses}></div>
-          <div className={baseClasses}></div>
-        </div>
-      );
-    default:
-      console.warn('Unknown layout ID:', layoutId); // Debug warning
-      return <div className={`${baseClasses} h-16 w-24`}>?</div>;
-  }
-};
 
 export const AddPluginDropdown: React.FC<AddPluginDropdownProps> = ({
   onPluginSelect,
@@ -176,7 +96,7 @@ export const AddPluginDropdown: React.FC<AddPluginDropdownProps> = ({
                 }}
               >
                 <div className="flex items-center justify-center">
-                  {getSinglePluginGrid()}
+                  {getSinglePluginGrid('prominent')}
                 </div>
               </div>
               
@@ -200,7 +120,7 @@ export const AddPluginDropdown: React.FC<AddPluginDropdownProps> = ({
                     }}
                   >
                     <div className="flex items-center justify-center">
-                      {getMashupLayoutGrid(layout.id)}
+                      {getMashupLayoutGrid(layout.id, 'normal', 'prominent')}
                     </div>
                   </div>
                 ))

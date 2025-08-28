@@ -74,6 +74,8 @@ import {
   TooltipTrigger,
   TooltipContent,
 } from "@/components/ui/tooltip";
+import { getMashupLayoutGrid } from "./MashupLayoutGrid";
+import { mashupService } from "@/services/mashupService";
 import {
   PlayCircle,
   Edit,
@@ -328,6 +330,7 @@ interface SortableTableRowProps {
   timeTravelMode: boolean;
   timeTravelActiveItems: any[];
   deviceEvents: any; // DeviceEventsHookResult type
+  playlistMashupLayoutCache: Record<string, string>;
   onScheduleClick: (item: PlaylistItem) => void;
   onVisibilityToggle: (item: PlaylistItem) => void;
   onRemove: (itemId: string) => void;
@@ -345,6 +348,7 @@ function SortableTableRow({
   timeTravelMode,
   timeTravelActiveItems,
   deviceEvents,
+  playlistMashupLayoutCache,
   onScheduleClick, 
   onVisibilityToggle, 
   onRemove,
@@ -437,24 +441,24 @@ function SortableTableRow({
         </div>
       </TableCell>
       <TableCell>
-        <div>
-          <div className="font-medium flex items-center gap-2">
-            {item.plugin_instance?.plugin?.type === "mashup" && (
-              <Layers className="w-4 h-4 text-primary" />
-            )}
-            {item.plugin_instance?.name || "Unnamed Instance"}
-            {item.plugin_instance?.plugin?.type === "mashup" && (
-              <Badge variant="secondary" className="text-xs">
-                Mashup
-              </Badge>
-            )}
+        <div className="flex items-center justify-between h-full min-h-[3rem]">
+          <div>
+            <div className="font-medium">
+              {item.plugin_instance?.name || "Unnamed Instance"}
+            </div>
+            <div className="text-sm text-muted-foreground">
+              {item.plugin_instance?.plugin_definition?.is_mashup === true
+                ? "Mashup" 
+                : item.plugin_instance?.plugin_definition?.name || "Unknown Plugin"}
+            </div>
           </div>
-          <div className="text-sm text-muted-foreground">
-            {item.plugin_instance?.plugin?.type === "mashup" 
-              ? `Mashup Layout: ${item.plugin_instance?.plugin?.data_strategy || "Unknown"}` 
-              : item.plugin_instance?.plugin_definition?.name || "Unknown Plugin"}
-          </div>
-          <div className="text-xs md:hidden mt-1">
+          {item.plugin_instance?.plugin_definition?.is_mashup === true && item.plugin_instance?.id && playlistMashupLayoutCache[item.plugin_instance.id] && (
+            <div className="flex items-center">
+              {getMashupLayoutGrid(playlistMashupLayoutCache[item.plugin_instance.id], 'tiny', 'subtle')}
+            </div>
+          )}
+        </div>
+        <div className="text-xs md:hidden mt-1">
             <span className="flex items-center gap-1">
               {item.plugin_instance?.needs_config_update ? (
                 <Badge 
@@ -483,7 +487,6 @@ function SortableTableRow({
               )}
             </span>
           </div>
-        </div>
       </TableCell>
       <TableCell className="hidden md:table-cell">
         {item.plugin_instance?.needs_config_update ? (
@@ -647,6 +650,7 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
   const { user } = useAuth();
   const navigate = useNavigate();
   const [playlistItems, setPlaylistItems] = useState<PlaylistItem[]>([]);
+  const [playlistMashupLayoutCache, setPlaylistMashupLayoutCache] = useState<Record<string, string>>({});
   
   // Use SSE hook for real-time device events
   const deviceEvents = useDeviceEvents(selectedDeviceId);
@@ -994,7 +998,22 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
           });
           if (itemsResponse.ok) {
             const itemsData = await itemsResponse.json();
-            setPlaylistItems(itemsData.items || []);
+            const items = itemsData.items || [];
+            setPlaylistItems(items);
+            
+            // Load layouts for mashup items
+            const mashupItems = items.filter((item: PlaylistItem) => 
+              item.plugin_instance?.plugin_definition?.is_mashup === true
+            );
+            
+            // Load layouts in parallel for all mashup items
+            if (mashupItems.length > 0) {
+              mashupItems.forEach((item: PlaylistItem) => {
+                if (item.plugin_instance?.id) {
+                  loadPlaylistMashupLayout(item.plugin_instance.id);
+                }
+              });
+            }
           }
         } else {
           // Create default playlist if it doesn't exist
@@ -1029,6 +1048,26 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
       }
     } catch (error) {
       console.error("Failed to create default playlist:", error);
+    }
+  };
+
+  const loadPlaylistMashupLayout = async (instanceId: string): Promise<string | null> => {
+    // Return cached layout if available
+    if (playlistMashupLayoutCache[instanceId]) {
+      return playlistMashupLayoutCache[instanceId];
+    }
+
+    try {
+      const mashupData = await mashupService.getChildren(instanceId);
+      const layout = mashupData.layout;
+      
+      // Cache the layout
+      setPlaylistMashupLayoutCache(prev => ({ ...prev, [instanceId]: layout }));
+      
+      return layout;
+    } catch (error) {
+      console.error('Failed to load mashup layout for playlist:', error);
+      return null;
     }
   };
 
@@ -1503,6 +1542,7 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
                         timeTravelMode={timeTravelMode}
                         timeTravelActiveItems={timeTravelActiveItems}
                         deviceEvents={deviceEvents}
+                        playlistMashupLayoutCache={playlistMashupLayoutCache}
                         onScheduleClick={openScheduleDialog}
                         onVisibilityToggle={toggleItemVisibility}
                         onRemove={(itemId) => {

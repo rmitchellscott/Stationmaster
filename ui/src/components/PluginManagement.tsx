@@ -76,6 +76,7 @@ import { LiquidEditor } from "./LiquidEditor";
 import { PrivatePluginHelp } from "./PrivatePluginHelp";
 import { AddPluginDropdown } from "./AddPluginDropdown";
 import { MashupSlotGrid } from "./MashupSlotGrid";
+import { getMashupLayoutGrid } from "./MashupLayoutGrid";
 import { MashupLayout, MashupSlotInfo, AvailablePluginInstance, mashupService } from "@/services/mashupService";
 
 interface Plugin {
@@ -133,6 +134,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
   const { t } = useTranslation();
   const [searchParams, setSearchParams] = useSearchParams();
   const [pluginInstances, setPluginInstances] = useState<PluginInstance[]>([]);
+  const [mashupLayoutCache, setMashupLayoutCache] = useState<Record<string, string>>({});
   const [plugins, setPlugins] = useState<Plugin[]>([]);
   const [refreshRateOptions, setRefreshRateOptions] = useState<RefreshRateOption[]>([]);
   const [loading, setLoading] = useState(false);
@@ -171,6 +173,12 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
   // Edit plugin dialog
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [editPluginInstance, setEditPluginInstance] = useState<PluginInstance | null>(null);
+  const [editMashupLayout, setEditMashupLayout] = useState<string | null>(null);
+  const [editMashupLayoutLoading, setEditMashupLayoutLoading] = useState(false);
+  const [editMashupSlots, setEditMashupSlots] = useState<MashupSlotInfo[]>([]);
+  const [editMashupAssignments, setEditMashupAssignments] = useState<Record<string, string>>({});
+  const [editOriginalMashupAssignments, setEditOriginalMashupAssignments] = useState<Record<string, string>>({});
+  const [editAvailablePlugins, setEditAvailablePlugins] = useState<AvailablePluginInstance[]>([]);
   const [editInstanceName, setEditInstanceName] = useState("");
   const [editInstanceSettings, setEditInstanceSettings] = useState<Record<string, any>>({});
   const [editInstanceRefreshRate, setEditInstanceRefreshRate] = useState<number>(86400);
@@ -245,7 +253,20 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
       });
       if (response.ok) {
         const data = await response.json();
-        setPluginInstances(data.plugin_instances || []);
+        const instances = data.plugin_instances || [];
+        setPluginInstances(instances);
+        
+        // Load layouts for mashup instances
+        const mashupInstances = instances.filter((instance: PluginInstance) => 
+          instance.plugin?.type === 'mashup'
+        );
+        
+        // Load layouts in parallel for all mashup instances
+        if (mashupInstances.length > 0) {
+          mashupInstances.forEach((instance: PluginInstance) => {
+            loadMashupLayoutForTable(instance.id);
+          });
+        }
       } else {
         setError("Failed to fetch plugin instances");
       }
@@ -472,8 +493,35 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
     return (
       editInstanceName.trim() !== editPluginInstance.name ||
       JSON.stringify(editInstanceSettings) !== JSON.stringify(originalSettings) ||
-      hasRefreshRateChanged
+      hasRefreshRateChanged ||
+      hasMashupAssignmentChanges()
     );
+  };
+
+  const hasMashupAssignmentChanges = (): boolean => {
+    if (!editPluginInstance || editPluginInstance.plugin?.type !== 'mashup') return false;
+    
+    return JSON.stringify(editMashupAssignments) !== JSON.stringify(editOriginalMashupAssignments);
+  };
+
+  const loadMashupLayoutForTable = async (instanceId: string): Promise<string | null> => {
+    // Return cached layout if available
+    if (mashupLayoutCache[instanceId]) {
+      return mashupLayoutCache[instanceId];
+    }
+
+    try {
+      const mashupData = await mashupService.getChildren(instanceId);
+      const layout = mashupData.layout;
+      
+      // Cache the layout
+      setMashupLayoutCache(prev => ({ ...prev, [instanceId]: layout }));
+      
+      return layout;
+    } catch (error) {
+      console.error('Failed to load mashup layout for table:', error);
+      return null;
+    }
   };
 
   // Fetch schema diff for an instance that needs config updates
@@ -529,12 +577,43 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
       });
 
       if (response.ok) {
+        // Handle mashup slot assignments if this is a mashup
+        let shouldForceRefresh = false;
+        if (editPluginInstance.plugin?.type === 'mashup' && hasMashupAssignmentChanges()) {
+          try {
+            await mashupService.assignChildren(editPluginInstance.id, editMashupAssignments);
+            shouldForceRefresh = true; // Only refresh when slots change
+          } catch (assignError) {
+            console.error("Failed to assign mashup children:", assignError);
+            setEditDialogError("Plugin updated but failed to assign slot changes");
+            return;
+          }
+        }
+
+        // Force refresh if slot assignments changed
+        if (shouldForceRefresh) {
+          try {
+            await fetch(`/api/plugin-instances/${editPluginInstance.id}/force-refresh`, {
+              method: "POST",
+              credentials: "include",
+            });
+          } catch (refreshError) {
+            console.error("Failed to force refresh after slot update:", refreshError);
+            // Don't fail the whole operation if refresh fails
+          }
+        }
+
         setSuccessMessage("Plugin instance updated successfully!");
         setShowEditDialog(false);
         setEditPluginInstance(null);
         setEditInstanceName("");
         setEditInstanceSettings({});
         setEditInstanceRefreshRate(86400);
+        setEditMashupLayout(null);
+        setEditMashupSlots([]);
+        setEditMashupAssignments({});
+        setEditOriginalMashupAssignments({});
+        setEditAvailablePlugins([]);
         await fetchPluginInstances();
         onUpdate?.();
       } else {
@@ -641,8 +720,61 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
     }
   }, [sortState]);
 
+  // Helper function to load mashup layout info for editing
+  const loadEditMashupLayout = async (instanceId: string) => {
+    console.log('🔄 loadEditMashupLayout called with instanceId:', instanceId);
+    setEditMashupLayoutLoading(true);
+    try {
+      console.log('📡 Fetching mashup children data...');
+      const mashupData = await mashupService.getChildren(instanceId);
+      console.log('✅ Mashup data received:', mashupData);
+      console.log('🎯 Layout extracted:', mashupData.layout);
+      console.log('🔍 Slots extracted:', mashupData.slots);
+      console.log('📋 Assignments extracted:', mashupData.assignments);
+      
+      setEditMashupLayout(mashupData.layout);
+      setEditMashupSlots(mashupData.slots || []);
+      
+      // Convert assignments from MashupChild objects to plugin instance IDs
+      const assignmentMap: Record<string, string> = {};
+      if (mashupData.assignments) {
+        console.log('🔍 Processing assignments:', mashupData.assignments);
+        for (const [slotPosition, child] of Object.entries(mashupData.assignments)) {
+          console.log(`  - Slot ${slotPosition}:`, child);
+          if (child && child.instance_id) {
+            assignmentMap[slotPosition] = child.instance_id;
+            console.log(`    ✅ Mapped to instance ID: ${child.instance_id}`);
+          }
+        }
+      }
+      console.log('📊 Final assignment map:', assignmentMap);
+      setEditMashupAssignments(assignmentMap);
+      setEditOriginalMashupAssignments({...assignmentMap}); // Store original for change detection
+      
+      // Load available plugins to display names
+      console.log('📡 Loading available plugins for edit modal...');
+      const availablePlugins = await mashupService.getAvailablePluginInstances();
+      console.log('✅ Available plugins loaded:', availablePlugins);
+      setEditAvailablePlugins(availablePlugins);
+    } catch (error) {
+      console.error('❌ Error loading mashup layout:', error);
+      setEditMashupLayout(null);
+      setEditMashupSlots([]);
+      setEditMashupAssignments({});
+      setEditOriginalMashupAssignments({});
+      setEditAvailablePlugins([]);
+    } finally {
+      setEditMashupLayoutLoading(false);
+    }
+  };
+
   // Helper function to open edit dialog for an instance
   const openEditDialog = (instanceToEdit: PluginInstance) => {
+    console.log('🚀 openEditDialog called with instance:', instanceToEdit);
+    console.log('🔍 Instance plugin object:', instanceToEdit.plugin);
+    console.log('🏷️ Plugin type:', instanceToEdit.plugin?.type);
+    console.log('📋 Plugin name:', instanceToEdit.plugin?.name);
+    
     setEditPluginInstance(instanceToEdit);
     setEditInstanceName(instanceToEdit.name);
     
@@ -665,6 +797,21 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
     // Clear dialog-specific alerts when opening
     setEditDialogError(null);
     setEditDialogSuccess(null);
+    
+    // If it's a mashup, load the layout info
+    const isMashup = instanceToEdit.plugin?.type === 'mashup';
+    console.log('🤔 Is mashup check:', isMashup);
+    if (isMashup) {
+      console.log('✅ Detected mashup - loading layout info');
+      loadEditMashupLayout(instanceToEdit.id);
+    } else {
+      console.log('❌ Not a mashup - clearing layout');
+      setEditMashupLayout(null);
+      setEditMashupSlots([]);
+      setEditMashupAssignments({});
+      setEditOriginalMashupAssignments({});
+      setEditAvailablePlugins([]);
+    }
     
     // Fetch schema diff if instance needs config update
     if (instanceToEdit.needs_config_update) {
@@ -715,6 +862,21 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
       }
     }
   }, [pluginInstances, pendingEditInstanceId, searchParams, setSearchParams]);
+
+  // Debug: Log when editPluginInstance changes
+  useEffect(() => {
+    console.log('🔄 editPluginInstance state changed:', editPluginInstance);
+    if (editPluginInstance) {
+      console.log('  - Instance ID:', editPluginInstance.id);
+      console.log('  - Instance name:', editPluginInstance.name);
+      console.log('  - Plugin type:', editPluginInstance.plugin?.type);
+    }
+  }, [editPluginInstance]);
+
+  // Debug: Log when editMashupLayout changes
+  useEffect(() => {
+    console.log('🗂️ editMashupLayout state changed:', editMashupLayout);
+  }, [editMashupLayout]);
 
   // Sort function
   const handleSort = (column: SortColumn) => {
@@ -1211,43 +1373,23 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                       <div>
                         <div>{userPlugin.name}</div>
                         <div className="text-sm lg:hidden flex items-center gap-2">
-                          <span className="text-muted-foreground">
-                            {userPlugin.plugin?.type === "mashup" ? "Mashup" : (userPlugin.plugin?.name || "Unknown Plugin")}
+                          <span className="text-muted-foreground flex items-center gap-2">
+                            {userPlugin.plugin?.type === "mashup" ? (
+                              <>
+                                <span>Mashup</span>
+                                {mashupLayoutCache[userPlugin.id] && (
+                                  <div className="inline-flex">
+                                    {getMashupLayoutGrid(mashupLayoutCache[userPlugin.id], 'tiny', 'subtle')}
+                                  </div>
+                                )}
+                              </>
+                            ) : (userPlugin.plugin?.name || "Unknown Plugin")}
                           </span>
                           {userPlugin.needs_config_update ? (
                             <Badge 
                               variant="destructive" 
                               className="text-xs cursor-pointer hover:bg-destructive/80"
-                              onClick={() => {
-                                // Same click logic as desktop version
-                                setEditPluginInstance(userPlugin);
-                                setEditInstanceName(userPlugin.name);
-                                
-                                // Parse settings from JSON string to object
-                                let parsedSettings = {};
-                                try {
-                                  if (userPlugin.settings && typeof userPlugin.settings === 'string') {
-                                    parsedSettings = JSON.parse(userPlugin.settings);
-                                  } else if (userPlugin.settings && typeof userPlugin.settings === 'object') {
-                                    parsedSettings = userPlugin.settings;
-                                  }
-                                } catch (e) {
-                                  console.error("Error parsing plugin settings:", e);
-                                  parsedSettings = {};
-                                }
-                                
-                                setEditInstanceSettings(parsedSettings);
-                                setEditInstanceRefreshRate(userPlugin.refresh_interval || 86400);
-                                
-                                // Clear dialog-specific alerts when opening
-                                setEditDialogError(null);
-                                setEditDialogSuccess(null);
-                                
-                                // Fetch schema diff if instance needs config update
-                                fetchSchemaDiff(userPlugin.id);
-                                
-                                setShowEditDialog(true);
-                              }}
+                              onClick={() => openEditDialog(userPlugin)}
                             >
                               Update Config
                             </Badge>
@@ -1258,8 +1400,17 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                       </div>
                     </TableCell>
                     <TableCell className="hidden lg:table-cell">
-                      <div>
-                        {userPlugin.plugin?.type === "mashup" ? "Mashup" : (userPlugin.plugin?.name || "Unknown Plugin")}
+                      <div className="flex items-center gap-2">
+                        {userPlugin.plugin?.type === "mashup" ? (
+                          <>
+                            <span>Mashup</span>
+                            {mashupLayoutCache[userPlugin.id] && (
+                              <div className="inline-flex">
+                                {getMashupLayoutGrid(mashupLayoutCache[userPlugin.id], 'tiny', 'subtle')}
+                              </div>
+                            )}
+                          </>
+                        ) : (userPlugin.plugin?.name || "Unknown Plugin")}
                       </div>
                     </TableCell>
                     <TableCell className="hidden md:table-cell">
@@ -1268,36 +1419,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                           <Badge 
                             variant="destructive" 
                             className="cursor-pointer hover:bg-destructive/80"
-                            onClick={() => {
-                              // Open edit dialog for this instance
-                              setEditPluginInstance(userPlugin);
-                              setEditInstanceName(userPlugin.name);
-                              
-                              // Parse settings from JSON string to object
-                              let parsedSettings = {};
-                              try {
-                                if (userPlugin.settings && typeof userPlugin.settings === 'string') {
-                                  parsedSettings = JSON.parse(userPlugin.settings);
-                                } else if (userPlugin.settings && typeof userPlugin.settings === 'object') {
-                                  parsedSettings = userPlugin.settings;
-                                }
-                              } catch (e) {
-                                console.error("Error parsing plugin settings:", e);
-                                parsedSettings = {};
-                              }
-                              
-                              setEditInstanceSettings(parsedSettings);
-                              setEditInstanceRefreshRate(userPlugin.refresh_interval || 86400);
-                              
-                              // Clear dialog-specific alerts when opening
-                              setEditDialogError(null);
-                              setEditDialogSuccess(null);
-                              
-                              // Fetch schema diff if instance needs config update
-                              fetchSchemaDiff(userPlugin.id);
-                              
-                              setShowEditDialog(true);
-                            }}
+                            onClick={() => openEditDialog(userPlugin)}
                           >
                             Update Config
                           </Badge>
@@ -1330,39 +1452,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => {
-                            setEditPluginInstance(userPlugin);
-                            setEditInstanceName(userPlugin.name);
-                            
-                            // Parse settings from JSON string to object
-                            let parsedSettings = {};
-                            try {
-                              if (userPlugin.settings && typeof userPlugin.settings === 'string') {
-                                parsedSettings = JSON.parse(userPlugin.settings);
-                              } else if (userPlugin.settings && typeof userPlugin.settings === 'object') {
-                                parsedSettings = userPlugin.settings;
-                              }
-                            } catch (e) {
-                              console.error('Failed to parse plugin settings:', e);
-                              parsedSettings = {};
-                            }
-                            
-                            setEditInstanceSettings(parsedSettings);
-                            setEditInstanceRefreshRate(userPlugin.refresh_interval || 86400);
-                            
-                            // Clear dialog-specific alerts when opening
-                            setEditDialogError(null);
-                            setEditDialogSuccess(null);
-                            
-                            // Fetch schema diff if instance needs config update
-                            if (userPlugin.needs_config_update) {
-                              fetchSchemaDiff(userPlugin.id);
-                            } else {
-                              setSchemaDiff(null);
-                            }
-                            
-                            setShowEditDialog(true);
-                          }}
+                          onClick={() => openEditDialog(userPlugin)}
                         >
                           <Edit className="h-4 w-4" />
                         </Button>
@@ -1395,15 +1485,26 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
           onOpenAutoFocus={(e) => e.preventDefault()}
         >
           <DialogHeader className="pb-3">
-            <DialogTitle>
-              {creationMode === 'mashup' ? 'Create Mashup' : 'Add Plugin Instance'}
-            </DialogTitle>
-            <DialogDescription>
-              {creationMode === 'mashup' 
-                ? `Create a mashup using the ${selectedMashupLayout?.name} layout`
-                : (selectedPlugin ? `Configure your ${selectedPlugin.name} instance` : "Select a plugin to create an instance for your device")
-              }
-            </DialogDescription>
+            {creationMode === 'mashup' && selectedMashupLayout ? (
+              <div className="flex items-start gap-4">
+                <div className="flex-shrink-0">
+                  {getMashupLayoutGrid(selectedMashupLayout.id, 'small')}
+                </div>
+                <div className="flex-1">
+                  <DialogTitle>Create Mashup</DialogTitle>
+                  <DialogDescription>
+                    Create a mashup using the {selectedMashupLayout.name} layout
+                  </DialogDescription>
+                </div>
+              </div>
+            ) : (
+              <>
+                <DialogTitle>Add Plugin Instance</DialogTitle>
+                <DialogDescription>
+                  {selectedPlugin ? `Configure your ${selectedPlugin.name} instance` : "Select a plugin to create an instance for your device"}
+                </DialogDescription>
+              </>
+            )}
           </DialogHeader>
 
           <div className="flex-1 overflow-y-auto">
@@ -1417,52 +1518,6 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
 
               {creationMode === 'mashup' && selectedMashupLayout ? (
                 <>
-                  {/* Show selected mashup layout */}
-                  <div className="mb-4">
-                    <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
-                      <div className="flex items-center justify-center">
-                        {(() => {
-                          // Reuse the layout grid function from AddPluginDropdown
-                          const baseClasses = "border border-dashed border-muted-foreground/30 rounded text-xs flex items-center justify-center text-muted-foreground/60 font-medium";
-                          switch (selectedMashupLayout.id) {
-                            case "1Lx1R":
-                              return (
-                                <div className="grid grid-cols-2 gap-1 h-12 w-16">
-                                  <div className={`${baseClasses} bg-muted/20`}>L</div>
-                                  <div className={`${baseClasses} bg-muted/20`}>R</div>
-                                </div>
-                              );
-                            case "1Tx1B":
-                              return (
-                                <div className="grid grid-rows-2 gap-1 h-12 w-16">
-                                  <div className={`${baseClasses} bg-muted/20`}>T</div>
-                                  <div className={`${baseClasses} bg-muted/20`}>B</div>
-                                </div>
-                              );
-                            case "2x2":
-                              return (
-                                <div className="grid grid-cols-2 grid-rows-2 gap-1 h-12 w-16">
-                                  <div className={`${baseClasses} bg-muted/20`}>Q1</div>
-                                  <div className={`${baseClasses} bg-muted/20`}>Q2</div>
-                                  <div className={`${baseClasses} bg-muted/20`}>Q3</div>
-                                  <div className={`${baseClasses} bg-muted/20`}>Q4</div>
-                                </div>
-                              );
-                            // Add other layouts as needed
-                            default:
-                              return <div className={`${baseClasses} h-12 w-16 bg-muted/20`}>Layout</div>;
-                          }
-                        })()}
-                      </div>
-                      <div className="flex-1">
-                        <div className="font-semibold text-sm">{selectedMashupLayout.name}</div>
-                        <div className="text-xs text-muted-foreground">
-                          {selectedMashupLayout.description} • {selectedMashupLayout.slots} slots
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
                   {/* Mashup instance name */}
                   <div>
                     <Label htmlFor="mashup-instanceName" className="text-sm">Mashup Name</Label>
@@ -1705,10 +1760,49 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
           onOpenAutoFocus={(e) => e.preventDefault()}
         >
           <DialogHeader>
-            <DialogTitle>Edit Plugin Instance</DialogTitle>
-            <DialogDescription>
-              Update the settings for "{editPluginInstance?.name}".
-            </DialogDescription>
+            {(() => {
+              const pluginType = editPluginInstance?.plugin?.type;
+              const layoutId = editMashupLayout;
+              const isMashup = pluginType === 'mashup';
+              const hasLayout = !!layoutId;
+              const isLoading = editMashupLayoutLoading;
+              const showMashupHeader = isMashup && (hasLayout || isLoading);
+              
+              console.log('🎨 Edit dialog header render:');
+              console.log('  - Plugin type:', pluginType);
+              console.log('  - Layout ID:', layoutId);
+              console.log('  - Is mashup:', isMashup);
+              console.log('  - Has layout:', hasLayout);
+              console.log('  - Is loading:', isLoading);
+              console.log('  - Show mashup header:', showMashupHeader);
+              
+              return showMashupHeader ? (
+                <div className="flex items-start gap-4">
+                  <div className="flex-shrink-0">
+                    {isLoading ? (
+                      <div className="h-10 w-16 border border-dashed border-muted-foreground/30 rounded flex items-center justify-center bg-muted animate-pulse">
+                        <div className="text-xs text-muted-foreground">...</div>
+                      </div>
+                    ) : (
+                      getMashupLayoutGrid(layoutId, 'small')
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <DialogTitle>Edit Mashup Instance</DialogTitle>
+                    <DialogDescription>
+                      Update the settings for "{editPluginInstance?.name}".
+                    </DialogDescription>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <DialogTitle>Edit Plugin Instance</DialogTitle>
+                  <DialogDescription>
+                    Update the settings for "{editPluginInstance?.name}".
+                  </DialogDescription>
+                </>
+              );
+            })()}
           </DialogHeader>
           
           {/* Schema diff warning banner */}
@@ -1778,8 +1872,9 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                   <Select
                     value={editInstanceRefreshRate.toString()}
                     onValueChange={(value) => setEditInstanceRefreshRate(Number(value))}
+                    disabled={editPluginInstance?.plugin?.type === 'mashup'}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className={editPluginInstance?.plugin?.type === 'mashup' ? 'opacity-60' : ''}>
                       <SelectValue placeholder="Select refresh rate" />
                     </SelectTrigger>
                     <SelectContent>
@@ -1799,6 +1894,27 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                     <RefreshCw className={`h-4 w-4 ${forceRefreshLoading ? "animate-spin" : ""}`} />
                     {forceRefreshLoading ? "Refreshing..." : "Force Refresh"}
                   </Button>
+                </div>
+                {editPluginInstance?.plugin?.type === 'mashup' && (
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Refresh rate determined by assigned plugins
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Mashup slot assignments - read only */}
+            {editPluginInstance?.plugin?.type === 'mashup' && editMashupLayout && editMashupSlots.length > 0 && (
+              <div>
+                <Label className="text-sm">Plugin Assignments</Label>
+                <div className="mt-2">
+                  <MashupSlotGrid
+                    layout={editMashupLayout}
+                    slots={editMashupSlots}
+                    availablePlugins={editAvailablePlugins}
+                    assignments={editMashupAssignments}
+                    onAssignmentsChange={setEditMashupAssignments}
+                  />
                 </div>
               </div>
             )}

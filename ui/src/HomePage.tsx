@@ -7,6 +7,7 @@ import { PlaylistManagement } from "@/components/PlaylistManagement";
 import { DeviceSelector } from "@/components/DeviceSelector";
 import { DeviceManagementContent } from "@/components/DeviceManagementContent";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageCard, PageCardContent, PageCardHeader, PageCardTitle } from "@/components/ui/page-card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Device } from "@/utils/deviceHelpers";
@@ -328,11 +329,11 @@ export default function HomePage() {
     <div className="bg-background pt-0 pb-8 px-0 sm:px-8">
       <div className="max-w-6xl mx-0 sm:mx-auto space-y-6">
         {showOnboarding && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Welcome to Stationmaster</CardTitle>
-            </CardHeader>
-            <CardContent>
+          <PageCard>
+            <PageCardHeader>
+              <PageCardTitle>Welcome to Stationmaster</PageCardTitle>
+            </PageCardHeader>
+            <PageCardContent>
               <p className="text-muted-foreground mb-4">
                 Your self-hosted solution for managing TRMNL devices.
               </p>
@@ -353,15 +354,15 @@ export default function HomePage() {
                   Don't show again
                 </Button>
               </div>
-            </CardContent>
-          </Card>
+            </PageCardContent>
+          </PageCard>
         )}
         
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-2xl">Dashboard</CardTitle>
-          </CardHeader>
-          <CardContent>
+        <PageCard>
+          <PageCardHeader>
+            <PageCardTitle className="text-2xl">Dashboard</PageCardTitle>
+          </PageCardHeader>
+          <PageCardContent>
             <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
               <TabsList className="grid w-full grid-cols-3">
                 <TabsTrigger value="plugins">
@@ -408,8 +409,8 @@ export default function HomePage() {
                 <DeviceManagementContent onUpdate={fetchDevices} />
               </TabsContent>
             </Tabs>
-          </CardContent>
-        </Card>
+          </PageCardContent>
+        </PageCard>
       </div>
     </div>
   );

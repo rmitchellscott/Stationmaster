@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageCard, PageCardContent, PageCardHeader, PageCardTitle } from "@/components/ui/page-card";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
@@ -380,8 +381,8 @@ export function UserSettingsPage() {
           </div>
         )}
 
-        <Card>
-          <CardHeader>
+        <PageCard>
+          <PageCardHeader>
             <div>
               <button 
                 onClick={() => navigate(-1)} 
@@ -390,13 +391,13 @@ export function UserSettingsPage() {
                 <ArrowLeft className="h-3 w-3" />
                 Back to Dashboard
               </button>
-              <CardTitle className="flex items-center gap-2 text-2xl">
+              <PageCardTitle className="flex items-center gap-2 text-2xl">
                 <Settings className="h-5 w-5" />
                 {t("settings.title")}
-              </CardTitle>
+              </PageCardTitle>
             </div>
-          </CardHeader>
-          <CardContent>
+          </PageCardHeader>
+          <PageCardContent>
             <Tabs defaultValue="profile" className="w-full">
               <TabsList className="grid w-full grid-cols-2">
                 <TabsTrigger value="profile">
@@ -733,8 +734,8 @@ export function UserSettingsPage() {
                 </div>
               </TabsContent>
             </Tabs>
-          </CardContent>
-        </Card>
+          </PageCardContent>
+        </PageCard>
         </div>
       </div>
 

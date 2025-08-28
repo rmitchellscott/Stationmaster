@@ -166,7 +166,7 @@ export const MashupSlotGrid: React.FC<MashupSlotGridProps> = ({
     );
   };
 
-  if (disabled) {
+  if (disabled && (!layout || slots.length === 0)) {
     return (
       <div className="space-y-4 opacity-50 pointer-events-none">
         <div className="text-sm text-muted-foreground">
@@ -187,7 +187,7 @@ export const MashupSlotGrid: React.FC<MashupSlotGridProps> = ({
   }
 
   return (
-    <div className="space-y-4">
+    <div className={`space-y-4 ${disabled ? 'opacity-60 pointer-events-none' : ''}`}>
       {/* 2x2 Grid */}
       <div className="grid grid-cols-2 grid-rows-2 gap-4 min-h-[160px]">
         {slots.map((slot) => renderSlotSelector(slot))}

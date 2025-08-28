@@ -39,6 +39,7 @@ type ZipExportData struct {
 	HalfHorizontal string
 	HalfVertical   string
 	QuadrantTemplate string
+	SharedMarkup   string
 }
 
 // CreateTRMNLZip creates a TRMNL-compatible ZIP file from a PluginDefinition
@@ -65,6 +66,7 @@ func (s *TRMNLZipService) CreateTRMNLZip(def *database.PluginDefinition) (*bytes
 		"half_horizontal.liquid": getTemplateContent(def.MarkupHalfHoriz),
 		"half_vertical.liquid":   getTemplateContent(def.MarkupHalfVert),
 		"quadrant.liquid":        getTemplateContent(def.MarkupQuadrant),
+		"shared.liquid":          getTemplateContent(def.SharedMarkup),
 	}
 
 	for filename, content := range templates {
@@ -178,6 +180,10 @@ func (s *TRMNLZipService) ExtractTRMNLZip(file multipart.File, header *multipart
 			exportData.QuadrantTemplate = string(content)
 			foundFiles["quadrant.liquid"] = true
 			logging.Info("[TRMNL IMPORT] Found quadrant.liquid template", "size", len(content))
+		case "shared.liquid":
+			exportData.SharedMarkup = string(content)
+			foundFiles["shared.liquid"] = true
+			logging.Info("[TRMNL IMPORT] Found shared.liquid template", "size", len(content))
 		default:
 			logging.Error("[TRMNL IMPORT] Unexpected file in ZIP", "file", f.Name)
 			return nil, fmt.Errorf("unexpected file in ZIP: %s", f.Name)
@@ -218,7 +224,8 @@ func (s *TRMNLZipService) ConvertZipDataToPluginDefinition(zipData *ZipExportDat
 		"has_full", zipData.FullTemplate != "",
 		"has_half_h", zipData.HalfHorizontal != "",
 		"has_half_v", zipData.HalfVertical != "",
-		"has_quadrant", zipData.QuadrantTemplate != "")
+		"has_quadrant", zipData.QuadrantTemplate != "",
+		"has_shared", zipData.SharedMarkup != "")
 
 	// Parse settings.yml using the TRMNL export service
 	def, err := s.exportService.ParseSettingsYAML(zipData.SettingsYAML)
@@ -250,6 +257,11 @@ func (s *TRMNLZipService) ConvertZipDataToPluginDefinition(zipData *ZipExportDat
 		def.MarkupQuadrant = &zipData.QuadrantTemplate
 		templateCount++
 		logging.Info("[TRMNL IMPORT] Set quadrant template", "size", len(zipData.QuadrantTemplate))
+	}
+	if zipData.SharedMarkup != "" {
+		def.SharedMarkup = &zipData.SharedMarkup
+		templateCount++
+		logging.Info("[TRMNL IMPORT] Set shared template", "size", len(zipData.SharedMarkup))
 	}
 
 	logging.Info("[TRMNL IMPORT] Set template content", "template_count", templateCount)

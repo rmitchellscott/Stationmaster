@@ -6,6 +6,7 @@ import { useConfig } from "@/components/ConfigProvider";
 import { UserDeleteDialog } from "@/components/UserDeleteDialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageCard, PageCardContent, PageCardHeader, PageCardTitle } from "@/components/ui/page-card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -1783,8 +1784,8 @@ export function AdminPage() {
     <div className="bg-background pt-0 pb-8 px-0 sm:px-8">
       <div className="max-w-6xl mx-0 sm:mx-auto space-y-6">
 
-        <Card>
-          <CardHeader>
+        <PageCard>
+          <PageCardHeader>
             <div>
               <button 
                 onClick={() => navigate(-1)} 
@@ -1793,13 +1794,13 @@ export function AdminPage() {
                 <ArrowLeft className="h-3 w-3" />
                 Back to Dashboard
               </button>
-              <CardTitle className="flex items-center gap-2 text-2xl">
+              <PageCardTitle className="flex items-center gap-2 text-2xl">
                 <Shield className="h-5 w-5" />
                 {t("admin.title")}
-              </CardTitle>
+              </PageCardTitle>
             </div>
-          </CardHeader>
-          <CardContent>
+          </PageCardHeader>
+          <PageCardContent>
             <Tabs defaultValue="overview" className="w-full">
               <TabsList className="w-full">
                 <TabsTrigger value="overview">
@@ -3274,8 +3275,8 @@ export function AdminPage() {
                 </div>
               </TabsContent>
             </Tabs>
-          </CardContent>
-        </Card>
+          </PageCardContent>
+        </PageCard>
       </div>
 
       {/* Password Reset Dialog */}

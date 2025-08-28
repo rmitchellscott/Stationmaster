@@ -109,6 +109,35 @@ func (f *FlexibleOptions) UnmarshalYAML(value *yaml.Node) error {
 	return nil
 }
 
+// MarshalYAML implements custom YAML marshaling for FlexibleOptions
+// Always outputs in TRMNL format: array of single-key maps
+func (f *FlexibleOptions) MarshalYAML() (interface{}, error) {
+	// If we have a map (key-value pairs), convert to TRMNL format
+	if len(f.OptionsMap) > 0 {
+		var options []map[string]string
+		for key, value := range f.OptionsMap {
+			optionMap := make(map[string]string)
+			optionMap[key] = value
+			options = append(options, optionMap)
+		}
+		return options, nil
+	}
+	
+	// If we have simple strings, convert to TRMNL format with same key/value
+	if len(f.Options) > 0 {
+		var options []map[string]string
+		for _, option := range f.Options {
+			optionMap := make(map[string]string)
+			optionMap[option] = option
+			options = append(options, optionMap)
+		}
+		return options, nil
+	}
+	
+	// Return empty array for no options
+	return []map[string]string{}, nil
+}
+
 // ToStringSlice converts FlexibleOptions to a simple string slice for backward compatibility
 func (f *FlexibleOptions) ToStringSlice() []string {
 	if len(f.Options) > 0 {

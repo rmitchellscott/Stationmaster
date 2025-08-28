@@ -135,6 +135,16 @@ func (s *UnifiedPluginService) DeletePluginDefinition(id string, ownerID *uuid.U
 				return fmt.Errorf("failed to delete rendered content for instance %s: %w", instance.ID, err)
 			}
 			
+			// Delete mashup child relationships if this instance is used as a mashup child
+			if err := tx.Where("child_instance_id = ?", instance.ID).Delete(&MashupChild{}).Error; err != nil {
+				return fmt.Errorf("failed to delete mashup child relationships for instance %s: %w", instance.ID, err)
+			}
+			
+			// Delete mashup children if this instance is a mashup parent
+			if err := tx.Where("mashup_instance_id = ?", instance.ID).Delete(&MashupChild{}).Error; err != nil {
+				return fmt.Errorf("failed to delete mashup children for instance %s: %w", instance.ID, err)
+			}
+			
 			// Finally hard delete the plugin instance
 			if err := tx.Delete(&instance).Error; err != nil {
 				return fmt.Errorf("failed to delete plugin instance %s: %w", instance.ID, err)

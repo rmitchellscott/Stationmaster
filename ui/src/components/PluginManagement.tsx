@@ -1953,7 +1953,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
             </Button>
             <Button
               onClick={updatePluginInstance}
-              disabled={updateLoading || !editInstanceName.trim() || !hasPluginInstanceChanges()}
+              disabled={updateLoading || !editInstanceName.trim() || (!hasPluginInstanceChanges() && !editPluginInstance?.needs_config_update)}
             >
               {updateLoading ? "Updating..." : "Update Instance"}
             </Button>

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -21,6 +22,7 @@ export const AddPluginDropdown: React.FC<AddPluginDropdownProps> = ({
   onMashupSelect,
   disabled = false
 }) => {
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [layouts, setLayouts] = useState<MashupLayout[]>([]);
   const [loading, setLoading] = useState(false);
@@ -46,7 +48,7 @@ export const AddPluginDropdown: React.FC<AddPluginDropdownProps> = ({
 
   const handlePluginSelect = () => {
     setOpen(false);
-    onPluginSelect();
+    navigate('/plugins/add');
   };
 
   const handleMashupSelect = (layout: MashupLayout) => {

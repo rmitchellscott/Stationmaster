@@ -878,6 +878,56 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
     }
   }, [pluginInstances, pendingEditInstanceId, searchParams, setSearchParams]);
 
+  // Handle auto-opening create dialog from URL parameter - Check for create action
+  useEffect(() => {
+    const action = searchParams.get('action');
+    const pluginId = searchParams.get('pluginId');
+    
+    if (action === 'create' && pluginId && plugins.length > 0) {
+      // Find the plugin by ID
+      const selectedPlugin = plugins.find(plugin => plugin.id === pluginId);
+      if (selectedPlugin) {
+        // Open the create dialog with the selected plugin
+        setSelectedPlugin(selectedPlugin);
+        setInstanceName(selectedPlugin.name);
+        setCreateDialogError(null);
+        setCreationMode('plugin');
+        setSelectedMashupLayout(null);
+        
+        // Set up default settings
+        try {
+          if (selectedPlugin.config_schema) {
+            const schema = JSON.parse(selectedPlugin.config_schema);
+            const defaults: Record<string, any> = {};
+            
+            if (schema.properties) {
+              Object.keys(schema.properties).forEach(key => {
+                const property = schema.properties[key];
+                if (property.default !== undefined) {
+                  defaults[key] = property.default;
+                }
+              });
+            }
+            
+            setInstanceSettings(defaults);
+          } else {
+            setInstanceSettings({});
+          }
+        } catch (e) {
+          setInstanceSettings({});
+        }
+        
+        setShowAddDialog(true);
+        
+        // Clear the URL parameters
+        const newSearchParams = new URLSearchParams(searchParams);
+        newSearchParams.delete('action');
+        newSearchParams.delete('pluginId');
+        setSearchParams(newSearchParams);
+      }
+    }
+  }, [searchParams, plugins, setSearchParams]);
+
   // Debug: Log when editPluginInstance changes
   useEffect(() => {
     console.log('🔄 editPluginInstance state changed:', editPluginInstance);

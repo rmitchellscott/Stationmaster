@@ -225,6 +225,11 @@ func initializeSystemSettings() error {
 			Value:       "24",
 			Description: "Password reset token timeout in hours",
 		},
+		"enable_frequent_refreshes": {
+			Key:         "enable_frequent_refreshes",
+			Value:       "false",
+			Description: "Enable 1, 5, and 10 minute screen render refresh rates",
+		},
 	}
 
 	for _, setting := range defaultSettings {

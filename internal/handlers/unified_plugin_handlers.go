@@ -573,7 +573,13 @@ func CreatePluginInstanceFromDefinitionHandler(c *gin.Context) {
 
 // GetRefreshRateOptionsHandler returns available refresh rate options
 func GetRefreshRateOptionsHandler(c *gin.Context) {
-	options := database.GetRefreshRateOptions()
+	// Check if frequent refreshes are enabled
+	frequentRefreshesEnabled := false
+	if enabledStr, err := database.GetSystemSetting("enable_frequent_refreshes"); err == nil {
+		frequentRefreshesEnabled = enabledStr == "true"
+	}
+	
+	options := database.GetRefreshRateOptionsWithFrequent(frequentRefreshesEnabled)
 	c.JSON(http.StatusOK, gin.H{"refresh_rate_options": options})
 }
 

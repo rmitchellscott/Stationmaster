@@ -353,6 +353,7 @@ export function AdminPage() {
   const [siteUrl, setSiteUrl] = useState("");
   const [registrationEnabled, setRegistrationEnabled] = useState(false);
   const [registrationLocked, setRegistrationLocked] = useState(false);
+  const [frequentRefreshesEnabled, setFrequentRefreshesEnabled] = useState(false);
   const [webhookRateLimit, setWebhookRateLimit] = useState(30);
   const [webhookMaxSizeKB, setWebhookMaxSizeKB] = useState(5);
   
@@ -662,6 +663,7 @@ export function AdminPage() {
         setRegistrationEnabled(status.settings.registration_enabled === "true");
         setRegistrationLocked(status.settings.registration_enabled_locked || false);
         setSiteUrl(status.settings.site_url || "");
+        setFrequentRefreshesEnabled(status.settings.enable_frequent_refreshes === "true");
         setWebhookRateLimit(parseInt(status.settings.webhook_rate_limit_per_hour) || 30);
         setWebhookMaxSizeKB(parseInt(status.settings.webhook_max_request_size_kb) || 5);
       }
@@ -678,7 +680,7 @@ export function AdminPage() {
           "Content-Type": "application/json",
         },
         credentials: "include",
-        body: JSON.stringify({ [key]: value }),
+        body: JSON.stringify({ key: key, value: value }),
       });
       if (!response.ok) {
         throw new Error("Failed to update setting");
@@ -3031,6 +3033,28 @@ export function AdminPage() {
                           Full URL including protocol (http/https) used for firmware downloads and other external links.
                           Leave empty to use relative URLs.
                         </p>
+                      </div>
+                      
+                      <div className="flex items-center justify-between">
+                        <div className="space-y-1">
+                          <Label htmlFor="frequent-refreshes-enabled">
+                            Enable Frequent Refreshes
+                          </Label>
+                          <p className="text-sm text-muted-foreground">
+                            Enable 1, 5, and 10 minute screen render refresh rates
+                          </p>
+                        </div>
+                        <Switch
+                          id="frequent-refreshes-enabled"
+                          checked={frequentRefreshesEnabled}
+                          onCheckedChange={(checked) => {
+                            setFrequentRefreshesEnabled(checked);
+                            updateSystemSetting(
+                              "enable_frequent_refreshes",
+                              checked.toString(),
+                            );
+                          }}
+                        />
                       </div>
                     </CardContent>
                   </Card>

@@ -1306,9 +1306,9 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
         <TabsContent value="instances" className="space-y-4">
           <div className="flex justify-between items-center">
             <div>
-              <h4 className="font-semibold">Plugin Instances</h4>
-              <p className="text-sm text-muted-foreground">
-                Manage your plugin instances for the selected device
+              <h3 className="text-lg font-semibold">Plugin Instances</h3>
+              <p className="text-muted-foreground">
+                Manage your plugin instances for all devices
               </p>
             </div>
             <AddPluginDropdown

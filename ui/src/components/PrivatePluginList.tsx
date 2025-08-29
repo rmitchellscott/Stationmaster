@@ -313,7 +313,7 @@ export function PrivatePluginList({
         <div>
           <h3 className="text-lg font-semibold">Private Plugins</h3>
           <p className="text-muted-foreground">
-            Custom plugins you've created with Liquid templates
+            Custom plugins created with Liquid templates
           </p>
         </div>
         <div className="flex gap-2">

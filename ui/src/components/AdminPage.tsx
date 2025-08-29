@@ -6,7 +6,6 @@ import { useConfig } from "@/components/ConfigProvider";
 import { UserDeleteDialog } from "@/components/UserDeleteDialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { PageCard, PageCardContent, PageCardHeader, PageCardTitle } from "@/components/ui/page-card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -51,7 +50,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
-  Shield,
   Activity,
   Users,
   Monitor,
@@ -483,6 +481,7 @@ export function AdminPage() {
       order: prevState.column === column && prevState.order === 'asc' ? 'desc' : 'asc'
     }));
   };
+
 
   // Save sort states to localStorage whenever they change
   useEffect(() => {
@@ -1781,26 +1780,31 @@ export function AdminPage() {
   }
 
   return (
-    <div className="bg-background pt-0 pb-8 px-0 sm:px-8">
-      <div className="max-w-6xl mx-0 sm:mx-auto space-y-6">
+    <div className="min-h-screen">
+      {/* Sticky Header */}
+      <div className="sticky top-0 z-40 border-b bg-background">
+        <div className="container mx-auto px-4 py-4 space-y-4">
+          {/* Breadcrumb */}
+          <div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => navigate('/')}
+              className="text-sm text-muted-foreground hover:text-foreground"
+            >
+              Back to Dashboard
+            </Button>
+          </div>
+          
+          {/* Title */}
+          <div>
+            <h1 className="text-2xl font-semibold">{t("admin.title")}</h1>
+          </div>
+        </div>
+      </div>
 
-        <PageCard>
-          <PageCardHeader>
-            <div>
-              <button 
-                onClick={() => navigate(-1)} 
-                className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1 mb-1"
-              >
-                <ArrowLeft className="h-3 w-3" />
-                Back to Dashboard
-              </button>
-              <PageCardTitle className="flex items-center gap-2 text-2xl">
-                <Shield className="h-5 w-5" />
-                {t("admin.title")}
-              </PageCardTitle>
-            </div>
-          </PageCardHeader>
-          <PageCardContent>
+      {/* Content */}
+      <div className="container mx-auto px-4 py-6 space-y-6">
             <Tabs defaultValue="overview" className="w-full">
               <TabsList className="w-full">
                 <TabsTrigger value="overview">
@@ -3275,8 +3279,6 @@ export function AdminPage() {
                 </div>
               </TabsContent>
             </Tabs>
-          </PageCardContent>
-        </PageCard>
       </div>
 
       {/* Password Reset Dialog */}

@@ -368,9 +368,9 @@ export function AddPluginPage() {
   };
 
   return (
-    <div className="flex flex-col h-screen">
-      {/* Header */}
-      <div className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+    <div className="min-h-screen">
+      {/* Sticky Header */}
+      <div className="sticky top-0 z-40 border-b bg-background">
         <div className="container mx-auto px-4 py-4 space-y-4">
           {/* Breadcrumb */}
           <div>
@@ -393,8 +393,7 @@ export function AddPluginPage() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-auto">
-        <div className="container mx-auto px-4 py-6 space-y-6">
+      <div className="container mx-auto px-4 py-6 space-y-6">
           {/* Search and Filter Controls */}
           <div className="flex flex-col sm:flex-row gap-4">
             <div className="relative flex-1">
@@ -483,7 +482,6 @@ export function AddPluginPage() {
             </div>
           )}
         </div>
-      </div>
 
       {/* Expanded Plugin Modal */}
       {expandedPlugin && (

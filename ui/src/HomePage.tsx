@@ -7,7 +7,6 @@ import { PlaylistManagement } from "@/components/PlaylistManagement";
 import { DeviceSelector } from "@/components/DeviceSelector";
 import { DeviceManagementContent } from "@/components/DeviceManagementContent";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { PageCard, PageCardContent, PageCardHeader, PageCardTitle } from "@/components/ui/page-card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Device } from "@/utils/deviceHelpers";
@@ -326,14 +325,26 @@ export default function HomePage() {
   }
 
   return (
-    <div className="bg-background pt-0 pb-8 px-0 sm:px-8">
-      <div className="max-w-6xl mx-0 sm:mx-auto space-y-6">
+    <div className="min-h-screen">
+      {/* Sticky Header */}
+      <div className="sticky top-0 z-40 border-b bg-background">
+        <div className="container mx-auto px-4 py-4 space-y-4">
+          {/* Title and Subtitle */}
+          <div>
+            <h1 className="text-2xl font-semibold">Dashboard</h1>
+            <p className="text-muted-foreground">Manage your TRMNL devices, plugins, and playlists</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="container mx-auto px-4 py-6 space-y-6">
         {showOnboarding && (
-          <PageCard>
-            <PageCardHeader>
-              <PageCardTitle>Welcome to Stationmaster</PageCardTitle>
-            </PageCardHeader>
-            <PageCardContent>
+          <Card>
+            <CardHeader>
+              <CardTitle>Welcome to Stationmaster</CardTitle>
+            </CardHeader>
+            <CardContent>
               <p className="text-muted-foreground mb-4">
                 Your self-hosted solution for managing TRMNL devices.
               </p>
@@ -354,15 +365,9 @@ export default function HomePage() {
                   Don't show again
                 </Button>
               </div>
-            </PageCardContent>
-          </PageCard>
+            </CardContent>
+          </Card>
         )}
-        
-        <PageCard>
-          <PageCardHeader>
-            <PageCardTitle className="text-2xl">Dashboard</PageCardTitle>
-          </PageCardHeader>
-          <PageCardContent>
             <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
               <TabsList className="grid w-full grid-cols-3">
                 <TabsTrigger value="plugins">
@@ -409,8 +414,6 @@ export default function HomePage() {
                 <DeviceManagementContent onUpdate={fetchDevices} />
               </TabsContent>
             </Tabs>
-          </PageCardContent>
-        </PageCard>
       </div>
     </div>
   );

@@ -377,9 +377,7 @@ export function PrivatePluginList({
           </CardContent>
         </Card>
       ) : (
-        <Card>
-          <CardContent>
-            <Table>
+        <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
@@ -470,8 +468,6 @@ export function PrivatePluginList({
                 ))}
               </TableBody>
             </Table>
-          </CardContent>
-        </Card>
       )}
 
       {/* Delete Confirmation Dialog */}

@@ -1354,9 +1354,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
           </CardContent>
         </Card>
       ) : (
-        <Card>
-          <CardContent>
-            <Table className="w-full table-fixed lg:table-auto">
+        <Table className="w-full table-fixed lg:table-auto">
               <TableHeader>
                 <TableRow>
                   <TableHead 
@@ -1536,8 +1534,6 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                 ))}
               </TableBody>
             </Table>
-          </CardContent>
-        </Card>
       )}
 
       {/* Add Plugin Dialog */}

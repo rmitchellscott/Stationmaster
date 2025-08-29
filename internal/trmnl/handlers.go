@@ -16,6 +16,7 @@ import (
 	"github.com/rmitchellscott/stationmaster/internal/database"
 	"github.com/rmitchellscott/stationmaster/internal/logging"
 	"github.com/rmitchellscott/stationmaster/internal/sse"
+	"github.com/rmitchellscott/stationmaster/internal/utils"
 )
 
 // SetupHandler handles device setup requests from TRMNL devices
@@ -302,11 +303,7 @@ func DisplayHandler(c *gin.Context) {
 	// 3. Device's stored refresh rate (fallback)
 
 	// Build base URL for image responses
-	scheme := "http"
-	if c.Request.TLS != nil {
-		scheme = "https"
-	}
-	baseURL := fmt.Sprintf("%s://%s", scheme, c.Request.Host)
+	baseURL := utils.BaseURLFromRequest(c.Request)
 
 	// Determine device status
 	status := 0
@@ -797,11 +794,7 @@ func checkFirmwareUpdate(c *gin.Context, device *database.Device, userTimezone s
 	}
 
 	// 6. Generate firmware URL using request-based host return
-	scheme := "http"
-	if c.Request.TLS != nil {
-		scheme = "https"
-	}
-	baseURL := fmt.Sprintf("%s://%s", scheme, c.Request.Host)
+	baseURL := utils.BaseURLFromRequest(c.Request)
 	firmwareURL := fmt.Sprintf("%s/files/firmware/firmware_%s.bin", baseURL, latestFirmware.Version)
 	
 	logging.Debug("[FIRMWARE UPDATE] Using request-based URL", "url", firmwareURL)
@@ -1043,11 +1036,7 @@ func CurrentScreenHandler(c *gin.Context) {
 	}
 
 	// Build base URL for image responses
-	scheme := "http"
-	if c.Request.TLS != nil {
-		scheme = "https"
-	}
-	baseURL := fmt.Sprintf("%s://%s", scheme, c.Request.Host)
+	baseURL := utils.BaseURLFromRequest(c.Request)
 
 	// Process current plugin without advancing playlist
 	processor := GetPluginProcessor()

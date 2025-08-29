@@ -31,6 +31,7 @@ import (
 	"github.com/rmitchellscott/stationmaster/internal/middleware"
 	"github.com/rmitchellscott/stationmaster/internal/plugins"
 	_ "github.com/rmitchellscott/stationmaster/internal/plugins/private" // Register private plugin factory
+	_ "github.com/rmitchellscott/stationmaster/internal/plugins/mashup"  // Register mashup plugin factory
 	"github.com/rmitchellscott/stationmaster/internal/pollers"
 	"github.com/rmitchellscott/stationmaster/internal/rendering"
 	"github.com/rmitchellscott/stationmaster/internal/sse"
@@ -493,14 +494,28 @@ func main() {
 		pluginDefs.GET("/types", handlers.GetAvailablePluginTypesHandler) // GET /api/plugin-definitions/types - get available plugin types
 		pluginDefs.POST("/debug/validate-yaml", handlers.ValidateTRMNLYAMLHandler) // POST /api/plugin-definitions/debug/validate-yaml - validate TRMNL YAML format
 		pluginDefs.POST("/debug/test-conversion", handlers.TestTRMNLConversionHandler) // POST /api/plugin-definitions/debug/test-conversion - test bidirectional TRMNL conversion
+		
+		// Mashup endpoints
+		pluginDefs.POST("/mashup", handlers.CreateMashupHandler) // POST /api/plugin-definitions/mashup - create mashup plugin
+		pluginDefs.GET("/mashup/layouts", handlers.GetAvailableMashupLayoutsHandler) // GET /api/plugin-definitions/mashup/layouts - get available layouts
+		pluginDefs.GET("/mashup/layouts/:layout/slots", handlers.GetMashupSlotsHandler) // GET /api/plugin-definitions/mashup/layouts/:layout/slots - get slots for layout
 	}
 
 	protected.GET("/plugin-instances", handlers.GetPluginInstancesHandler) // GET /api/plugin-instances - list user's plugin instances
 	protected.POST("/plugin-instances", handlers.CreatePluginInstanceFromDefinitionHandler) // POST /api/plugin-instances - create plugin instance from definition
+	
+	// Static routes must come before parameterized routes
+	protected.GET("/plugin-instances/private", handlers.GetUserPrivatePluginInstancesHandler) // GET /api/plugin-instances/private - get user's private plugin instances for mashup children
+	
+	// Parameterized routes (all using :id parameter)
 	protected.PUT("/plugin-instances/:id", handlers.UpdatePluginInstanceHandler) // PUT /api/plugin-instances/:id - update plugin instance
 	protected.DELETE("/plugin-instances/:id", handlers.DeletePluginInstanceHandler) // DELETE /api/plugin-instances/:id - delete plugin instance
 	protected.POST("/plugin-instances/:id/force-refresh", handlers.ForceRefreshPluginInstanceHandler) // POST /api/plugin-instances/:id/force-refresh - force refresh plugin instance
 	protected.GET("/plugin-instances/:id/schema-diff", handlers.GetPluginInstanceSchemaDiffHandler) // GET /api/plugin-instances/:id/schema-diff - get schema differences for instance
+	
+	// Mashup instance endpoints (using consistent :id parameter)
+	protected.POST("/plugin-instances/:id/mashup/children", handlers.AssignMashupChildrenHandler) // POST /api/plugin-instances/:id/mashup/children - assign children to mashup slots
+	protected.GET("/plugin-instances/:id/mashup/children", handlers.GetMashupChildrenHandler) // GET /api/plugin-instances/:id/mashup/children - get current mashup children
 
 
 

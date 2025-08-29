@@ -260,6 +260,19 @@ type PrivatePluginWebhookData struct {
 	SourceIP           string                 `json:"source_ip"`
 }
 
+// PrivatePluginPollingData represents polling data storage for private plugin instances
+type PrivatePluginPollingData struct {
+	ID               string         `json:"id" gorm:"primaryKey"`
+	PluginInstanceID string         `json:"plugin_instance_id" gorm:"index;not null"`
+	MergedData       datatypes.JSON `json:"merged_data"`    // Final merged data ready for templates
+	RawData          datatypes.JSON `json:"raw_data"`       // Original polling response
+	PolledAt         time.Time      `json:"polled_at"`
+	PollDuration     time.Duration  `json:"poll_duration"`  // How long the polling took
+	Success          bool           `json:"success"`        // Whether polling was successful
+	Errors           datatypes.JSON `json:"errors"`         // Error messages if failed
+	URLCount         int            `json:"url_count"`      // Number of URLs polled
+}
+
 // Playlist represents a collection of plugins for a specific device
 type Playlist struct {
 	ID        uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
@@ -334,10 +347,10 @@ func (s *Schedule) BeforeCreate(tx *gorm.DB) error {
 	return nil
 }
 
-// PluginDefinition represents a unified plugin definition (system, private, or public)
+// PluginDefinition represents a unified plugin definition (system, private, public, or mashup)
 type PluginDefinition struct {
 	ID         string     `gorm:"size:255;primaryKey" json:"id"`        // Plugin type for system plugins, UUID string for private/public
-	PluginType string     `gorm:"size:20;not null" json:"plugin_type"` // "system", "private", "public"
+	PluginType string     `gorm:"size:20;not null" json:"plugin_type"` // "system", "private", "public", "mashup"
 	OwnerID    *uuid.UUID `gorm:"type:uuid;index" json:"owner_id"`     // NULL for system plugins, user_id for private/public
 	
 	// Core fields
@@ -358,6 +371,11 @@ type PluginDefinition struct {
 	DataStrategy    *string        `gorm:"size:50" json:"data_strategy,omitempty"`      // webhook, polling, static
 	PollingConfig   datatypes.JSON `json:"polling_config,omitempty"`   // URLs, headers, body, intervals, etc.
 	FormFields      datatypes.JSON `json:"form_fields"`                // YAML form field definitions converted to JSON schema
+	
+	// Mashup specific fields (NULL for non-mashup plugins)
+	IsMashup     bool           `gorm:"default:false" json:"is_mashup"`           // True for mashup plugin definitions
+	MashupLayout *string        `gorm:"size:20" json:"mashup_layout,omitempty"`   // "1Lx1R", "1Tx1B", "2x2", etc.
+	MashupSlots  datatypes.JSON `json:"mashup_slots,omitempty"`                   // JSON metadata about each slot
 	
 	// Publishing (for future public plugins)
 	IsPublished bool       `gorm:"default:false" json:"is_published"`
@@ -556,6 +574,26 @@ func (rq *RenderQueue) BeforeCreate(tx *gorm.DB) error {
 	return nil
 }
 
+// MashupChild represents the relationship between a mashup instance and its child plugin instances
+type MashupChild struct {
+	ID               uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
+	MashupInstanceID uuid.UUID `gorm:"type:uuid;not null;index" json:"mashup_instance_id"`
+	ChildInstanceID  uuid.UUID `gorm:"type:uuid;not null;index" json:"child_instance_id"`
+	SlotPosition     string    `gorm:"size:20;not null" json:"slot_position"` // 'left', 'right', 'top', 'bottom', 'q1', 'q2', 'q3', 'q4'
+	CreatedAt        time.Time `json:"created_at"`
+	
+	// Associations
+	MashupInstance PluginInstance `gorm:"foreignKey:MashupInstanceID;constraint:OnDelete:CASCADE" json:"-"`
+	ChildInstance  PluginInstance `gorm:"foreignKey:ChildInstanceID;constraint:OnDelete:CASCADE" json:"-"`
+}
+
+func (mc *MashupChild) BeforeCreate(tx *gorm.DB) error {
+	if mc.ID == uuid.Nil {
+		mc.ID = uuid.New()
+	}
+	return nil
+}
+
 // GetAllModels returns all models for auto-migration
 func GetAllModels() []interface{} {
 	return []interface{}{
@@ -571,10 +609,12 @@ func GetAllModels() []interface{} {
 		&Device{},
 		
 		&PrivatePluginWebhookData{}, // Webhook data for plugin instances
+	&PrivatePluginPollingData{}, // Polling data for plugin instances
 		
 		// New unified plugin models
 		&PluginDefinition{}, // Must come after User due to foreign key reference
 		&PluginInstance{},   // Must come after PluginDefinition and User
+		&MashupChild{},      // Must come after PluginInstance
 		
 		&Playlist{},
 		&PlaylistItem{},

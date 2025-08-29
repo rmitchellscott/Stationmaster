@@ -50,7 +50,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
-  Shield,
   Activity,
   Users,
   Monitor,
@@ -354,6 +353,7 @@ export function AdminPage() {
   const [siteUrl, setSiteUrl] = useState("");
   const [registrationEnabled, setRegistrationEnabled] = useState(false);
   const [registrationLocked, setRegistrationLocked] = useState(false);
+  const [frequentRefreshesEnabled, setFrequentRefreshesEnabled] = useState(false);
   const [webhookRateLimit, setWebhookRateLimit] = useState(30);
   const [webhookMaxSizeKB, setWebhookMaxSizeKB] = useState(5);
   
@@ -482,6 +482,7 @@ export function AdminPage() {
       order: prevState.column === column && prevState.order === 'asc' ? 'desc' : 'asc'
     }));
   };
+
 
   // Save sort states to localStorage whenever they change
   useEffect(() => {
@@ -662,6 +663,7 @@ export function AdminPage() {
         setRegistrationEnabled(status.settings.registration_enabled === "true");
         setRegistrationLocked(status.settings.registration_enabled_locked || false);
         setSiteUrl(status.settings.site_url || "");
+        setFrequentRefreshesEnabled(status.settings.enable_frequent_refreshes === "true");
         setWebhookRateLimit(parseInt(status.settings.webhook_rate_limit_per_hour) || 30);
         setWebhookMaxSizeKB(parseInt(status.settings.webhook_max_request_size_kb) || 5);
       }
@@ -678,7 +680,7 @@ export function AdminPage() {
           "Content-Type": "application/json",
         },
         credentials: "include",
-        body: JSON.stringify({ [key]: value }),
+        body: JSON.stringify({ key: key, value: value }),
       });
       if (!response.ok) {
         throw new Error("Failed to update setting");
@@ -1780,26 +1782,31 @@ export function AdminPage() {
   }
 
   return (
-    <div className="bg-background pt-0 pb-8 px-0 sm:px-8">
-      <div className="max-w-6xl mx-0 sm:mx-auto space-y-6">
+    <div className="min-h-screen">
+      {/* Sticky Header */}
+      <div className="sticky top-0 z-40 border-b bg-background">
+        <div className="container mx-auto px-4 py-4 space-y-4">
+          {/* Breadcrumb */}
+          <div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => navigate('/')}
+              className="text-sm text-muted-foreground hover:text-foreground"
+            >
+              Back to Dashboard
+            </Button>
+          </div>
+          
+          {/* Title */}
+          <div>
+            <h1 className="text-2xl font-semibold">{t("admin.title")}</h1>
+          </div>
+        </div>
+      </div>
 
-        <Card>
-          <CardHeader>
-            <div>
-              <button 
-                onClick={() => navigate(-1)} 
-                className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1 mb-1"
-              >
-                <ArrowLeft className="h-3 w-3" />
-                Back to Dashboard
-              </button>
-              <CardTitle className="flex items-center gap-2 text-2xl">
-                <Shield className="h-5 w-5" />
-                {t("admin.title")}
-              </CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent>
+      {/* Content */}
+      <div className="container mx-auto px-4 py-6 space-y-6">
             <Tabs defaultValue="overview" className="w-full">
               <TabsList className="w-full">
                 <TabsTrigger value="overview">
@@ -3027,6 +3034,28 @@ export function AdminPage() {
                           Leave empty to use relative URLs.
                         </p>
                       </div>
+                      
+                      <div className="flex items-center justify-between">
+                        <div className="space-y-1">
+                          <Label htmlFor="frequent-refreshes-enabled">
+                            Enable Frequent Refreshes
+                          </Label>
+                          <p className="text-sm text-muted-foreground">
+                            Enable 1, 5, and 10 minute screen render refresh rates
+                          </p>
+                        </div>
+                        <Switch
+                          id="frequent-refreshes-enabled"
+                          checked={frequentRefreshesEnabled}
+                          onCheckedChange={(checked) => {
+                            setFrequentRefreshesEnabled(checked);
+                            updateSystemSetting(
+                              "enable_frequent_refreshes",
+                              checked.toString(),
+                            );
+                          }}
+                        />
+                      </div>
                     </CardContent>
                   </Card>
                   <Card>
@@ -3274,8 +3303,6 @@ export function AdminPage() {
                 </div>
               </TabsContent>
             </Tabs>
-          </CardContent>
-        </Card>
       </div>
 
       {/* Password Reset Dialog */}

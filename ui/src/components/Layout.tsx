@@ -38,7 +38,7 @@ export function Layout({ showSimpleHeader = false }: LayoutProps) {
   };
 
   // Determine which type of header to show based on route
-  const isSimpleHeaderRoute = ['/reset-password', '/register', '/settings', '/admin'].some(
+  const isSimpleHeaderRoute = ['/reset-password', '/register'].some(
     route => location.pathname.startsWith(route)
   );
 

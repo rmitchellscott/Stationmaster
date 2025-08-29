@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"gopkg.in/yaml.v3"
 	"github.com/rmitchellscott/stationmaster/internal/database"
 	"github.com/rmitchellscott/stationmaster/internal/logging"
 )
@@ -39,6 +40,7 @@ type ZipExportData struct {
 	HalfHorizontal string
 	HalfVertical   string
 	QuadrantTemplate string
+	SharedMarkup   string
 }
 
 // CreateTRMNLZip creates a TRMNL-compatible ZIP file from a PluginDefinition
@@ -65,6 +67,7 @@ func (s *TRMNLZipService) CreateTRMNLZip(def *database.PluginDefinition) (*bytes
 		"half_horizontal.liquid": getTemplateContent(def.MarkupHalfHoriz),
 		"half_vertical.liquid":   getTemplateContent(def.MarkupHalfVert),
 		"quadrant.liquid":        getTemplateContent(def.MarkupQuadrant),
+		"shared.liquid":          getTemplateContent(def.SharedMarkup),
 	}
 
 	for filename, content := range templates {
@@ -178,6 +181,10 @@ func (s *TRMNLZipService) ExtractTRMNLZip(file multipart.File, header *multipart
 			exportData.QuadrantTemplate = string(content)
 			foundFiles["quadrant.liquid"] = true
 			logging.Info("[TRMNL IMPORT] Found quadrant.liquid template", "size", len(content))
+		case "shared.liquid":
+			exportData.SharedMarkup = string(content)
+			foundFiles["shared.liquid"] = true
+			logging.Info("[TRMNL IMPORT] Found shared.liquid template", "size", len(content))
 		default:
 			logging.Error("[TRMNL IMPORT] Unexpected file in ZIP", "file", f.Name)
 			return nil, fmt.Errorf("unexpected file in ZIP: %s", f.Name)
@@ -218,7 +225,8 @@ func (s *TRMNLZipService) ConvertZipDataToPluginDefinition(zipData *ZipExportDat
 		"has_full", zipData.FullTemplate != "",
 		"has_half_h", zipData.HalfHorizontal != "",
 		"has_half_v", zipData.HalfVertical != "",
-		"has_quadrant", zipData.QuadrantTemplate != "")
+		"has_quadrant", zipData.QuadrantTemplate != "",
+		"has_shared", zipData.SharedMarkup != "")
 
 	// Parse settings.yml using the TRMNL export service
 	def, err := s.exportService.ParseSettingsYAML(zipData.SettingsYAML)
@@ -251,6 +259,11 @@ func (s *TRMNLZipService) ConvertZipDataToPluginDefinition(zipData *ZipExportDat
 		templateCount++
 		logging.Info("[TRMNL IMPORT] Set quadrant template", "size", len(zipData.QuadrantTemplate))
 	}
+	if zipData.SharedMarkup != "" {
+		def.SharedMarkup = &zipData.SharedMarkup
+		templateCount++
+		logging.Info("[TRMNL IMPORT] Set shared template", "size", len(zipData.SharedMarkup))
+	}
 
 	logging.Info("[TRMNL IMPORT] Set template content", "template_count", templateCount)
 
@@ -265,30 +278,44 @@ func (s *TRMNLZipService) ConvertZipDataToPluginDefinition(zipData *ZipExportDat
 	requiresProcessing := true
 	def.RequiresProcessing = requiresProcessing
 
-	// Validate form fields if they exist to ensure valid JSON schema
+	// Generate ConfigSchema separately - FormFields now contains {yaml: "..."} format
+	// but ConfigSchema needs JSON schema format for UI rendering
 	if def.FormFields != nil {
-		// Convert form fields to interface{} for validation
-		var formFieldsInterface interface{}
-		if err := json.Unmarshal(def.FormFields, &formFieldsInterface); err != nil {
-			logging.Error("[TRMNL IMPORT] Failed to unmarshal form fields for validation", "error", err)
-			return nil, fmt.Errorf("invalid form fields JSON: %w", err)
+		// Parse the FormFields to extract the YAML and convert it to JSON schema
+		var formFieldsWrapper map[string]interface{}
+		if err := json.Unmarshal(def.FormFields, &formFieldsWrapper); err == nil {
+			if yamlContent, exists := formFieldsWrapper["yaml"].(string); exists && yamlContent != "" {
+				// Parse YAML back to TRMNL fields and convert to JSON schema for ConfigSchema
+				var trmnlFields []TRMNLFormField
+				if err := yaml.Unmarshal([]byte(yamlContent), &trmnlFields); err == nil {
+					configSchemaJSON, err := s.exportService.convertFormFieldsFromTRMNL(trmnlFields)
+					if err == nil {
+						def.ConfigSchema = string(configSchemaJSON)
+						logging.Info("[TRMNL IMPORT] Generated ConfigSchema from YAML", 
+							"config_schema_size", len(def.ConfigSchema))
+					}
+				}
+			}
 		}
 		
-		// Validate form fields using existing validation logic
-		_, err := ValidateFormFields(formFieldsInterface)
-		if err != nil {
-			logging.Error("[TRMNL IMPORT] Form fields validation failed", "error", err)
-			return nil, fmt.Errorf("form fields validation failed: %w", err)
+		// Fallback to empty schema if parsing failed
+		if def.ConfigSchema == "" {
+			def.ConfigSchema = `{"type": "object", "properties": {}}`
+			logging.Warn("[TRMNL IMPORT] Failed to generate ConfigSchema, using empty schema")
 		}
+	} else {
+		// If no FormFields, provide empty schema for UI
+		def.ConfigSchema = `{"type": "object", "properties": {}}`
 		
-		logging.Info("[TRMNL IMPORT] Form fields validation passed")
+		logging.Info("[TRMNL IMPORT] Set empty ConfigSchema (no form fields)")
 	}
 
 	logging.Info("[TRMNL IMPORT] Successfully converted ZIP data to PluginDefinition", 
 		"plugin_name", def.Name,
 		"plugin_type", def.PluginType,
 		"requires_processing", def.RequiresProcessing,
-		"has_form_fields", def.FormFields != nil)
+		"has_form_fields", def.FormFields != nil,
+		"has_config_schema", def.ConfigSchema != "")
 
 	return def, nil
 }

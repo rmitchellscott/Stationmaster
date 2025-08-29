@@ -20,6 +20,12 @@ var (
 	privateFactoryMutex  sync.RWMutex
 )
 
+// mashupPluginFactory holds the factory function for creating mashup plugins
+var (
+	mashupPluginFactory func(*database.PluginDefinition, *database.PluginInstance) Plugin
+	mashupFactoryMutex  sync.RWMutex
+)
+
 // Register adds a plugin to the registry
 func Register(plugin Plugin) error {
 	mutex.Lock()
@@ -120,4 +126,18 @@ func GetPrivatePluginFactory() func(*database.PluginDefinition, *database.Plugin
 	privateFactoryMutex.RLock()
 	defer privateFactoryMutex.RUnlock()
 	return privatePluginFactory
+}
+
+// RegisterMashupPluginFactory registers a factory function for creating mashup plugins
+func RegisterMashupPluginFactory(factory func(*database.PluginDefinition, *database.PluginInstance) Plugin) {
+	mashupFactoryMutex.Lock()
+	defer mashupFactoryMutex.Unlock()
+	mashupPluginFactory = factory
+}
+
+// GetMashupPluginFactory returns the registered mashup plugin factory function
+func GetMashupPluginFactory() func(*database.PluginDefinition, *database.PluginInstance) Plugin {
+	mashupFactoryMutex.RLock()
+	defer mashupFactoryMutex.RUnlock()
+	return mashupPluginFactory
 }

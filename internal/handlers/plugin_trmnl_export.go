@@ -66,6 +66,129 @@ func (f *FlexibleHeaders) UnmarshalYAML(value *yaml.Node) error {
 	return nil
 }
 
+// FlexibleOptions can handle both simple string arrays and key-value map arrays for form field options
+type FlexibleOptions struct {
+	Options []string
+	OptionsMap map[string]string
+	KeyOrder []string // Preserves original YAML sequence order for consistent iteration
+}
+
+// UnmarshalYAML implements custom YAML unmarshaling for FlexibleOptions
+func (f *FlexibleOptions) UnmarshalYAML(value *yaml.Node) error {
+	// Initialize empty structures
+	f.Options = nil
+	f.OptionsMap = make(map[string]string)
+	f.KeyOrder = nil
+	
+	// If it's an empty string or just whitespace, set to empty
+	if value.Kind == yaml.ScalarNode && strings.TrimSpace(value.Value) == "" {
+		return nil
+	}
+	
+	// If it's a sequence (array), process each item
+	if value.Kind == yaml.SequenceNode {
+		for _, item := range value.Content {
+			// If the item is a scalar (simple string)
+			if item.Kind == yaml.ScalarNode {
+				f.Options = append(f.Options, item.Value)
+			} else if item.Kind == yaml.MappingNode {
+				// If the item is a map (key-value pair)
+				var itemMap map[string]string
+				if err := item.Decode(&itemMap); err != nil {
+					return fmt.Errorf("failed to decode option map: %w", err)
+				}
+				
+				// Add each key-value pair to the options map and preserve key order
+				for key, value := range itemMap {
+					f.OptionsMap[key] = value
+					f.KeyOrder = append(f.KeyOrder, key)
+				}
+			}
+		}
+		return nil
+	}
+	
+	// For any other case, treat as empty
+	return nil
+}
+
+// MarshalYAML implements custom YAML marshaling for FlexibleOptions
+// Always outputs in TRMNL format: array of single-key maps with preserved order
+func (f *FlexibleOptions) MarshalYAML() (interface{}, error) {
+	// If we have a map (key-value pairs), convert to TRMNL format using KeyOrder
+	if len(f.OptionsMap) > 0 {
+		var options []map[string]string
+		// Use KeyOrder to maintain original sequence
+		for _, key := range f.KeyOrder {
+			if value, exists := f.OptionsMap[key]; exists {
+				optionMap := make(map[string]string)
+				optionMap[key] = value
+				options = append(options, optionMap)
+			}
+		}
+		return options, nil
+	}
+	
+	// If we have simple strings, convert to TRMNL format with same key/value
+	if len(f.Options) > 0 {
+		var options []map[string]string
+		for _, option := range f.Options {
+			optionMap := make(map[string]string)
+			optionMap[option] = option
+			options = append(options, optionMap)
+		}
+		return options, nil
+	}
+	
+	// Return empty array for no options
+	return []map[string]string{}, nil
+}
+
+// ToStringSlice converts FlexibleOptions to a simple string slice for backward compatibility
+// Uses KeyOrder to ensure consistent ordering with GetDisplayNames()
+func (f *FlexibleOptions) ToStringSlice() []string {
+	if len(f.Options) > 0 {
+		return f.Options
+	}
+	
+	// If we have a map, convert VALUES to strings (for enum field values)
+	// CRITICAL: Use KeyOrder to maintain consistent ordering
+	if len(f.OptionsMap) > 0 {
+		result := make([]string, 0, len(f.OptionsMap))
+		for _, key := range f.KeyOrder {
+			if value, exists := f.OptionsMap[key]; exists {
+				result = append(result, value)
+			}
+		}
+		return result
+	}
+	
+	return nil
+}
+
+// GetDisplayNames returns the display names (keys) from the options map
+// Uses KeyOrder to ensure consistent ordering with ToStringSlice()
+func (f *FlexibleOptions) GetDisplayNames() []string {
+	if len(f.Options) > 0 {
+		// For simple string options, display names are the same as values
+		return f.Options
+	}
+	
+	// If we have a map, return the keys (display names)
+	// CRITICAL: Use KeyOrder to maintain consistent ordering
+	if len(f.OptionsMap) > 0 {
+		result := make([]string, 0, len(f.OptionsMap))
+		for _, key := range f.KeyOrder {
+			if _, exists := f.OptionsMap[key]; exists {
+				result = append(result, key)
+			}
+		}
+		return result
+	}
+	
+	return nil
+}
+
 // TRMNLSettings represents the structure of TRMNL's settings.yml file
 // Updated to match actual TRMNL field names and handle flexible types
 type TRMNLSettings struct {
@@ -105,15 +228,17 @@ type TRMNLFormField struct {
 	Name        string      `yaml:"name"`
 	FieldType   string      `yaml:"field_type"`
 	Description string      `yaml:"description,omitempty"`
+	Optional    bool        `yaml:"optional,omitempty"`
+	HelpText    string      `yaml:"help_text,omitempty"`
 	
 	// Legacy fields for backward compatibility
-	ID          string      `yaml:"id"`
-	Type        string      `yaml:"type"`
-	Label       string      `yaml:"label"`
-	Required    bool        `yaml:"required,omitempty"`
-	Default     interface{} `yaml:"default,omitempty"`
-	Options     []string    `yaml:"options,omitempty"`
-	Placeholder string      `yaml:"placeholder,omitempty"`
+	ID          string         `yaml:"id"`
+	Type        string         `yaml:"type"`
+	Label       string         `yaml:"label"`
+	Required    bool           `yaml:"required,omitempty"`
+	Default     interface{}    `yaml:"default,omitempty"`
+	Options     FlexibleOptions `yaml:"options,omitempty"`
+	Placeholder string         `yaml:"placeholder,omitempty"`
 }
 
 // TRMNLExportService handles conversion between Stationmaster and TRMNL formats
@@ -343,19 +468,24 @@ func (s *TRMNLExportService) ConvertFromTRMNLSettings(settings *TRMNLSettings) (
 		logging.Info("[TRMNL IMPORT] Converting form_fields", "field_count", len(settings.FormFields))
 	}
 
-	// Extract "About This Plugin" description from custom fields
+	// Extract description from any author_bio field (not just about_plugin keyname)
 	if fieldsToConvert != nil {
 		for _, field := range fieldsToConvert {
-			if field.Keyname == "about_plugin" && field.FieldType == "author_bio" {
+			// TRMNL format: any field with field_type: author_bio
+			if field.FieldType == "author_bio" && field.Description != "" {
 				def.Description = field.Description
-				logging.Info("[TRMNL IMPORT] Extracted about_plugin description", "description", field.Description)
+				logging.Info("[TRMNL IMPORT] Extracted author_bio description", 
+					"keyname", field.Keyname, 
+					"description", field.Description)
 				break
 			}
-			// Also check for legacy field names
-			if field.ID == "about_plugin" && field.Type == "author_bio" {
+			// Legacy format: any field with type: author_bio  
+			if field.Type == "author_bio" && field.Description != "" {
 				if def.Description == "" {
 					def.Description = field.Description
-					logging.Info("[TRMNL IMPORT] Extracted about_plugin description from legacy field", "description", field.Description)
+					logging.Info("[TRMNL IMPORT] Extracted author_bio description from legacy field", 
+						"id", field.ID,
+						"description", field.Description)
 				}
 				break
 			}
@@ -363,29 +493,51 @@ func (s *TRMNLExportService) ConvertFromTRMNLSettings(settings *TRMNLSettings) (
 	}
 
 	if fieldsToConvert != nil && len(fieldsToConvert) > 0 {
-		// Filter out about_plugin fields since they're handled separately
+		// Filter out author_bio fields since they're handled separately as description
 		var filteredFields []TRMNLFormField
 		for _, field := range fieldsToConvert {
-			// Skip about_plugin fields - they're converted to description above
-			if field.Keyname == "about_plugin" && field.FieldType == "author_bio" {
+			// Skip any author_bio fields - they're converted to description above
+			if field.FieldType == "author_bio" {
 				continue
 			}
-			if field.ID == "about_plugin" && field.Type == "author_bio" {
+			if field.Type == "author_bio" {
 				continue
 			}
 			filteredFields = append(filteredFields, field)
 		}
 		
 		if len(filteredFields) > 0 {
-			formFieldsJSON, err := s.convertFormFieldsFromTRMNL(filteredFields)
+			// Convert TRMNL fields back to YAML for UI display
+			yamlString, err := s.convertTRMNLFieldsToYAML(filteredFields)
 			if err != nil {
-				logging.Error("[TRMNL IMPORT] Failed to convert form fields", "error", err, "field_count", len(filteredFields))
-				return nil, fmt.Errorf("failed to convert form fields: %w", err)
+				logging.Error("[TRMNL IMPORT] Failed to convert form fields to YAML", "error", err, "field_count", len(filteredFields))
+				return nil, fmt.Errorf("failed to convert form fields to YAML: %w", err)
 			}
+			
+			// Store form fields in the format expected by UI: {yaml: "..."}
+			formFieldsWrapper := map[string]string{
+				"yaml": yamlString,
+			}
+			formFieldsJSON, err := json.Marshal(formFieldsWrapper)
+			if err != nil {
+				logging.Error("[TRMNL IMPORT] Failed to marshal form fields wrapper", "error", err)
+				return nil, fmt.Errorf("failed to marshal form fields wrapper: %w", err)
+			}
+			
 			def.FormFields = formFieldsJSON
-			logging.Info("[TRMNL IMPORT] Successfully converted form fields", "field_count", len(filteredFields))
+			
+			// Also generate JSON schema for UI form rendering
+			configSchemaJSON, err := s.convertFormFieldsFromTRMNL(filteredFields)
+			if err != nil {
+				logging.Error("[TRMNL IMPORT] Failed to convert form fields to JSON schema", "error", err, "field_count", len(filteredFields))
+				return nil, fmt.Errorf("failed to convert form fields to JSON schema: %w", err)
+			}
+			def.ConfigSchema = string(configSchemaJSON)
+			
+			logging.Info("[TRMNL IMPORT] Successfully converted form fields to both YAML and JSON schema", 
+				"field_count", len(filteredFields), "yaml_length", len(yamlString), "schema_length", len(configSchemaJSON))
 		} else {
-			logging.Info("[TRMNL IMPORT] No form fields to convert after filtering about_plugin")
+			logging.Info("[TRMNL IMPORT] No form fields to convert after filtering author_bio fields")
 		}
 	} else {
 		logging.Info("[TRMNL IMPORT] No form fields to convert")
@@ -452,7 +604,9 @@ func (s *TRMNLExportService) convertFormFieldsToTRMNL(formFieldsJSON []byte) ([]
 							options[i] = str
 						}
 					}
-					trmnlField.Options = options
+					// Set FlexibleOptions with simple string options
+					trmnlField.Options.Options = options
+					trmnlField.Options.OptionsMap = make(map[string]string)
 					trmnlField.Type = "select"
 				}
 
@@ -509,12 +663,14 @@ func (s *TRMNLExportService) convertFormFieldsFromTRMNL(trmnlFields []TRMNLFormF
 			"field_type", field.FieldType,
 			"name", field.Name,
 			"description", field.Description,
+			"help_text", field.HelpText,
+			"optional", field.Optional,
 			"id", id,
 			"type", fieldType,
 			"label", label,
 			"required", field.Required,
 			"has_default", field.Default != nil,
-			"has_options", len(field.Options) > 0)
+			"has_options", len(field.Options.ToStringSlice()) > 0)
 
 		if id == "" {
 			logging.Error("[TRMNL IMPORT] Form field missing ID/keyname", "index", i, "field", field)
@@ -536,8 +692,11 @@ func (s *TRMNLExportService) convertFormFieldsFromTRMNL(trmnlFields []TRMNLFormF
 			logging.Info("[TRMNL IMPORT] Added default value", "field", id, "default", field.Default)
 		}
 
-		// Use description from TRMNL or placeholder as description
+		// Use description from TRMNL, help_text, or placeholder as description
 		description := field.Description
+		if description == "" && field.HelpText != "" {
+			description = field.HelpText
+		}
 		if description == "" && field.Placeholder != "" {
 			description = field.Placeholder
 		}
@@ -545,14 +704,38 @@ func (s *TRMNLExportService) convertFormFieldsFromTRMNL(trmnlFields []TRMNLFormF
 			fieldDef["description"] = description
 		}
 
-		if field.Options != nil && len(field.Options) > 0 {
-			fieldDef["enum"] = field.Options
-			logging.Info("[TRMNL IMPORT] Added options", "field", id, "options", field.Options)
+		// Handle flexible options - convert to string slice for JSON schema
+		optionsList := field.Options.ToStringSlice()
+		displayNames := field.Options.GetDisplayNames()
+		if len(optionsList) > 0 {
+			fieldDef["enum"] = optionsList
+			
+			// Add display names when we have an OptionsMap (key-value pairs)
+			if len(field.Options.OptionsMap) > 0 {
+				fieldDef["enumNames"] = displayNames
+				logging.Info("[TRMNL IMPORT] Added options with display names", 
+					"field", id, 
+					"options", optionsList, 
+					"display_names", displayNames)
+			} else {
+				logging.Info("[TRMNL IMPORT] Added options", "field", id, "options", optionsList)
+			}
 		}
 
 		properties[id] = fieldDef
 
-		if field.Required {
+		// Handle required logic: field is required if not explicitly marked as optional
+		// Support both TRMNL format (optional) and legacy format (required)
+		isRequired := false
+		if field.FieldType != "" || field.Keyname != "" {
+			// TRMNL format: required unless explicitly optional
+			isRequired = !field.Optional
+		} else {
+			// Legacy format: use explicit Required field
+			isRequired = field.Required
+		}
+		
+		if isRequired {
 			required = append(required, id)
 		}
 	}
@@ -570,6 +753,84 @@ func (s *TRMNLExportService) convertFormFieldsFromTRMNL(trmnlFields []TRMNLFormF
 
 	logging.Info("[TRMNL IMPORT] Successfully converted form fields to JSON schema")
 	return result, nil
+}
+
+// convertTRMNLFieldsToYAML converts TRMNL form fields back to YAML string for UI display
+// Creates clean YAML output that matches core TRMNL format exactly
+func (s *TRMNLExportService) convertTRMNLFieldsToYAML(trmnlFields []TRMNLFormField) (string, error) {
+	if len(trmnlFields) == 0 {
+		return "", nil
+	}
+	
+	// Create clean field structures that only include TRMNL format fields
+	var cleanFields []map[string]interface{}
+	
+	for _, field := range trmnlFields {
+		cleanField := make(map[string]interface{})
+		
+		// Use TRMNL field names with fallback to legacy names
+		keyname := field.Keyname
+		if keyname == "" {
+			keyname = field.ID
+		}
+		
+		fieldType := field.FieldType
+		if fieldType == "" {
+			fieldType = field.Type
+		}
+		
+		name := field.Name
+		if name == "" {
+			name = field.Label
+		}
+		
+		// Only include fields that have values to match TRMNL format
+		if keyname != "" {
+			cleanField["keyname"] = keyname
+		}
+		if fieldType != "" {
+			cleanField["field_type"] = fieldType
+		}
+		if name != "" {
+			cleanField["name"] = name
+		}
+		if field.Description != "" {
+			cleanField["description"] = field.Description
+		}
+		if field.HelpText != "" {
+			cleanField["help_text"] = field.HelpText
+		}
+		if field.Placeholder != "" {
+			cleanField["placeholder"] = field.Placeholder
+		}
+		if field.Default != nil {
+			cleanField["default"] = field.Default
+		}
+		
+		// Handle optional field (only include if true to match TRMNL format)
+		if field.Optional {
+			cleanField["optional"] = field.Optional
+		}
+		
+		// Handle options using proper TRMNL format (array of single-key maps)
+		if len(field.Options.OptionsMap) > 0 || len(field.Options.Options) > 0 {
+			// Use the MarshalYAML method to get proper TRMNL format
+			options, err := field.Options.MarshalYAML()
+			if err != nil {
+				return "", fmt.Errorf("failed to marshal options for field %s: %w", keyname, err)
+			}
+			cleanField["options"] = options
+		}
+		
+		cleanFields = append(cleanFields, cleanField)
+	}
+	
+	yamlBytes, err := yaml.Marshal(cleanFields)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal TRMNL fields to YAML: %w", err)
+	}
+	
+	return string(yamlBytes), nil
 }
 
 // convertTypeToTRMNL converts JSON schema types to TRMNL form field types

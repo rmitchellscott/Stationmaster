@@ -251,6 +251,12 @@ func (w *RenderWorker) renderForDevice(ctx context.Context, pluginInstance datab
 		if !exists {
 			return fmt.Errorf("system plugin %s not found in registry", pluginInstance.PluginDefinition.Identifier)
 		}
+	} else if pluginInstance.PluginDefinition.PluginType == "mashup" {
+		// Use mashup plugin factory
+		plugin, err = w.factory.CreatePlugin(&pluginInstance.PluginDefinition, &pluginInstance)
+		if err != nil {
+			return fmt.Errorf("failed to create mashup plugin: %w", err)
+		}
 	} else {
 		return fmt.Errorf("unknown plugin type: %s", pluginInstance.PluginDefinition.PluginType)
 	}
@@ -299,27 +305,28 @@ func (w *RenderWorker) renderForDevice(ctx context.Context, pluginInstance datab
 		if imageData, ok := plugins.GetImageData(response); ok {
 			var processedImageData []byte
 
-			// For private plugins, we need to process the image to correct bit depth
-			if pluginInstance.PluginDefinition.PluginType == "private" {
+			// For private plugins and mashups, we need to process the image to correct bit depth
+			if pluginInstance.PluginDefinition.PluginType == "private" || pluginInstance.PluginDefinition.PluginType == "mashup" {
 				// Decode the raw PNG image from browserless
 				img, _, err := image.Decode(bytes.NewReader(imageData))
 				if err != nil {
-					return fmt.Errorf("failed to decode private plugin image: %w", err)
+					return fmt.Errorf("failed to decode browserless plugin image: %w", err)
 				}
 
 				// Convert to grayscale and quantize to target bit depth (no dithering)
 				quantizedImg := imageprocessing.QuantizeToGrayscalePalette(img, device.DeviceModel.BitDepth)
 				if quantizedImg == nil {
-					return fmt.Errorf("failed to quantize private plugin image")
+					return fmt.Errorf("failed to quantize browserless plugin image")
 				}
 
 				// Encode as PNG with correct bit depth
 				processedImageData, err = imageprocessing.EncodePalettedPNG(quantizedImg, device.DeviceModel.BitDepth)
 				if err != nil {
-					return fmt.Errorf("failed to encode private plugin image: %w", err)
+					return fmt.Errorf("failed to encode browserless plugin image: %w", err)
 				}
 
-				logging.Debug("[RENDER_WORKER] Processed private plugin image", 
+				logging.Debug("[RENDER_WORKER] Processed browserless plugin image", 
+					"plugin_type", pluginInstance.PluginDefinition.PluginType, 
 					"device", device.FriendlyID,
 					"original_size", len(imageData), 
 					"processed_size", len(processedImageData),
@@ -505,6 +512,9 @@ func (w *RenderWorker) scheduleNextRenderWithOptions(ctx context.Context, plugin
 			return
 		}
 		requiresProcessing = plugin.RequiresProcessing()
+	} else if pluginInstance.PluginDefinition.PluginType == "mashup" {
+		// Mashup plugins always require processing (they generate HTML from children)
+		requiresProcessing = true
 	} else {
 		// Unknown plugin type
 		logging.Error("[RENDER_WORKER] Unknown plugin type", "plugin_type", pluginInstance.PluginDefinition.PluginType, "instance_name", pluginInstance.Name, "instance_id", pluginInstance.ID)
@@ -582,6 +592,18 @@ func (w *RenderWorker) calculateNextRenderTime(ctx context.Context, pluginInstan
 	
 	now := time.Now().In(location)
 	refreshInterval := pluginInstance.RefreshInterval
+	
+	// For mashup plugins, use the minimum refresh rate of child plugins
+	if pluginInstance.PluginDefinition.PluginType == "mashup" {
+		mashupService := database.NewMashupService(w.db)
+		childRefreshRate, err := mashupService.CalculateRefreshRate(pluginInstance.ID)
+		if err != nil {
+			logging.Warn("[RENDER_WORKER] Failed to calculate mashup refresh rate, using instance rate", "plugin", pluginInstance.Name, "error", err)
+		} else {
+			refreshInterval = childRefreshRate
+			logging.Debug("[RENDER_WORKER] Using calculated mashup refresh rate", "plugin", pluginInstance.Name, "child_rate", childRefreshRate, "original_rate", pluginInstance.RefreshInterval)
+		}
+	}
 	
 	// Handle different refresh intervals with smart scheduling
 	switch refreshInterval {

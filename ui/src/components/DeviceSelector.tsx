@@ -121,7 +121,7 @@ export function DeviceSelector({
     <div className="space-y-2">
       <label className="text-sm font-medium">Device</label>
       <Select value={selectedDeviceId || ""} onValueChange={onDeviceChange}>
-        <SelectTrigger className="w-full">
+        <SelectTrigger className="w-80">
           <SelectValue>
             {selectedDevice ? (
               <DeviceInfo device={selectedDevice} compact={true} />

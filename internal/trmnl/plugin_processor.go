@@ -54,7 +54,23 @@ func findItemByID(activeItems []database.PlaylistItem, itemID *uuid.UUID) *datab
 	return nil
 }
 
-// findNextActiveItem finds the next active item after the given item by order_index
+// findStartingIndex finds the starting index for playlist processing based on last shown item
+func findStartingIndex(lastItemID *uuid.UUID, activeItems []database.PlaylistItem) int {
+	if lastItemID == nil {
+		return 0 // Start from beginning
+	}
+	
+	// Find the last item and return next position
+	for i, item := range activeItems {
+		if item.ID == *lastItemID {
+			return (i + 1) % len(activeItems)
+		}
+	}
+	
+	return 0 // Last item not found, start from beginning
+}
+
+// findNextActiveItem finds the next active item after the given item by order_index (kept for compatibility)
 func findNextActiveItem(activeItems []database.PlaylistItem, currentItem *database.PlaylistItem) *database.PlaylistItem {
 	if len(activeItems) == 0 {
 		return nil
@@ -69,22 +85,18 @@ func findNextActiveItem(activeItems []database.PlaylistItem, currentItem *databa
 		return &activeItems[0]
 	}
 	
-	// Sort items by order_index to ensure consistent ordering
-	sortedItems := make([]database.PlaylistItem, len(activeItems))
-	copy(sortedItems, activeItems)
-	
 	// Items are already sorted by order_index from GetActivePlaylistItemsForTime
 	// Find current item and return next one
-	for i, item := range sortedItems {
+	for i, item := range activeItems {
 		if item.ID == currentItem.ID {
 			// Return next item (wrap around if at end)
-			nextIndex := (i + 1) % len(sortedItems)
-			return &sortedItems[nextIndex]
+			nextIndex := (i + 1) % len(activeItems)
+			return &activeItems[nextIndex]
 		}
 	}
 	
 	// Current item not found in active items, return first one
-	return &sortedItems[0]
+	return &activeItems[0]
 }
 
 // NewPluginProcessor creates a new plugin processor with unified architecture
@@ -377,79 +389,30 @@ func (pp *PluginProcessor) scheduleRenderIfNeeded(userPluginID uuid.UUID) {
 	}
 }
 
-// processActivePlugins processes plugins using the unified plugin architecture only
-func (pp *PluginProcessor) processActivePlugins(device *database.Device, activeItems []database.PlaylistItem) (gin.H, *database.PlaylistItem, error) {
-	if len(activeItems) == 0 {
-		return nil, nil, fmt.Errorf("no active playlist items")
-	}
-
-	// Find the currently showing item by UUID
-	currentItem := findItemByID(activeItems, device.LastPlaylistItemID)
-	
-	// Get the next item in rotation using UUID-based logic
-	nextItem := findNextActiveItem(activeItems, currentItem)
-	if nextItem == nil {
-		return nil, nil, fmt.Errorf("no valid next item found")
-	}
-	
-	item := *nextItem
-
+// tryProcessPlaylistItem attempts to process a single playlist item
+func (pp *PluginProcessor) tryProcessPlaylistItem(device *database.Device, item *database.PlaylistItem, attempt int) (gin.H, error) {
 	// Check if plugin instance ID is valid
 	if item.PluginInstanceID == uuid.Nil {
-		errorMsg := "Playlist item has no plugin instance configured"
-		logging.Warn("[PLUGIN] Skipping playlist item", "error", errorMsg, "item_id", item.ID)
-		
-		return gin.H{
-			"image_url": getImageURLForDevice(device),
-			"filename":  fmt.Sprintf("no_plugin_%s", time.Now().Format("20060102150405")),
-		}, &item, fmt.Errorf("%s", errorMsg)
+		return nil, fmt.Errorf("invalid_item: playlist item has no plugin instance configured")
 	}
 
 	// Get the plugin instance
 	pluginInstance, err := pp.pluginService.GetPluginInstanceByID(item.PluginInstanceID)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get plugin instance: %w", err)
+		return nil, fmt.Errorf("invalid_instance: failed to get plugin instance: %w", err)
 	}
 
 	// Process using unified system
 	response, err := pp.processUnifiedPluginInstance(device, pluginInstance)
 	if err != nil {
-		logging.Error("[PLUGIN] Unified plugin processing failed", "plugin_instance_id", pluginInstance.ID, "error", err)
-		// Return error response but don't fail the whole request
-		response = gin.H{
-			"image_url": getImageURLForDevice(device),
-			"filename":  fmt.Sprintf("error_%s", time.Now().Format("20060102150405")),
-		}
-		return response, &item, err
+		return nil, fmt.Errorf("processing_error: plugin processing failed: %w", err)
 	}
 
 	// Check if the plugin requested to skip this item
 	if skipItem, ok := response["skip_item"].(bool); ok && skipItem {
-		logging.Info("[PLUGIN] Skipping playlist item due to missing pre-rendered content", "plugin_type", response["plugin_type"], "plugin_name", response["plugin_name"])
-		
-		// Update device's last item to current (skipped) item to track progression
-		deviceService := database.NewDeviceService(pp.db)
-		if err := deviceService.UpdateLastPlaylistItemID(device.ID, item.ID); err != nil {
-			logging.Warn("[PLUGIN] Failed to update last playlist item ID for skipped item", "error", err)
-		}
-		
-		// Find next item after the one we're skipping
-		nextItemAfterSkip := findNextActiveItem(activeItems, &item)
-		
-		// Prevent infinite loop if all items are skipped (only one item available and it's the skipped one)
-		if nextItemAfterSkip != nil && nextItemAfterSkip.ID == item.ID && len(activeItems) == 1 {
-			logging.Warn("[PLUGIN] All playlist items require skipping, returning error image")
-			return gin.H{
-				"image_url": getImageURLForDevice(device),
-				"filename":  fmt.Sprintf("all_skipped_%s", time.Now().Format("20060102150405")),
-			}, &item, fmt.Errorf("all playlist items require skipping")
-		}
-		
-		// Update device to track next item and recursively try it
-		if nextItemAfterSkip != nil {
-			device.LastPlaylistItemID = &nextItemAfterSkip.ID
-		}
-		return pp.processActivePlugins(device, activeItems)
+		// Schedule an immediate render job so it's ready next time
+		pp.scheduleImmediateRenderForInstance(pluginInstance.ID)
+		return nil, fmt.Errorf("no_prerender_content: plugin type %v name %v", response["plugin_type"], response["plugin_name"])
 	}
 
 	// Apply duration override (takes priority over plugin refresh_rate)
@@ -457,8 +420,52 @@ func (pp *PluginProcessor) processActivePlugins(device *database.Device, activeI
 		response["refresh_rate"] = fmt.Sprintf("%d", *item.DurationOverride)
 	}
 	
-	// Return the successful result
-	return response, &item, nil
+	// Success!
+	logging.Info("[PLUGIN] Successfully processed playlist item", 
+		"plugin_type", response["plugin_type"], "plugin_name", pluginInstance.Name, 
+		"item_id", item.ID, "attempt", attempt)
+	return response, nil
+}
+
+// processActivePlugins processes plugins using iterative approach to avoid recursion complexity
+func (pp *PluginProcessor) processActivePlugins(device *database.Device, activeItems []database.PlaylistItem) (gin.H, *database.PlaylistItem, error) {
+	if len(activeItems) == 0 {
+		return nil, nil, fmt.Errorf("no active playlist items")
+	}
+
+	// Find starting position (where we left off)
+	startIndex := findStartingIndex(device.LastPlaylistItemID, activeItems)
+	
+	logging.Info("[PLUGIN] Starting playlist processing", "device", device.FriendlyID, 
+		"active_items_count", len(activeItems), "start_index", startIndex)
+	
+	// Try each item in sequence, starting from the next position
+	for attempt := 0; attempt < len(activeItems); attempt++ {
+		currentIndex := (startIndex + attempt) % len(activeItems)
+		item := &activeItems[currentIndex]
+		
+		logging.Info("[PLUGIN] Trying playlist item", "attempt", attempt, "index", currentIndex, 
+			"item_id", item.ID, "plugin_instance_id", item.PluginInstanceID)
+		
+		result, err := pp.tryProcessPlaylistItem(device, item, attempt)
+		if err == nil {
+			// Success! Return this item
+			logging.Info("[PLUGIN] Playlist processing successful", "selected_item", item.ID, 
+				"total_attempts", attempt+1)
+			return result, item, nil
+		}
+		
+		// Log the skip/failure and continue to next item
+		logging.Info("[PLUGIN] Skipping playlist item", "reason", err.Error(), 
+			"item_id", item.ID, "attempt", attempt)
+	}
+	
+	// All items failed
+	logging.Warn("[PLUGIN] All playlist items unavailable", "items_tried", len(activeItems))
+	return gin.H{
+		"image_url": getImageURLForDevice(device),
+		"filename":  fmt.Sprintf("all_failed_%s", time.Now().Format("20060102150405")),
+	}, &activeItems[0], fmt.Errorf("all playlist items unavailable")
 }
 
 // renderDataPlugin renders a data plugin response to an image

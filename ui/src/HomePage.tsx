@@ -325,8 +325,20 @@ export default function HomePage() {
   }
 
   return (
-    <div className="bg-background pt-0 pb-8 px-0 sm:px-8">
-      <div className="max-w-6xl mx-0 sm:mx-auto space-y-6">
+    <div className="min-h-screen">
+      {/* Sticky Header */}
+      <div className="sticky top-0 z-40 border-b bg-background">
+        <div className="container mx-auto px-4 py-4 space-y-4">
+          {/* Title and Subtitle */}
+          <div>
+            <h1 className="text-2xl font-semibold">Dashboard</h1>
+            <p className="text-muted-foreground">Manage your TRMNL devices, plugins, and playlists</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="container mx-auto px-4 py-6 space-y-6">
         {showOnboarding && (
           <Card>
             <CardHeader>
@@ -356,12 +368,6 @@ export default function HomePage() {
             </CardContent>
           </Card>
         )}
-        
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-2xl">Dashboard</CardTitle>
-          </CardHeader>
-          <CardContent>
             <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
               <TabsList className="grid w-full grid-cols-3">
                 <TabsTrigger value="plugins">
@@ -408,8 +414,6 @@ export default function HomePage() {
                 <DeviceManagementContent onUpdate={fetchDevices} />
               </TabsContent>
             </Tabs>
-          </CardContent>
-        </Card>
       </div>
     </div>
   );

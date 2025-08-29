@@ -9,7 +9,6 @@ import {
 } from "@/components/ui/alert";
 import {
   ArrowLeft,
-  Settings,
   AlertTriangle,
   CheckCircle,
 } from "lucide-react";
@@ -127,22 +126,59 @@ export function PrivatePluginEditorPage() {
 
   if (loading) {
     return (
-      <div className="bg-background pt-0 pb-8 px-0 sm:px-8">
-        <div className="max-w-6xl mx-0 sm:mx-auto space-y-6">
-          <Card>
-            <CardContent className="flex items-center justify-center py-8">
-              <div className="text-muted-foreground">Loading plugin...</div>
-            </CardContent>
-          </Card>
+      <div className="min-h-screen">
+        <div className="sticky top-0 z-40 border-b bg-background">
+          <div className="container mx-auto px-4 py-4 space-y-4">
+            <div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={navigateBackToPlugins}
+                className="text-sm text-muted-foreground hover:text-foreground"
+              >
+                Back to Plugin Management
+              </Button>
+            </div>
+            <div>
+              <h1 className="text-2xl font-semibold">{isEditing ? 'Edit Private Plugin' : 'Create Private Plugin'}</h1>
+            </div>
+          </div>
+        </div>
+        <div className="container mx-auto px-4 py-6 space-y-6">
+          <div className="flex items-center justify-center py-8">
+            <div className="text-muted-foreground">Loading plugin...</div>
+          </div>
         </div>
       </div>
     );
   }
   
   return (
-    <div className="bg-background pt-0 pb-8 px-0 sm:px-8">
-      <div className="max-w-6xl mx-0 sm:mx-auto space-y-6">
-        
+    <div className="min-h-screen">
+      {/* Sticky Header */}
+      <div className="sticky top-0 z-40 border-b bg-background">
+        <div className="container mx-auto px-4 py-4 space-y-4">
+          {/* Breadcrumb */}
+          <div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={navigateBackToPlugins}
+              className="text-sm text-muted-foreground hover:text-foreground"
+            >
+              Back to Plugin Management
+            </Button>
+          </div>
+          
+          {/* Title and Subtitle */}
+          <div>
+            <h1 className="text-2xl font-semibold">{isEditing ? 'Edit Private Plugin' : 'Create Private Plugin'}</h1>
+          </div>
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="container mx-auto px-4 py-6 space-y-6">
         {error && (
           <Alert variant="destructive">
             <AlertTriangle className="h-4 w-4" />
@@ -157,31 +193,12 @@ export function PrivatePluginEditorPage() {
           </Alert>
         )}
 
-        <Card>
-          <CardHeader>
-            <div>
-              <button 
-                onClick={navigateBackToPlugins}
-                className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1 mb-1"
-              >
-                <ArrowLeft className="h-3 w-3" />
-                Back to Plugin Management
-              </button>
-              <CardTitle className="flex items-center gap-2 text-2xl">
-                <Settings className="h-5 w-5" />
-                {isEditing ? 'Edit Private Plugin' : 'Create Private Plugin'}
-              </CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <PrivatePluginCreator
-              plugin={plugin}
-              onSave={handleSavePlugin}
-              onCancel={handleCancel}
-              saving={saving}
-            />
-          </CardContent>
-        </Card>
+        <PrivatePluginCreator
+          plugin={plugin}
+          onSave={handleSavePlugin}
+          onCancel={handleCancel}
+          saving={saving}
+        />
       </div>
     </div>
   );

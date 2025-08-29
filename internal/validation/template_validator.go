@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/rmitchellscott/stationmaster/internal/config"
 )
 
 // ValidationResult represents the result of template validation
@@ -25,6 +27,11 @@ func NewTemplateValidator() *TemplateValidator {
 
 // ValidateTemplate validates a liquid template for syntax and security
 func (v *TemplateValidator) ValidateTemplate(template string, templateName string) ValidationResult {
+	return v.ValidateTemplateWithOptions(template, templateName, false)
+}
+
+// ValidateTemplateWithOptions validates a liquid template with configurable options
+func (v *TemplateValidator) ValidateTemplateWithOptions(template string, templateName string, skipContainer bool) ValidationResult {
 	result := ValidationResult{
 		Valid:    true,
 		Message:  "Template validation successful",
@@ -51,10 +58,12 @@ func (v *TemplateValidator) ValidateTemplate(template string, templateName strin
 	result.Errors = append(result.Errors, securityErrors...)
 	result.Warnings = append(result.Warnings, securityWarnings...)
 
-	// 3. Verify containerization
-	containerErrors, containerWarnings := v.verifyContainerization(template, templateName)
-	result.Errors = append(result.Errors, containerErrors...)
-	result.Warnings = append(result.Warnings, containerWarnings...)
+	// 3. Verify containerization (skip for shared markup templates)
+	if !skipContainer {
+		containerErrors, containerWarnings := v.verifyContainerization(template, templateName)
+		result.Errors = append(result.Errors, containerErrors...)
+		result.Warnings = append(result.Warnings, containerWarnings...)
+	}
 
 	// Set overall validity
 	result.Valid = len(result.Errors) == 0
@@ -116,6 +125,11 @@ func (v *TemplateValidator) validateBasicLiquidSyntax(template string, templateN
 func (v *TemplateValidator) checkSecurity(template string, templateName string) ([]string, []string) {
 	var errors []string
 	var warnings []string
+
+	// Check if external scripts are allowed (development/testing mode)
+	if config.Get("ALLOW_EXTERNAL_SCRIPTS", "false") == "true" {
+		return errors, warnings // Skip all security checks when explicitly enabled
+	}
 
 	// Dangerous patterns to block
 	dangerousPatterns := map[string]string{
@@ -212,9 +226,9 @@ func (v *TemplateValidator) ValidateAllTemplates(fullTemplate, halfVertTemplate,
 		Errors:   []string{},
 	}
 
-	// First, validate shared markup separately if it exists
+	// First, validate shared markup separately if it exists (skip container requirement)
 	if strings.TrimSpace(sharedTemplate) != "" {
-		sharedResult := v.ValidateTemplate(sharedTemplate, "shared markup")
+		sharedResult := v.ValidateTemplateWithOptions(sharedTemplate, "shared markup", true)
 		combinedResult.Errors = append(combinedResult.Errors, sharedResult.Errors...)
 		combinedResult.Warnings = append(combinedResult.Warnings, sharedResult.Warnings...)
 		

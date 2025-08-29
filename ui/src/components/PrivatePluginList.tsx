@@ -313,7 +313,7 @@ export function PrivatePluginList({
         <div>
           <h3 className="text-lg font-semibold">Private Plugins</h3>
           <p className="text-muted-foreground">
-            Custom plugins you've created with Liquid templates
+            Custom plugins created with Liquid templates
           </p>
         </div>
         <div className="flex gap-2">
@@ -331,12 +331,10 @@ export function PrivatePluginList({
               onClick={() => document.getElementById('import-file')?.click()}
               disabled={importDialog.isUploading}
             >
-              <Upload className="h-4 w-4 mr-2" />
               {importDialog.isUploading ? "Importing..." : "Import"}
             </Button>
           </div>
           <Button onClick={onCreatePlugin}>
-            <Plus className="h-4 w-4 mr-2" />
             Create Private Plugin
           </Button>
         </div>
@@ -369,21 +367,17 @@ export function PrivatePluginList({
                   onClick={() => document.getElementById('import-file-empty')?.click()}
                   disabled={importDialog.isUploading}
                 >
-                  <Upload className="h-4 w-4 mr-2" />
                   {importDialog.isUploading ? "Importing..." : "Import"}
                 </Button>
               </div>
               <Button onClick={onCreatePlugin}>
-                <Plus className="h-4 w-4 mr-2" />
                 Create Your First Private Plugin
               </Button>
             </div>
           </CardContent>
         </Card>
       ) : (
-        <Card>
-          <CardContent>
-            <Table>
+        <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
@@ -474,8 +468,6 @@ export function PrivatePluginList({
                 ))}
               </TableBody>
             </Table>
-          </CardContent>
-        </Card>
       )}
 
       {/* Delete Confirmation Dialog */}

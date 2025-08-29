@@ -8,6 +8,7 @@ import { Layout } from '@/components/Layout';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { UserSettingsPage } from '@/components/UserSettingsPage';
 import { PrivatePluginEditorPage } from '@/components/PrivatePluginEditorPage';
+import { AddPluginPage } from '@/components/AddPluginPage';
 import { AdminPage } from '@/components/AdminPage';
 import { PasswordReset } from '@/components/PasswordReset';
 import { RegisterForm } from '@/components/RegisterForm';
@@ -36,6 +37,11 @@ function AppContent() {
           <Route path="plugins/private/edit" element={
             <ProtectedRoute>
               <PrivatePluginEditorPage />
+            </ProtectedRoute>
+          } />
+          <Route path="plugins/add" element={
+            <ProtectedRoute>
+              <AddPluginPage />
             </ProtectedRoute>
           } />
           <Route path="admin" element={

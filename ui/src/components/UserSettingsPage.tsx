@@ -34,7 +34,6 @@ import {
   TooltipContent,
 } from "@/components/ui/tooltip";
 import {
-  Settings,
   User,
   UserCog,
   AlertTriangle,
@@ -371,32 +370,36 @@ export function UserSettingsPage() {
 
   return (
     <>
-      <div className="bg-background pt-0 pb-8 px-0 sm:px-8">
-        <div className="max-w-6xl mx-0 sm:mx-auto space-y-6">
-
-        {error && (
-          <div className="bg-destructive/10 border border-destructive/20 rounded-md p-3 text-destructive">
-            {error}
-          </div>
-        )}
-
-        <Card>
-          <CardHeader>
+      <div className="min-h-screen">
+        {/* Sticky Header */}
+        <div className="sticky top-0 z-40 border-b bg-background">
+          <div className="container mx-auto px-4 py-4 space-y-4">
+            {/* Breadcrumb */}
             <div>
-              <button 
-                onClick={() => navigate(-1)} 
-                className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1 mb-1"
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => navigate('/')}
+                className="text-sm text-muted-foreground hover:text-foreground"
               >
-                <ArrowLeft className="h-3 w-3" />
                 Back to Dashboard
-              </button>
-              <CardTitle className="flex items-center gap-2 text-2xl">
-                <Settings className="h-5 w-5" />
-                {t("settings.title")}
-              </CardTitle>
+              </Button>
             </div>
-          </CardHeader>
-          <CardContent>
+            
+            {/* Title */}
+            <div>
+              <h1 className="text-2xl font-semibold">{t("settings.title")}</h1>
+            </div>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="container mx-auto px-4 py-6 space-y-6">
+          {error && (
+            <div className="bg-destructive/10 border border-destructive/20 rounded-md p-3 text-destructive">
+              {error}
+            </div>
+          )}
             <Tabs defaultValue="profile" className="w-full">
               <TabsList className="grid w-full grid-cols-2">
                 <TabsTrigger value="profile">
@@ -733,8 +736,6 @@ export function UserSettingsPage() {
                 </div>
               </TabsContent>
             </Tabs>
-          </CardContent>
-        </Card>
         </div>
       </div>
 

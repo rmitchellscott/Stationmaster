@@ -95,7 +95,7 @@ func WebhookHandler(c *gin.Context) {
 	webhookService := database.NewWebhookService(db)
 
 	webhookRecord := &database.PrivatePluginWebhookData{
-		ID:               fmt.Sprintf("%s_%d", pluginInstance.ID.String(), time.Now().UnixNano()),
+		ID:               pluginInstance.ID.String() + "_webhook_data",
 		PluginInstanceID: pluginInstance.ID.String(),
 		RawData:          rawDataJSON,
 		MergeStrategy:    mergeStrategy,

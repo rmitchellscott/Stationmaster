@@ -11,7 +11,6 @@ import (
 	"github.com/rmitchellscott/stationmaster/internal/logging"
 	"github.com/rmitchellscott/stationmaster/internal/plugins"
 	"github.com/rmitchellscott/stationmaster/internal/rendering"
-	"github.com/rmitchellscott/stationmaster/internal/utils"
 )
 
 // PrivatePlugin implements the Plugin interface for user-created private plugins
@@ -116,21 +115,84 @@ func (p *PrivatePlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespon
 	// Fetch external data based on data strategy
 	switch dataStrategy := p.definition.DataStrategy; {
 	case dataStrategy != nil && *dataStrategy == "polling":
-		// Use enhanced data poller for robust polling with retries and error handling
-		poller := NewEnhancedDataPoller()
-		pollingCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		if polledResult, err := poller.PollData(pollingCtx, p.definition, formFieldValues); err == nil && polledResult.Success {
-			// Merge polling data into template data
-			for key, value := range polledResult.Data {
-				templateData[key] = value
+		// First check if we have fresh polling data stored
+		pollingService := database.NewPollingDataService(database.GetDB())
+		
+		// Check if stored data is fresh (within 5 minutes of expected refresh)
+		maxAge := 5 * time.Minute // Allow some staleness to avoid duplicate polls
+		if isFresh, err := pollingService.IsPollingDataFresh(instanceID, maxAge); err == nil && isFresh {
+			// Use stored polling data
+			if storedData, err := pollingService.GetPollingDataTemplate(instanceID); err == nil {
+				for key, value := range storedData {
+					templateData[key] = value
+				}
+				logging.Debug("[PRIVATE_PLUGIN] Using fresh stored polling data", "plugin_id", p.definition.ID, "instance_id", instanceID)
 			}
 		} else {
-			// Log error but don't fail - allow template to render with form data only
-			if err != nil {
-				logging.WarnWithComponent(logging.ComponentPlugins, "Failed to fetch polling data for plugin", "plugin_id", p.definition.ID, "error", err)
-			} else if len(polledResult.Errors) > 0 {
-				logging.WarnWithComponent(logging.ComponentPlugins, "Polling errors for plugin", "plugin_id", p.definition.ID, "errors", polledResult.Errors)
+			// Poll fresh data and store it
+			poller := NewEnhancedDataPoller()
+			pollingCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			
+			pollStartTime := time.Now()
+			polledResult, err := poller.PollData(pollingCtx, p.definition, formFieldValues)
+			pollDuration := time.Since(pollStartTime)
+			
+			if err == nil && polledResult.Success {
+				// Merge polling data into template data
+				for key, value := range polledResult.Data {
+					templateData[key] = value
+				}
+				
+				// Store the polling data for future use (including mashup children)
+				rawDataJSON, _ := json.Marshal(polledResult.Data)
+				mergedDataJSON, _ := json.Marshal(polledResult.Data)
+				errorsJSON, _ := json.Marshal(polledResult.Errors)
+				
+				pollingData := &database.PrivatePluginPollingData{
+					ID:               instanceID + "_polling_data",
+					PluginInstanceID: instanceID,
+					MergedData:       mergedDataJSON,
+					RawData:          rawDataJSON,
+					PolledAt:         time.Now(),
+					PollDuration:     pollDuration,
+					Success:          true,
+					Errors:           errorsJSON,
+					URLCount:         len(polledResult.Data), // Approximation
+				}
+				
+				if storeErr := pollingService.StorePollingData(pollingData); storeErr != nil {
+					logging.WarnWithComponent(logging.ComponentPlugins, "Failed to store polling data", "plugin_id", p.definition.ID, "error", storeErr)
+				} else {
+					logging.Debug("[PRIVATE_PLUGIN] Stored fresh polling data", "plugin_id", p.definition.ID, "instance_id", instanceID, "duration", pollDuration)
+				}
+			} else {
+				// Store failed polling attempt
+				errorsJSON, _ := json.Marshal(polledResult.Errors)
+				if err != nil {
+					errorsJSON, _ = json.Marshal([]string{err.Error()})
+				}
+				
+				pollingData := &database.PrivatePluginPollingData{
+					ID:               instanceID + "_polling_data",
+					PluginInstanceID: instanceID,
+					MergedData:       []byte("{}"),
+					RawData:          []byte("{}"),
+					PolledAt:         time.Now(),
+					PollDuration:     pollDuration,
+					Success:          false,
+					Errors:           errorsJSON,
+					URLCount:         0,
+				}
+				
+				pollingService.StorePollingData(pollingData)
+				
+				// Log error but don't fail - allow template to render with form data only
+				if err != nil {
+					logging.WarnWithComponent(logging.ComponentPlugins, "Failed to fetch polling data for plugin", "plugin_id", p.definition.ID, "error", err)
+				} else if len(polledResult.Errors) > 0 {
+					logging.WarnWithComponent(logging.ComponentPlugins, "Polling errors for plugin", "plugin_id", p.definition.ID, "errors", polledResult.Errors)
+				}
 			}
 		}
 	case dataStrategy != nil && *dataStrategy == "webhook":
@@ -152,147 +214,9 @@ func (p *PrivatePlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespon
 		// No additional data fetching needed here
 	}
 
-	// Create TRMNL data structure to match official API
-	trmnlData := map[string]interface{}{}
-
-	// Add system information - Unix timestamp
-	systemData := map[string]interface{}{
-		"timestamp_utc": time.Now().Unix(),
-	}
-	trmnlData["system"] = systemData
-
-	// Add device information if available
-	if ctx.Device != nil {
-		deviceData := map[string]interface{}{
-			"friendly_id": ctx.Device.FriendlyID,
-		}
-
-		// Add device model dimensions if available
-		if ctx.Device.DeviceModel != nil {
-			deviceData["width"] = ctx.Device.DeviceModel.ScreenWidth
-			deviceData["height"] = ctx.Device.DeviceModel.ScreenHeight
-		}
-
-		// Add battery information if available
-		if ctx.Device.BatteryVoltage > 0 {
-			batteryPercentage := plugins.BatteryVoltageToPercentage(ctx.Device.BatteryVoltage)
-			deviceData["percent_charged"] = batteryPercentage
-		}
-
-		// Add WiFi information if available  
-		if ctx.Device.RSSI != 0 {
-			wifiPercentage := plugins.RSSIToWifiStrengthPercentage(ctx.Device.RSSI)
-			deviceData["wifi_strength"] = wifiPercentage
-		}
-
-		trmnlData["device"] = deviceData
-	}
-
-	// Add user information if available
-	if ctx.User != nil {
-		// Calculate UTC offset in seconds
-		utcOffset := int64(0)
-		locale := "en" // Default locale
-		timezone := "UTC" // Default timezone IANA
-		timezoneFriendly := "UTC" // Default friendly name
-		
-		if ctx.User.Timezone != "" {
-			timezone = ctx.User.Timezone
-			timezoneFriendly = utils.GetTimezoneFriendlyName(ctx.User.Timezone)
-			// Parse timezone and calculate UTC offset
-			loc, err := time.LoadLocation(ctx.User.Timezone)
-			if err == nil {
-				_, offset := time.Now().In(loc).Zone()
-				utcOffset = int64(offset)
-			}
-		}
-		
-		if ctx.User.Locale != "" {
-			// Convert "en-US" to "en" format if needed
-			if len(ctx.User.Locale) >= 2 {
-				locale = ctx.User.Locale[:2]
-			}
-		}
-
-		// Build user full name
-		firstName := ctx.User.FirstName
-		lastName := ctx.User.LastName
-		fullName := ""
-		if firstName != "" && lastName != "" {
-			fullName = firstName + " " + lastName
-		} else if firstName != "" {
-			fullName = firstName
-		} else if lastName != "" {
-			fullName = lastName
-		} else {
-			// Fallback to username if no names available
-			fullName = ctx.User.Username
-		}
-
-		userData := map[string]interface{}{
-			"name":           fullName,
-			"first_name":     firstName,
-			"last_name":      lastName,
-			"locale":         locale,
-			"time_zone":      timezoneFriendly,
-			"time_zone_iana": timezone,
-			"utc_offset":     utcOffset,
-		}
-		
-		trmnlData["user"] = userData
-	}
-
-	// Add plugin settings - this contains plugin metadata, not user form data
-	pluginSettings := map[string]interface{}{
-		"instance_name": p.Name(),
-	}
-	
-	// Add data strategy if available
-	if p.definition.DataStrategy != nil {
-		pluginSettings["strategy"] = *p.definition.DataStrategy
-	}
-	
-	// Add polling config if this is a polling plugin
-	if p.definition.DataStrategy != nil && *p.definition.DataStrategy == "polling" {
-		pluginSettings["polling_url"] = ""
-		pluginSettings["polling_headers"] = ""
-		
-		// Parse polling config if available
-		if p.definition.PollingConfig != nil {
-			var pollingConfig map[string]interface{}
-			if err := json.Unmarshal(p.definition.PollingConfig, &pollingConfig); err == nil {
-				// Handle both legacy single URL format and new URLs array format
-				if urls, ok := pollingConfig["urls"].([]interface{}); ok && len(urls) > 0 {
-					// New format with URLs array
-					if urlObj, ok := urls[0].(map[string]interface{}); ok {
-						if url, ok := urlObj["url"].(string); ok {
-							pluginSettings["polling_url"] = url
-						}
-						if headers, ok := urlObj["headers"]; ok {
-							pluginSettings["polling_headers"] = fmt.Sprintf("%v", headers)
-						}
-					}
-				} else {
-					// Legacy format with single URL
-					if url, ok := pollingConfig["url"].(string); ok {
-						pluginSettings["polling_url"] = url
-					}
-					if headers, ok := pollingConfig["headers"].(string); ok {
-						pluginSettings["polling_headers"] = headers
-					}
-				}
-			}
-		}
-	}
-	
-	// Add default plugin configuration (these might come from plugin definition or defaults)
-	pluginSettings["dark_mode"] = "no"
-	pluginSettings["no_screen_padding"] = "no"
-	
-	// Add custom_fields_values containing form field values (TRMNL compatibility)
-	pluginSettings["custom_fields_values"] = formFieldValues
-	
-	trmnlData["plugin_settings"] = pluginSettings
+	// Create TRMNL data structure using shared builder
+	trmnlBuilder := rendering.NewTRNMLDataBuilder()
+	trmnlData := trmnlBuilder.BuildTRNMLData(ctx, p.instance, formFieldValues)
 	
 	templateData["trmnl"] = trmnlData
 	

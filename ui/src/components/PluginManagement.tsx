@@ -1303,7 +1303,9 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
           <TabsTrigger value="private">Private Plugins</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="instances" className="space-y-4">
+        <Card>
+          <CardContent>
+            <TabsContent value="instances" className="space-y-4">
           <div className="flex justify-between items-center">
             <div>
               <h3 className="text-lg font-semibold">Plugin Instances</h3>
@@ -2086,6 +2088,8 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
           />
         </TabsContent>
 
+          </CardContent>
+        </Card>
       </Tabs>
 
 

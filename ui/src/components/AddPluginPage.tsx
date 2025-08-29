@@ -144,9 +144,10 @@ export function AddPluginPage() {
         },
         credentials: 'include',
         body: JSON.stringify({
-          plugin_definition_id: plugin.id,
+          definition_id: plugin.id,
+          definition_type: plugin.type,
           name: instanceName.trim(),
-          refresh_rate: plugin.requires_processing ? instanceRefreshRate : undefined,
+          refresh_interval: plugin.requires_processing ? instanceRefreshRate : undefined,
           settings: instanceSettings,
         }),
       });

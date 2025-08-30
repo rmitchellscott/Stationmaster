@@ -305,8 +305,9 @@ func (w *RenderWorker) renderForDevice(ctx context.Context, pluginInstance datab
 		if imageData, ok := plugins.GetImageData(response); ok {
 			var processedImageData []byte
 
-			// For private plugins and mashups, we need to process the image to correct bit depth
-			if pluginInstance.PluginDefinition.PluginType == "private" || pluginInstance.PluginDefinition.PluginType == "mashup" {
+			// For private plugins, mashups, and system plugins that render via browserless, we need to process the image to correct bit depth
+			if pluginInstance.PluginDefinition.PluginType == "private" || pluginInstance.PluginDefinition.PluginType == "mashup" || 
+			   (pluginInstance.PluginDefinition.PluginType == "system" && plugin.RequiresProcessing()) {
 				// Decode the raw PNG image from browserless
 				img, _, err := image.Decode(bytes.NewReader(imageData))
 				if err != nil {

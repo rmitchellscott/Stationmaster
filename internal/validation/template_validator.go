@@ -44,13 +44,13 @@ func (v *TemplateValidator) ValidateTemplateWithOptions(template string, templat
 		return result
 	}
 
-	// 1. Basic liquid syntax validation (pattern-based since we use client-side LiquidJS)
+	// 1. Basic liquid syntax validation (pattern-based since we use server-side Ruby Liquid)
 	syntaxWarnings := v.validateBasicLiquidSyntax(template, templateName)
 	result.Warnings = append(result.Warnings, syntaxWarnings...)
 
 	// Check for advanced Liquid syntax
 	if strings.Contains(template, "{%liquid%}") || strings.Contains(template, "{% liquid %}") {
-		result.Warnings = append(result.Warnings, fmt.Sprintf("%s: Template uses {%%liquid%%} blocks - using client-side LiquidJS for full compatibility", templateName))
+		result.Warnings = append(result.Warnings, fmt.Sprintf("%s: Template uses {%%liquid%%} blocks - using server-side Ruby Liquid for full compatibility", templateName))
 	}
 
 	// 2. Check for security issues

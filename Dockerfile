@@ -54,16 +54,30 @@ RUN --mount=type=cache,target=/root/.cache \
 # Final image
 FROM alpine:3.22
 
-# Install runtime dependencies
+# Install runtime dependencies including Ruby
 RUN apk add --no-cache \
       ca-certificates \
       postgresql-client \
       tzdata \
+      ruby \
+      ruby-dev \
+      ruby-bundler \
+      build-base \
+      git \
     && update-ca-certificates
 
 WORKDIR /app
 COPY --from=stationmaster-builder /app/stationmaster .
 COPY --from=stationmaster-builder /app/images ./images
+
+# Install Ruby dependencies
+COPY Gemfile ./
+RUN bundle config set --local without 'development test' && \
+    bundle install --jobs 4 --retry 3
+
+# Copy Ruby scripts
+COPY scripts/ ./scripts/
+RUN chmod +x ./scripts/*.rb
 
 # Create data directory and setup for Chromium
 RUN mkdir -p /data /app/static/rendered \

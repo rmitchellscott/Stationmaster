@@ -56,3 +56,4 @@ postgres_data/
 
 # Sensitive files
 cookies.txt
+Gemfile.lock

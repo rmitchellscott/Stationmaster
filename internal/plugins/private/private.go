@@ -248,9 +248,13 @@ func (p *PrivatePlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespon
 		enableDarkMode = *p.definition.EnableDarkMode
 	}
 	
-	// Use the private plugin renderer service with client-side LiquidJS
-	htmlRenderer := NewPrivatePluginRenderer()
-	html, err := htmlRenderer.RenderToClientSideHTML(RenderOptions{
+	// Use the private plugin renderer service with Ruby server-side liquid
+	htmlRenderer, err := NewPrivatePluginRenderer(".")
+	if err != nil {
+		return plugins.CreateErrorResponse(fmt.Sprintf("Failed to initialize private plugin renderer: %v", err)),
+			fmt.Errorf("failed to initialize private plugin renderer: %w", err)
+	}
+	renderOptions := RenderOptions{
 		SharedMarkup:      sharedMarkup,
 		LayoutTemplate:    *p.definition.MarkupFull,
 		Data:              templateData,
@@ -261,10 +265,13 @@ func (p *PrivatePlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespon
 		InstanceName:      p.Name(),
 		RemoveBleedMargin: removeBleedMargin,
 		EnableDarkMode:    enableDarkMode,
-	})
+	}
+	
+	// Use Ruby server-side rendering (required)
+	html, err := htmlRenderer.RenderToServerSideHTML(context.Background(), renderOptions)
 	if err != nil {
-		return plugins.CreateErrorResponse(fmt.Sprintf("Failed to render template: %v", err)),
-			fmt.Errorf("failed to render HTML template: %w", err)
+		return plugins.CreateErrorResponse(fmt.Sprintf("Ruby template rendering failed: %v", err)),
+			fmt.Errorf("failed to render HTML template with Ruby: %w", err)
 	}
 	
 	// Create browserless renderer

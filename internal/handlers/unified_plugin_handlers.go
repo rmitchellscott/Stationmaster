@@ -1327,8 +1327,12 @@ func TestPluginDefinitionHandler(c *gin.Context) {
 	logging.Info("[TestPlugin] Created TRMNL context data", "user_available", user != nil, "device_width", req.DeviceWidth, "device_height", req.DeviceHeight)
 
 	// Use the private plugin renderer service
-	htmlRenderer := private.NewPrivatePluginRenderer()
-	renderedHTML, err := htmlRenderer.RenderToClientSideHTML(private.RenderOptions{
+	htmlRenderer, err := private.NewPrivatePluginRenderer(".")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to initialize private plugin renderer: %v", err)})
+		return
+	}
+	renderedHTML, err := htmlRenderer.RenderToServerSideHTML(c.Request.Context(), private.RenderOptions{
 		SharedMarkup:   req.Plugin.SharedMarkup,
 		LayoutTemplate: layoutTemplate,
 		Data:           finalTemplateData,

@@ -560,6 +560,7 @@ type RenderQueue struct {
 	Attempts         int        `gorm:"default:0" json:"attempts"`
 	LastAttempt      *time.Time `json:"last_attempt,omitempty"`
 	ErrorMessage     string     `gorm:"type:text" json:"error_message,omitempty"`
+	RenderDurationMs int        `gorm:"default:0" json:"render_duration_ms"` // Render duration in milliseconds
 	CreatedAt        time.Time  `json:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at"`
 

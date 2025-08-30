@@ -13,6 +13,11 @@ import (
 
 var logger *slog.Logger
 
+// Custom log levels
+const (
+	LevelBrowserless = slog.Level(-6) // More verbose than DEBUG (-4)
+)
+
 // ComponentTintHandler wraps tint.Handler to format component attributes as bracketed prefixes
 type ComponentTintHandler struct {
 	Handler slog.Handler
@@ -101,6 +106,8 @@ func setupLogger() {
 // parseLogLevel converts string log level to slog.Level
 func parseLogLevel(levelStr string) slog.Level {
 	switch strings.ToUpper(levelStr) {
+	case "BROWSERLESS":
+		return LevelBrowserless
 	case "DEBUG":
 		return slog.LevelDebug
 	case "INFO":
@@ -153,6 +160,12 @@ func WithUser(username string) *slog.Logger {
 // This helps maintain compatibility with existing debug checks
 func IsDebugEnabled() bool {
 	return logger.Enabled(nil, slog.LevelDebug)
+}
+
+// Browserless logs a message at the custom BROWSERLESS level (-6)
+// This is more verbose than DEBUG and specifically for browserless debugging
+func Browserless(msg string, args ...any) {
+	logger.Log(context.Background(), LevelBrowserless, msg, args...)
 }
 
 // Component-aware logging functions

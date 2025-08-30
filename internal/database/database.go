@@ -252,7 +252,7 @@ func getGormLogger() logger.Interface {
 		logLevel = logger.Info
 	}
 
-	return logger.Default.LogMode(logLevel)
+	return logger.Default.LogMode(logLevel).IgnoreRecordNotFoundError(true)
 }
 
 // Helper functions

@@ -27,10 +27,11 @@ type RenderJob struct {
 
 // JobResult represents the result of a render job
 type JobResult struct {
-	JobID   uuid.UUID
-	Success bool
-	Error   error
-	Message string
+	JobID      uuid.UUID
+	Success    bool
+	Error      error
+	Message    string
+	DurationMs int // Render duration in milliseconds
 }
 
 // WorkerMetrics tracks worker pool performance
@@ -345,10 +346,35 @@ func (p *RenderWorkerPool) handleResult(ctx context.Context, result JobResult) {
 	if result.Success {
 		atomic.AddInt64(&p.metrics.SuccessJobs, 1)
 		
+		// Update the database with render duration
+		err := p.db.WithContext(ctx).Model(&database.RenderQueue{}).
+			Where("id = ?", result.JobID).
+			Update("render_duration_ms", result.DurationMs).Error
+		if err != nil {
+			logging.Error("[WORKER_POOL] Failed to update render duration", "job_id", result.JobID, "error", err)
+		}
+		
+		// Load plugin name for logging
+		var job database.RenderQueue
+		err = p.db.WithContext(ctx).
+			Preload("PluginInstance").
+			First(&job, result.JobID).Error
+		
 		// Broadcast success via SSE if available
 		p.broadcastJobUpdate(ctx, result.JobID, "completed", result.Message, nil)
 		
-		logging.Debug("[WORKER_POOL] Render job completed", "job_id", result.JobID)
+		// Log with duration in seconds and plugin name
+		durationSeconds := float64(result.DurationMs) / 1000.0
+		if err == nil {
+			logging.Debug("[WORKER_POOL] Render job completed", 
+				"job_id", result.JobID, 
+				"plugin_name", job.PluginInstance.Name,
+				"duration_s", durationSeconds)
+		} else {
+			logging.Debug("[WORKER_POOL] Render job completed", 
+				"job_id", result.JobID, 
+				"duration_s", durationSeconds)
+		}
 	} else {
 		atomic.AddInt64(&p.metrics.FailedJobs, 1)
 		
@@ -550,11 +576,13 @@ func (w *Worker) processJob(job RenderJob) {
 	startTime := time.Now()
 	err = w.pool.renderWorker.processRenderJob(job.Context, dbJob)
 	processingDuration := time.Since(startTime)
+	durationMs := int(processingDuration.Milliseconds())
 	
 	result := JobResult{
-		JobID:   job.ID,
-		Success: err == nil,
-		Error:   err,
+		JobID:      job.ID,
+		Success:    err == nil,
+		Error:      err,
+		DurationMs: durationMs,
 	}
 	
 	if err == nil {

@@ -1,5 +1,21 @@
 FROM --platform=$BUILDPLATFORM tonistiigi/xx:1.6.1 AS xx
 
+# Ruby dependencies build
+FROM --platform=$BUILDPLATFORM ruby:3.4-alpine AS ruby-builder
+WORKDIR /app
+
+# Install build dependencies
+RUN apk add --no-cache \
+    build-base \
+    git
+
+# Copy gem files
+COPY Gemfile Gemfile.lock ./
+
+# Install gems with deployment flag for faster installs
+RUN bundle config set --local deployment 'true' && \
+    bundle config set --local without 'development test' && \
+    bundle install --jobs $(nproc) --retry 3
 
 # Frontend build
 FROM --platform=$BUILDPLATFORM node:24-alpine AS ui-builder
@@ -54,26 +70,30 @@ RUN --mount=type=cache,target=/root/.cache \
 # Final image
 FROM alpine:3.22
 
-# Install runtime dependencies including Ruby
+# Install minimal runtime dependencies
 RUN apk add --no-cache \
       ca-certificates \
       postgresql-client \
       tzdata \
       ruby \
-      ruby-dev \
       ruby-bundler \
-      build-base \
-      git \
     && update-ca-certificates
 
 WORKDIR /app
+
+# Copy pre-built binaries and assets
 COPY --from=stationmaster-builder /app/stationmaster .
 COPY --from=stationmaster-builder /app/images ./images
 
-# Install Ruby dependencies
-COPY Gemfile ./
-RUN bundle config set --local without 'development test' && \
-    bundle install --jobs 4 --retry 3
+# Copy pre-built Ruby gems and configuration
+COPY --from=ruby-builder /app/vendor ./vendor
+COPY Gemfile Gemfile.lock ./
+
+# Set bundle config to use pre-built gems
+RUN bundle config set --local deployment 'true' && \
+    bundle config set --local without 'development test' && \
+    bundle config set --local path 'vendor/bundle' && \
+    bundle check || bundle install --local
 
 # Copy Ruby scripts
 COPY scripts/ ./scripts/

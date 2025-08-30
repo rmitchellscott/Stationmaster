@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/rmitchellscott/stationmaster/internal/database"
@@ -196,9 +197,15 @@ func (p *MashupPlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespons
 		logging.Info("[MASHUP] Child data prepared successfully", "slot", child.SlotPosition, "plugin", child.ChildInstance.Name)
 	}
 	
-	// Generate mashup HTML using the MashupRenderer with child data
-	renderer := NewMashupRenderer(layout, childData)
-	finalHTML, err := renderer.RenderMashup(ctx)
+	// Get slot configuration for Ruby renderer  
+	slotConfig, err := p.mashupService.GetSlotMetadata(layout)
+	if err != nil {
+		logging.Warn("[MASHUP] Failed to get slot metadata, using empty config", "layout", layout, "error", err)
+		slotConfig = []database.MashupSlotInfo{}
+	}
+	
+	// Generate mashup HTML using parallel Ruby renders for data safety and performance
+	finalHTML, err := p.renderMashupParallel(layout, childData, slotConfig, ctx)
 	if err != nil {
 		return plugins.CreateErrorResponse(fmt.Sprintf("Failed to render mashup: %v", err)),
 			fmt.Errorf("failed to render mashup: %w", err)
@@ -336,6 +343,150 @@ func (p *MashupPlugin) getTemplateTypeForSlot(layout string, slotPosition string
 	
 	// Default fallback
 	return "full"
+}
+
+// renderMashupParallel renders each slot in parallel using proven Ruby renderer for performance and data safety
+func (p *MashupPlugin) renderMashupParallel(layout string, childData map[string]ChildData, slotConfig []database.MashupSlotInfo, ctx plugins.PluginContext) (string, error) {
+	logging.Info("[MASHUP] Starting parallel mashup rendering", "layout", layout, "children_count", len(childData))
+	
+	// Create a result channel and goroutine for each slot
+	type slotResult struct {
+		position string
+		html     string
+		err      error
+	}
+	
+	resultChan := make(chan slotResult, len(slotConfig))
+	
+	// Launch parallel rendering for each slot
+	for _, slot := range slotConfig {
+		go func(slotInfo database.MashupSlotInfo) {
+			childInfo, exists := childData[slotInfo.Position]
+			
+			if !exists || !childInfo.Success {
+				// Handle missing or failed child
+				errorMsg := "No content available"
+				if exists && !childInfo.Success {
+					errorMsg = childInfo.Error
+				}
+				
+				errorHTML := fmt.Sprintf(`<div class="mashup-error">%s</div>`, errorMsg)
+				resultChan <- slotResult{
+					position: slotInfo.Position,
+					html:     errorHTML,
+					err:      nil,
+				}
+				return
+			}
+			
+			// Create Ruby renderer for this slot (each goroutine gets its own)
+			rubyRenderer, err := rendering.NewRubyLiquidRenderer(".")
+			if err != nil {
+				resultChan <- slotResult{
+					position: slotInfo.Position,
+					html:     "",
+					err:      fmt.Errorf("failed to create Ruby renderer for slot %s: %w", slotInfo.Position, err),
+				}
+				return
+			}
+			
+			// Get shared markup for this child plugin (same as private plugins do)
+			var sharedMarkup string
+			if childInfo.Instance != nil && childInfo.Instance.PluginDefinition.SharedMarkup != nil {
+				sharedMarkup = *childInfo.Instance.PluginDefinition.SharedMarkup
+			}
+			
+			// Render this slot's template with its isolated data context (same as private plugins)
+			renderOptions := rendering.PluginRenderOptions{
+				SharedMarkup:      sharedMarkup, // Include shared markup like private plugins!
+				LayoutTemplate:    childInfo.Template,
+				Data:              childInfo.Data, // Isolated data - no variable collisions!
+				Width:             ctx.Device.DeviceModel.ScreenWidth,
+				Height:            ctx.Device.DeviceModel.ScreenHeight,
+				PluginName:        fmt.Sprintf("%s (slot: %s)", p.Name(), slotInfo.Position),
+				InstanceID:        fmt.Sprintf("%s-%s", p.instance.ID.String(), slotInfo.Position),
+				InstanceName:      fmt.Sprintf("%s-%s", p.Name(), slotInfo.Position),
+				RemoveBleedMargin: false,
+				EnableDarkMode:    false,
+			}
+			
+			slotHTML, err := rubyRenderer.ProcessTemplate(context.Background(), renderOptions)
+			if err != nil {
+				resultChan <- slotResult{
+					position: slotInfo.Position,
+					html:     "",
+					err:      fmt.Errorf("failed to render slot %s: %w", slotInfo.Position, err),
+				}
+				return
+			}
+			
+			resultChan <- slotResult{
+				position: slotInfo.Position,
+				html:     slotHTML,
+				err:      nil,
+			}
+		}(slot)
+	}
+	
+	// Collect results from all goroutines
+	renderedSlots := make(map[string]string)
+	for i := 0; i < len(slotConfig); i++ {
+		result := <-resultChan
+		if result.err != nil {
+			return "", result.err
+		}
+		renderedSlots[result.position] = result.html
+	}
+	
+	logging.Info("[MASHUP] Parallel rendering completed", "slots_rendered", len(renderedSlots))
+	
+	// Build final mashup HTML by combining rendered slots
+	return p.buildMashupHTML(layout, renderedSlots, slotConfig, ctx), nil
+}
+
+// buildMashupHTML combines rendered slot HTML fragments into complete HTML document using shared utility
+func (p *MashupPlugin) buildMashupHTML(layout string, renderedSlots map[string]string, slotConfig []database.MashupSlotInfo, ctx plugins.PluginContext) string {
+	var contentBuilder strings.Builder
+	
+	// Build the mashup container content (just the inner content)
+	contentBuilder.WriteString(fmt.Sprintf(`<div class="environment trmnl">
+	<div class="screen">
+		<div class="mashup mashup--%s">`, layout))
+	
+	// Add each slot's rendered content
+	for _, slot := range slotConfig {
+		renderedContent := renderedSlots[slot.Position]
+		if renderedContent == "" {
+			renderedContent = fmt.Sprintf(`<div class="mashup-empty-slot">No content for %s</div>`, slot.DisplayName)
+		}
+		
+		// No extraction needed since ProcessTemplate returns just the processed content
+		
+		contentBuilder.WriteString(fmt.Sprintf(`
+		<div id="slot-%s" class="view %s">
+			%s
+		</div>`, slot.Position, slot.ViewClass, renderedContent))
+	}
+	
+	// Close the mashup structure
+	contentBuilder.WriteString(`
+		</div>
+	</div>
+</div>`)
+	
+	mashupContent := contentBuilder.String()
+	
+	// Use new external function to wrap mashup with TRMNL assets (no duplication!)
+	assetsManager := rendering.NewHTMLAssetsManager()
+	
+	return assetsManager.WrapWithTRNMLAssets(
+		mashupContent,
+		p.Name(),
+		ctx.Device.DeviceModel.ScreenWidth,
+		ctx.Device.DeviceModel.ScreenHeight,
+		false, // removeBleedMargin - TODO: Make configurable if needed
+		false, // enableDarkMode - TODO: Make configurable if needed
+	)
 }
 
 // getMapKeys returns the keys of a map for debugging purposes

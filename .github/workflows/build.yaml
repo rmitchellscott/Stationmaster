@@ -87,8 +87,16 @@ jobs:
           platforms: linux/amd64,linux/arm64/v8
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: |
+            type=gha,scope=ruby-builder
+            type=gha,scope=ui-builder
+            type=gha,scope=stationmaster-builder
+            type=gha
+          cache-to: |
+            type=gha,scope=ruby-builder,mode=max
+            type=gha,scope=ui-builder,mode=max
+            type=gha,scope=stationmaster-builder,mode=max
+            type=gha,mode=max
           build-args: |
             VERSION=${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] }}
             GIT_COMMIT=${{ github.sha }}

@@ -45,6 +45,7 @@ import (
 	_ "github.com/rmitchellscott/stationmaster/internal/plugins/image_display"
 	_ "github.com/rmitchellscott/stationmaster/internal/plugins/redirect"
 	_ "github.com/rmitchellscott/stationmaster/internal/plugins/screenshot"
+	_ "github.com/rmitchellscott/stationmaster/internal/plugins/official"
 )
 
 //go:generate npm --prefix ui install

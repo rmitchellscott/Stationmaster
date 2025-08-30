@@ -99,6 +99,9 @@ RUN bundle config set --local deployment 'true' && \
 COPY scripts/ ./scripts/
 RUN chmod +x ./scripts/*.rb
 
+# Copy TRMNL plugins
+COPY trmnl-plugins/ ./trmnl-plugins/
+
 # Create data directory and setup for Chromium
 RUN mkdir -p /data /app/static/rendered \
     && addgroup -g 1000 -S appuser \

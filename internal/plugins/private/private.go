@@ -210,8 +210,26 @@ func (p *PrivatePlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespon
 			}
 		}
 	case dataStrategy != nil && *dataStrategy == "static":
-		// Static strategy uses only form fields and trmnl struct - no external data
-		// No additional data fetching needed here
+		// Static strategy: merge both static data (from plugin definition) and form field values (instance settings)
+		
+		// First, merge static data from plugin definition (SampleData)
+		if p.definition.SampleData != nil {
+			var staticData map[string]interface{}
+			if err := json.Unmarshal(p.definition.SampleData, &staticData); err == nil {
+				for key, value := range staticData {
+					templateData[key] = value
+				}
+				logging.Debug("[PRIVATE_PLUGIN] Merged static data from definition", "plugin_id", p.definition.ID, "keys", len(staticData))
+			} else {
+				logging.WarnWithComponent(logging.ComponentPlugins, "Failed to parse static data from plugin definition", "plugin_id", p.definition.ID, "error", err)
+			}
+		}
+		
+		// Then, merge form field values (instance settings) - these can override static data
+		for key, value := range formFieldValues {
+			templateData[key] = value
+		}
+		logging.Debug("[PRIVATE_PLUGIN] Merged form field values", "plugin_id", p.definition.ID, "instance_id", instanceID, "keys", len(formFieldValues))
 	}
 
 	// Create TRMNL data structure using shared builder

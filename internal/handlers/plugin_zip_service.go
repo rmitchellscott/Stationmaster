@@ -28,8 +28,9 @@ type TRMNLZipService struct {
 
 // NewTRMNLZipService creates a new ZIP service
 func NewTRMNLZipService() *TRMNLZipService {
+	exportService := NewTRMNLExportService()
 	return &TRMNLZipService{
-		exportService: NewTRMNLExportService(),
+		exportService: exportService,
 	}
 }
 

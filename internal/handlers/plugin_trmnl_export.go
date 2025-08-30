@@ -23,6 +23,19 @@ func (f *FlexibleStaticData) UnmarshalYAML(value *yaml.Node) error {
 		return nil
 	}
 	
+	// If it's a scalar string that's not empty, try to parse it as JSON (TRMNL format)
+	if value.Kind == yaml.ScalarNode && strings.TrimSpace(value.Value) != "" {
+		var data map[string]interface{}
+		if err := json.Unmarshal([]byte(value.Value), &data); err != nil {
+			// If JSON parsing fails, treat as empty
+			logging.Warn("Failed to parse static_data as JSON, treating as empty", "error", err)
+			f.Data = make(map[string]interface{})
+			return nil
+		}
+		f.Data = data
+		return nil
+	}
+	
 	// If it's a map, unmarshal normally
 	if value.Kind == yaml.MappingNode {
 		var data map[string]interface{}
@@ -33,9 +46,26 @@ func (f *FlexibleStaticData) UnmarshalYAML(value *yaml.Node) error {
 		return nil
 	}
 	
-	// For any other scalar, try to treat as empty
+	// For any other node type, treat as empty
 	f.Data = make(map[string]interface{})
 	return nil
+}
+
+// MarshalYAML implements custom YAML marshaling for FlexibleStaticData
+// Returns static data as a JSON string to match TRMNL's expected format
+func (f *FlexibleStaticData) MarshalYAML() (interface{}, error) {
+	// If Data is empty or nil, return empty string (TRMNL format)
+	if f.Data == nil || len(f.Data) == 0 {
+		return "", nil
+	}
+	
+	// Convert data to JSON string (TRMNL format expects JSON string, not direct YAML structure)
+	jsonBytes, err := json.Marshal(f.Data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal static data to JSON: %w", err)
+	}
+	
+	return string(jsonBytes), nil
 }
 
 // FlexibleHeaders can handle both empty string and map during YAML unmarshaling
@@ -207,7 +237,7 @@ type TRMNLSettings struct {
 	NoScreenPadding  string              `yaml:"no_screen_padding,omitempty"`
 	
 	// TRMNL data fields
-	StaticData       FlexibleStaticData  `yaml:"static_data,omitempty"`
+	StaticData       *FlexibleStaticData `yaml:"static_data,omitempty"`
 	
 	// Form fields (mapped from custom_fields)
 	CustomFields     []TRMNLFormField    `yaml:"custom_fields,omitempty"`
@@ -314,12 +344,17 @@ func (s *TRMNLExportService) ConvertToTRMNLSettings(def *database.PluginDefiniti
 
 	// Handle static data strategy
 	if settings.Strategy == "static" {
-		settings.StaticData.Data = make(map[string]interface{})
+		settings.StaticData = &FlexibleStaticData{
+			Data: make(map[string]interface{}),
+		}
+		
 		// Static data would come from form field defaults or sample data
 		if def.SampleData != nil {
 			var sampleData map[string]interface{}
 			if err := json.Unmarshal(def.SampleData, &sampleData); err == nil {
 				settings.StaticData.Data = sampleData
+			} else {
+				logging.Error("Failed to unmarshal SampleData", "error", err)
 			}
 		}
 	}
@@ -368,6 +403,22 @@ func (s *TRMNLExportService) ConvertToTRMNLSettings(def *database.PluginDefiniti
 // ConvertFromTRMNLSettings converts TRMNL settings to Stationmaster PluginDefinition fields
 func (s *TRMNLExportService) ConvertFromTRMNLSettings(settings *TRMNLSettings) (*database.PluginDefinition, error) {
 	logging.Info("[TRMNL IMPORT] Starting conversion from TRMNL settings", "plugin_name", settings.Name, "strategy", settings.Strategy)
+	
+	// Debug static data at entry point
+	logging.Debug("[TRMNL IMPORT] Static data at entry point", 
+		"has_static_data", settings.StaticData != nil && settings.StaticData.Data != nil,
+		"static_data_keys", func() int {
+			if settings.StaticData != nil && settings.StaticData.Data != nil {
+				return len(settings.StaticData.Data)
+			}
+			return 0
+		}(),
+		"static_data_raw", func() map[string]interface{} {
+			if settings.StaticData != nil {
+				return settings.StaticData.Data
+			}
+			return nil
+		}())
 	
 	def := &database.PluginDefinition{
 		Name:        settings.Name,
@@ -534,29 +585,18 @@ func (s *TRMNLExportService) ConvertFromTRMNLSettings(settings *TRMNLSettings) (
 			}
 			def.ConfigSchema = string(configSchemaJSON)
 			
-			logging.Info("[TRMNL IMPORT] Successfully converted form fields to both YAML and JSON schema", 
-				"field_count", len(filteredFields), "yaml_length", len(yamlString), "schema_length", len(configSchemaJSON))
-		} else {
-			logging.Info("[TRMNL IMPORT] No form fields to convert after filtering author_bio fields")
 		}
-	} else {
-		logging.Info("[TRMNL IMPORT] No form fields to convert")
 	}
 
 	// Handle static data
-	if settings.Strategy == "static" && settings.StaticData.Data != nil && len(settings.StaticData.Data) > 0 {
-		logging.Info("[TRMNL IMPORT] Processing static data", "data_keys", len(settings.StaticData.Data))
+	if settings.Strategy == "static" && settings.StaticData != nil && settings.StaticData.Data != nil && len(settings.StaticData.Data) > 0 {
 		
 		sampleDataJSON, err := json.Marshal(settings.StaticData.Data)
 		if err != nil {
-			logging.Error("[TRMNL IMPORT] Failed to marshal static data", "error", err, "data", settings.StaticData.Data)
 			return nil, fmt.Errorf("failed to marshal static data: %w", err)
 		}
 		def.SampleData = sampleDataJSON
-		logging.Info("[TRMNL IMPORT] Successfully processed static data")
 	}
-
-	logging.Info("[TRMNL IMPORT] Conversion completed successfully", "plugin_name", def.Name)
 	return def, nil
 }
 
@@ -909,30 +949,10 @@ func (s *TRMNLExportService) GenerateSettingsYAML(def *database.PluginDefinition
 
 // ParseSettingsYAML parses TRMNL settings.yml and returns a PluginDefinition
 func (s *TRMNLExportService) ParseSettingsYAML(yamlData []byte) (*database.PluginDefinition, error) {
-	logging.Info("[TRMNL IMPORT] Starting YAML parsing", "size", len(yamlData))
-	
-	// Log a snippet of the YAML for debugging (first 200 chars)
-	yamlSnippet := string(yamlData)
-	if len(yamlSnippet) > 200 {
-		yamlSnippet = yamlSnippet[:200] + "..."
-	}
-	logging.Info("[TRMNL IMPORT] YAML content snippet", "content", yamlSnippet)
-
 	var settings TRMNLSettings
 	if err := yaml.Unmarshal(yamlData, &settings); err != nil {
-		logging.Error("[TRMNL IMPORT] YAML unmarshaling failed", "error", err, "yaml_snippet", yamlSnippet)
 		return nil, fmt.Errorf("failed to unmarshal YAML - invalid YAML format: %w", err)
 	}
-
-	logging.Info("[TRMNL IMPORT] YAML parsed successfully", 
-		"name", settings.Name, 
-		"strategy", settings.Strategy,
-		"refresh_interval", settings.RefreshInterval,
-		"has_form_fields", len(settings.FormFields) > 0,
-		"has_url", settings.URL != "",
-		"has_headers", len(settings.Headers) > 0,
-		"dark_mode", settings.DarkMode,
-		"screen_padding", settings.ScreenPadding)
 
 	// Validate required fields
 	if settings.Name == "" {
@@ -980,11 +1000,8 @@ func (s *TRMNLExportService) ParseSettingsYAML(yamlData []byte) (*database.Plugi
 		}
 	}
 
-	logging.Info("[TRMNL IMPORT] YAML validation passed, starting conversion to PluginDefinition")
-	
 	result, err := s.ConvertFromTRMNLSettings(&settings)
 	if err != nil {
-		logging.Error("[TRMNL IMPORT] Conversion to PluginDefinition failed", "error", err)
 		return nil, fmt.Errorf("failed to convert TRMNL settings to plugin definition: %w", err)
 	}
 	

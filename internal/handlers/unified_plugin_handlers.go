@@ -752,6 +752,9 @@ func CreatePluginDefinitionHandler(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid sample data"})
 			return
 		}
+		logging.Debug("[CREATE_HANDLER] Received and marshalled sample data", "data", string(sampleDataJSON))
+	} else {
+		logging.Debug("[CREATE_HANDLER] No sample data received from UI")
 	}
 
 	db := database.GetDB()
@@ -787,6 +790,8 @@ func CreatePluginDefinitionHandler(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create plugin definition: " + err.Error()})
 		return
 	}
+
+	logging.Debug("[CREATE_HANDLER] Plugin definition created in database", "plugin_id", pluginDefinition.ID, "sample_data_size", len(pluginDefinition.SampleData))
 
 	c.JSON(http.StatusCreated, gin.H{"plugin_definition": pluginDefinition})
 }
@@ -872,6 +877,9 @@ func UpdatePluginDefinitionHandler(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid sample data"})
 			return
 		}
+		logging.Debug("[CREATE_HANDLER] Received and marshalled sample data", "data", string(sampleDataJSON))
+	} else {
+		logging.Debug("[CREATE_HANDLER] No sample data received from UI")
 	}
 
 	db := database.GetDB()

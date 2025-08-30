@@ -173,6 +173,9 @@ export function PrivatePluginCreator({
   const [formFieldsYAML, setFormFieldsYAML] = useState<string>('');
   const [formFieldsValid, setFormFieldsValid] = useState<boolean>(true);
   const [formFieldsErrors, setFormFieldsErrors] = useState<string[]>([]);
+  
+  // Static data state
+  const [staticDataJSON, setStaticDataJSON] = useState<string>('{}');
 
   // Helper function to convert headers to TRMNL string format
   const convertHeadersToString = (headers: any): string => {
@@ -203,6 +206,9 @@ export function PrivatePluginCreator({
       if (plugin.form_fields?.yaml) {
         setFormFieldsYAML(plugin.form_fields.yaml);
       }
+      if (plugin.sample_data) {
+        setStaticDataJSON(JSON.stringify(plugin.sample_data, null, 2));
+      }
     } else {
       // Reset form for new plugin
       setFormData({
@@ -220,6 +226,7 @@ export function PrivatePluginCreator({
       setFormFieldsYAML('');
       setFormFieldsErrors([]);
       setFormFieldsValid(true);
+      setStaticDataJSON('{}');
     }
   }, [plugin]);
 
@@ -354,6 +361,21 @@ export function PrivatePluginCreator({
         };
       } else {
         submitData.form_fields = null;
+      }
+
+      // Include static data if provided (for static data strategy)
+      const trimmedStaticJSON = staticDataJSON.trim();
+      if (trimmedStaticJSON && trimmedStaticJSON !== '{}') {
+        try {
+          const parsedStaticData = JSON.parse(trimmedStaticJSON);
+          submitData.sample_data = parsedStaticData;
+          console.log('[UI] Submitting static data:', parsedStaticData);
+        } catch (e) {
+          throw new Error(`Invalid JSON in Static Data field: ${e.message}`);
+        }
+      } else {
+        submitData.sample_data = null;
+        console.log('[UI] No static data provided, setting to null');
       }
 
       onSave(submitData);
@@ -760,6 +782,33 @@ export function PrivatePluginCreator({
               setFormFieldsErrors(errors);
             }}
           />
+        </div>
+
+        {/* Static Data */}
+        <div className="space-y-4">
+          <h3 className="text-lg font-semibold flex items-center gap-2">
+            <Database className="h-4 w-4" />
+            Static Data
+          </h3>
+          <p className="text-sm text-muted-foreground">
+            Define static data as JSON that will be available in your templates. 
+            This is separate from form fields and contains fixed data for your plugin.
+          </p>
+          
+          <div className="space-y-2">
+            <Label htmlFor="static-data">Static Data (JSON)</Label>
+            <Textarea
+              id="static-data"
+              value={staticDataJSON}
+              onChange={(e) => setStaticDataJSON(e.target.value)}
+              placeholder='{\n  "facts": [\n    "Sample fact 1",\n    "Sample fact 2"\n  ],\n  "config": {\n    "title": "My Plugin"\n  }\n}'
+              rows={8}
+              className="font-mono text-sm"
+            />
+            <p className="text-xs text-muted-foreground">
+              Provide JSON data that will be merged with form field values in your templates.
+            </p>
+          </div>
         </div>
       </div>
 

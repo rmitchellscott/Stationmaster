@@ -42,10 +42,10 @@ import (
 	// Plugin imports for auto-registration
 	_ "github.com/rmitchellscott/stationmaster/internal/plugins/alias"
 	_ "github.com/rmitchellscott/stationmaster/internal/plugins/core_proxy"
+	_ "github.com/rmitchellscott/stationmaster/internal/plugins/external"  // Register external plugin factory
 	_ "github.com/rmitchellscott/stationmaster/internal/plugins/image_display"
 	_ "github.com/rmitchellscott/stationmaster/internal/plugins/redirect"
 	_ "github.com/rmitchellscott/stationmaster/internal/plugins/screenshot"
-	_ "github.com/rmitchellscott/stationmaster/internal/plugins/official"
 )
 
 //go:generate npm --prefix ui install
@@ -129,6 +129,19 @@ func main() {
 	
 	// Initialize plugin factory
 	plugins.InitPluginFactory(db)
+	
+	// Initialize external plugin scanner
+	pluginScanner := plugins.NewPluginScannerService(db)
+	
+	// Perform initial plugin scan
+	scanCtx, scanCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	if err := pluginScanner.ScanAndRegisterPlugins(scanCtx); err != nil {
+		logging.WarnWithComponent(logging.ComponentStartup, "Initial external plugin scan failed", "error", err)
+	}
+	scanCancel()
+	
+	// Start periodic plugin scanning (every 5 minutes)
+	pluginScanner.StartPeriodicScanning(5 * time.Minute)
 	
 	// Initialize plugin processor with database
 	if err := trmnl.InitPluginProcessor(db); err != nil {

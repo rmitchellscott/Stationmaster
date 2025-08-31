@@ -3,6 +3,7 @@ package private
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/rmitchellscott/stationmaster/internal/rendering"
 )
@@ -26,20 +27,24 @@ type RenderOptions struct {
 
 // PrivatePluginRenderer handles HTML generation for private plugins
 type PrivatePluginRenderer struct {
-	baseRenderer     *rendering.BaseHTMLRenderer
-	rubyRenderer     *rendering.RubyLiquidRenderer
+	baseRenderer    *rendering.BaseHTMLRenderer
+	unifiedRenderer *rendering.UnifiedRenderer
 }
 
 // NewPrivatePluginRenderer creates a new private plugin renderer
 func NewPrivatePluginRenderer(appDir string) (*PrivatePluginRenderer, error) {
-	rubyRenderer, err := rendering.NewRubyLiquidRenderer(appDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize Ruby renderer (required for private plugins): %w", err)
+	// Check if external Ruby service is available
+	unifiedRenderer := rendering.NewUnifiedRenderer()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	
+	if !unifiedRenderer.IsServiceAvailable(ctx) {
+		return nil, fmt.Errorf("external Ruby service is not available - required for private plugins")
 	}
 	
 	return &PrivatePluginRenderer{
-		baseRenderer: rendering.NewBaseHTMLRenderer(),
-		rubyRenderer: rubyRenderer,
+		baseRenderer:    rendering.NewBaseHTMLRenderer(),
+		unifiedRenderer: unifiedRenderer,
 	}, nil
 }
 
@@ -58,11 +63,10 @@ func getLayoutMashupInfo(layout string) (string, string) {
 }
 
 
-// RenderToServerSideHTML generates HTML using Ruby server-side liquid rendering
+// RenderToServerSideHTML generates HTML using external Ruby service
 func (r *PrivatePluginRenderer) RenderToServerSideHTML(ctx context.Context, opts RenderOptions) (string, error) {
-	
-	// Convert private plugin render options to Ruby renderer options
-	rubyOpts := rendering.PluginRenderOptions{
+	// Convert private plugin render options to unified renderer options
+	unifiedOpts := rendering.PluginRenderOptions{
 		SharedMarkup:      opts.SharedMarkup,
 		LayoutTemplate:    opts.LayoutTemplate,
 		Data:              opts.Data,
@@ -78,7 +82,7 @@ func (r *PrivatePluginRenderer) RenderToServerSideHTML(ctx context.Context, opts
 		LayoutHeight:      opts.LayoutHeight,
 	}
 	
-	return r.rubyRenderer.RenderToHTML(ctx, rubyOpts)
+	return r.unifiedRenderer.RenderToHTML(ctx, unifiedOpts)
 }
 
 

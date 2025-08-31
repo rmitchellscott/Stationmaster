@@ -347,14 +347,14 @@ func (s *Schedule) BeforeCreate(tx *gorm.DB) error {
 	return nil
 }
 
-// PluginDefinition represents a unified plugin definition (system, private, public, or mashup)
+// PluginDefinition represents a unified plugin definition (system, private, public, mashup, or external)
 type PluginDefinition struct {
-	ID         string     `gorm:"size:255;primaryKey" json:"id"`        // Plugin type for system plugins, UUID string for private/public
-	PluginType string     `gorm:"size:20;not null" json:"plugin_type"` // "system", "private", "public", "mashup"
-	OwnerID    *uuid.UUID `gorm:"type:uuid;index" json:"owner_id"`     // NULL for system plugins, user_id for private/public
+	ID         string     `gorm:"size:255;primaryKey" json:"id"`        // Plugin type for system/external plugins, UUID string for private/public
+	PluginType string     `gorm:"size:20;not null" json:"plugin_type"` // "system", "private", "public", "mashup", "external"
+	OwnerID    *uuid.UUID `gorm:"type:uuid;index" json:"owner_id"`     // NULL for system/external plugins, user_id for private/public
 	
 	// Core fields
-	Identifier         string `gorm:"size:255;not null" json:"identifier"`          // Type string for system, UUID for private
+	Identifier         string `gorm:"size:255;not null" json:"identifier"`          // Type string for system/external, UUID for private
 	Name              string `gorm:"size:255;not null" json:"name"`
 	Description       string `gorm:"type:text" json:"description"`
 	Version           string `gorm:"size:50" json:"version"`

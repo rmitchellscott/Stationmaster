@@ -379,16 +379,8 @@ func (p *MashupPlugin) renderMashupParallel(layout string, childData map[string]
 				return
 			}
 			
-			// Create Ruby renderer for this slot (each goroutine gets its own)
-			rubyRenderer, err := rendering.NewRubyLiquidRenderer(".")
-			if err != nil {
-				resultChan <- slotResult{
-					position: slotInfo.Position,
-					html:     "",
-					err:      fmt.Errorf("failed to create Ruby renderer for slot %s: %w", slotInfo.Position, err),
-				}
-				return
-			}
+			// Create unified renderer for this slot (each goroutine gets its own)
+			unifiedRenderer := rendering.NewUnifiedRenderer()
 			
 			// Get shared markup for this child plugin (same as private plugins do)
 			var sharedMarkup string
@@ -410,7 +402,7 @@ func (p *MashupPlugin) renderMashupParallel(layout string, childData map[string]
 				EnableDarkMode:    false,
 			}
 			
-			slotHTML, err := rubyRenderer.ProcessTemplate(context.Background(), renderOptions)
+			slotHTML, err := unifiedRenderer.ProcessTemplate(context.Background(), renderOptions)
 			if err != nil {
 				resultChan <- slotResult{
 					position: slotInfo.Position,

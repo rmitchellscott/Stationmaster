@@ -95,12 +95,10 @@ RUN bundle config set --local deployment 'true' && \
     bundle config set --local path 'vendor/bundle' && \
     bundle check || bundle install --local
 
-# Copy Ruby scripts
-COPY scripts/ ./scripts/
-RUN chmod +x ./scripts/*.rb
-
-# Copy TRMNL plugins
-COPY trmnl-plugins/ ./trmnl-plugins/
+# Ruby scripts and TRMNL plugins now handled by external Ruby service
+# COPY scripts/ ./scripts/
+# RUN chmod +x ./scripts/*.rb
+# COPY trmnl-plugins/ ./trmnl-plugins/
 
 # Create data directory and setup for Chromium
 RUN mkdir -p /data /app/static/rendered \

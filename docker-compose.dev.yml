@@ -1,0 +1,89 @@
+version: '3.8'
+services:
+
+  stationmaster:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: "postgres://postgres:postgres@postgres:5432/stationmaster"
+      EXTERNAL_PLUGIN_SERVICES: "http://stationmaster-plugins:3000"
+      BROWSERLESS_URL: "http://browserless:3000"
+      GO_ENV: development
+      LOG_LEVEL: BROWSERLESS
+      ALLOW_INSECURE: true
+      ADMIN_USERNAME: mitchell
+      ADMIN_PASSWORD: password
+      ADMIN_EMAIL: mitchell@example.com
+      DB_TYPE: postgres
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${POSTGRES_USER:-stationmaster}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-stationmaster_password}
+      DB_NAME: ${POSTGRES_DB:-stationmaster}
+      DB_SSLMODE: disable
+    # No volumes needed for production build
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      stationmaster-plugins:
+        condition: service_started
+      browserless:
+        condition: service_started
+    command: ["./stationmaster"]
+
+  stationmaster-plugins:
+    build: 
+      context: ../stationmaster-plugins
+      dockerfile: Dockerfile.dev
+    environment:
+      RAILS_ENV: development
+      RAILS_LOG_TO_STDOUT: "true"
+    volumes:
+      - ../stationmaster-plugins:/app
+      - /app/tmp
+      - /app/log
+    ports:
+      - "3000:3000"
+    # Removed database dependency - service is now stateless
+    command: ["rails", "server", "-b", "0.0.0.0"]
+
+  browserless:
+    image: ghcr.io/browserless/chromium:latest
+    container_name: stationmaster-browserless
+    restart: unless-stopped
+    environment:
+      - CONCURRENT=2
+      - MAX_QUEUE_LENGTH=10
+      - TIMEOUT=30000
+      - DEBUG=browserless:*
+      - TZ=UTC
+    ports:
+      - "3001:3000"
+    networks:
+      - default
+
+  # PostgreSQL database for performance
+  postgres:
+    image: postgres:16-alpine
+    container_name: stationmaster-db
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-stationmaster}
+      - POSTGRES_USER=${POSTGRES_USER:-stationmaster}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-stationmaster_password}
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-stationmaster} -d ${POSTGRES_DB:-stationmaster}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:

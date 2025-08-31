@@ -1463,24 +1463,7 @@ func ImportPluginDefinitionHandler(c *gin.Context) {
 		return
 	}
 
-	// Validate templates
-	validator := validation.NewTemplateValidator()
-	validationResult := validator.ValidateAllTemplates(
-		safeStringValue(def.MarkupFull),
-		safeStringValue(def.MarkupHalfVert),
-		safeStringValue(def.MarkupHalfHoriz),
-		safeStringValue(def.MarkupQuadrant),
-		safeStringValue(def.SharedMarkup),
-	)
-
-	if !validationResult.Valid {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Template validation failed",
-			"validation_errors": validationResult.Errors,
-			"validation_warnings": validationResult.Warnings,
-		})
-		return
-	}
+	// Template validation removed to match manual plugin creation behavior
 
 	// Set ownership
 	def.OwnerID = &user.ID

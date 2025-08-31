@@ -64,8 +64,13 @@ func (h *HTMLAssetsManager) GenerateSharedJavaScript() string {
                 document.body.appendChild(newScript);
             });
             
-            // Don't dispatch DOMContentLoaded again to prevent infinite loop
-            console.log('Inner script execution completed - skipping DOMContentLoaded dispatch to prevent loop');
+            // CRITICAL: Handle DOMContentLoaded timing issue (from main branch)
+            // Since DOM was already loaded when our scripts executed, any DOMContentLoaded 
+            // event listeners in the template scripts never fired. Dispatch the event manually.
+            setTimeout(() => {
+                console.log('Dispatching DOMContentLoaded event for template scripts');
+                document.dispatchEvent(new Event('DOMContentLoaded'));
+            }, 50);
         }
         
         window.loadTRNMLScriptsSequentially = function(callback) {

@@ -71,9 +71,11 @@ func (s *ExternalRubyService) RenderTemplate(ctx context.Context, template strin
 
 	// Parse response
 	var renderResponse struct {
-		Success      bool   `json:"success"`
-		RenderedHTML string `json:"rendered_html"`
-		Error        string `json:"error"`
+		Success bool `json:"success"`
+		Data    struct {
+			RenderedHTML string `json:"rendered_html"`
+		} `json:"data"`
+		Error   string `json:"error"`
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&renderResponse); err != nil {
@@ -84,7 +86,7 @@ func (s *ExternalRubyService) RenderTemplate(ctx context.Context, template strin
 		return "", fmt.Errorf("template rendering failed: %s", renderResponse.Error)
 	}
 
-	return renderResponse.RenderedHTML, nil
+	return renderResponse.Data.RenderedHTML, nil
 }
 
 // ValidateTemplate validates a Liquid template using the external Ruby service

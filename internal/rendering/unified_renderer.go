@@ -131,23 +131,12 @@ func (r *UnifiedRenderer) generateHTMLStructure(content string, opts PluginRende
 		screenClassStr += class
 	}
 
-	// Check if content already has view class
-	hasViewClass := strings.Contains(content, "class=\"view")
-
-	var wrappedContent string
-	if hasViewClass {
-		// Content already has view class, just wrap with environment and screen
-		wrappedContent = fmt.Sprintf(`<div id="plugin-%s" class="environment trmnl">
-			<div class="%s">%s</div>
-		</div>`, opts.InstanceID, screenClassStr, content)
-	} else {
-		// Content needs view wrapper
-		wrappedContent = fmt.Sprintf(`<div id="plugin-%s" class="environment trmnl">
-			<div class="%s">
-				<div class="view view--full">%s</div>
-			</div>
-		</div>`, opts.InstanceID, screenClassStr, content)
-	}
+	// Always wrap content with view wrapper for consistent structure
+	wrappedContent := fmt.Sprintf(`<div id="plugin-%s" class="environment trmnl">
+		<div class="%s">
+			<div class="view view--full">%s</div>
+		</div>
+	</div>`, opts.InstanceID, screenClassStr, content)
 
 	return wrappedContent
 }

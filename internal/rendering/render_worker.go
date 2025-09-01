@@ -257,6 +257,12 @@ func (w *RenderWorker) renderForDevice(ctx context.Context, pluginInstance datab
 		if err != nil {
 			return fmt.Errorf("failed to create mashup plugin: %w", err)
 		}
+	} else if pluginInstance.PluginDefinition.PluginType == "external" {
+		// Use external plugin factory
+		plugin, err = w.factory.CreatePlugin(&pluginInstance.PluginDefinition, &pluginInstance)
+		if err != nil {
+			return fmt.Errorf("failed to create external plugin: %w", err)
+		}
 	} else {
 		return fmt.Errorf("unknown plugin type: %s", pluginInstance.PluginDefinition.PluginType)
 	}
@@ -305,9 +311,9 @@ func (w *RenderWorker) renderForDevice(ctx context.Context, pluginInstance datab
 		if imageData, ok := plugins.GetImageData(response); ok {
 			var processedImageData []byte
 
-			// For private plugins, mashups, and system plugins that render via browserless, we need to process the image to correct bit depth
-			if pluginInstance.PluginDefinition.PluginType == "private" || pluginInstance.PluginDefinition.PluginType == "mashup" || 
-			   (pluginInstance.PluginDefinition.PluginType == "system" && plugin.RequiresProcessing()) {
+			// For private plugins, external plugins, mashups, and system plugins that render via browserless, we need to process the image to correct bit depth
+			if pluginInstance.PluginDefinition.PluginType == "private" || pluginInstance.PluginDefinition.PluginType == "external" || 
+			   pluginInstance.PluginDefinition.PluginType == "mashup" || (pluginInstance.PluginDefinition.PluginType == "system" && plugin.RequiresProcessing()) {
 				// Decode the raw PNG image from browserless
 				img, _, err := image.Decode(bytes.NewReader(imageData))
 				if err != nil {
@@ -515,6 +521,9 @@ func (w *RenderWorker) scheduleNextRenderWithOptions(ctx context.Context, plugin
 		requiresProcessing = plugin.RequiresProcessing()
 	} else if pluginInstance.PluginDefinition.PluginType == "mashup" {
 		// Mashup plugins always require processing (they generate HTML from children)
+		requiresProcessing = true
+	} else if pluginInstance.PluginDefinition.PluginType == "external" {
+		// External plugins always require processing (they generate HTML from external service)
 		requiresProcessing = true
 	} else {
 		// Unknown plugin type

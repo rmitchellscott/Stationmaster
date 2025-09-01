@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -267,6 +270,17 @@ type ChildData struct {
 
 // getTemplateMarkupForSlot returns the appropriate template markup based on slot position and layout
 func (p *MashupPlugin) getTemplateMarkupForSlot(layout string, slotPosition string, definition *database.PluginDefinition) string {
+	// Check if this is an external plugin by looking at the plugin type
+	isExternalPlugin := definition.PluginType == "external"
+	
+	if isExternalPlugin {
+		// For external plugins, we need to indicate this is an external plugin
+		// The actual rendering will be handled by calling the Ruby service
+		// Return a special marker that the mashup rendering can detect
+		return "EXTERNAL_PLUGIN"
+	}
+	
+	// For private plugins, use the existing logic
 	// Map slot positions to template types based on their ViewClass from slot metadata
 	templateType := p.getTemplateTypeForSlot(layout, slotPosition)
 	
@@ -379,37 +393,54 @@ func (p *MashupPlugin) renderMashupParallel(layout string, childData map[string]
 				return
 			}
 			
-			// Create unified renderer for this slot (each goroutine gets its own)
-			unifiedRenderer := rendering.NewUnifiedRenderer()
+			var slotHTML string
+			var err error
 			
-			// Get shared markup for this child plugin (same as private plugins do)
-			var sharedMarkup string
-			if childInfo.Instance != nil && childInfo.Instance.PluginDefinition.SharedMarkup != nil {
-				sharedMarkup = *childInfo.Instance.PluginDefinition.SharedMarkup
-			}
-			
-			// Render this slot's template with its isolated data context (same as private plugins)
-			renderOptions := rendering.PluginRenderOptions{
-				SharedMarkup:      sharedMarkup, // Include shared markup like private plugins!
-				LayoutTemplate:    childInfo.Template,
-				Data:              childInfo.Data, // Isolated data - no variable collisions!
-				Width:             ctx.Device.DeviceModel.ScreenWidth,
-				Height:            ctx.Device.DeviceModel.ScreenHeight,
-				PluginName:        fmt.Sprintf("%s (slot: %s)", p.Name(), slotInfo.Position),
-				InstanceID:        fmt.Sprintf("%s-%s", p.instance.ID.String(), slotInfo.Position),
-				InstanceName:      fmt.Sprintf("%s-%s", p.Name(), slotInfo.Position),
-				RemoveBleedMargin: false,
-				EnableDarkMode:    false,
-			}
-			
-			slotHTML, err := unifiedRenderer.ProcessTemplate(context.Background(), renderOptions)
-			if err != nil {
-				resultChan <- slotResult{
-					position: slotInfo.Position,
-					html:     "",
-					err:      fmt.Errorf("failed to render slot %s: %w", slotInfo.Position, err),
+			// Check if this is an external plugin slot
+			if childInfo.Template == "EXTERNAL_PLUGIN" {
+				// For external plugins, fetch rendered HTML from Ruby service
+				slotHTML, err = p.fetchExternalPluginSlotHTML(childInfo, slotInfo, ctx)
+				if err != nil {
+					resultChan <- slotResult{
+						position: slotInfo.Position,
+						html:     "",
+						err:      fmt.Errorf("failed to render external plugin slot %s: %w", slotInfo.Position, err),
+					}
+					return
 				}
-				return
+			} else {
+				// For private plugins, use unified renderer (existing logic)
+				unifiedRenderer := rendering.NewUnifiedRenderer()
+				
+				// Get shared markup for this child plugin (same as private plugins do)
+				var sharedMarkup string
+				if childInfo.Instance != nil && childInfo.Instance.PluginDefinition.SharedMarkup != nil {
+					sharedMarkup = *childInfo.Instance.PluginDefinition.SharedMarkup
+				}
+				
+				// Render this slot's template with its isolated data context (same as private plugins)
+				renderOptions := rendering.PluginRenderOptions{
+					SharedMarkup:      sharedMarkup, // Include shared markup like private plugins!
+					LayoutTemplate:    childInfo.Template,
+					Data:              childInfo.Data, // Isolated data - no variable collisions!
+					Width:             ctx.Device.DeviceModel.ScreenWidth,
+					Height:            ctx.Device.DeviceModel.ScreenHeight,
+					PluginName:        fmt.Sprintf("%s (slot: %s)", p.Name(), slotInfo.Position),
+					InstanceID:        fmt.Sprintf("%s-%s", p.instance.ID.String(), slotInfo.Position),
+					InstanceName:      fmt.Sprintf("%s-%s", p.Name(), slotInfo.Position),
+					RemoveBleedMargin: false,
+					EnableDarkMode:    false,
+				}
+				
+				slotHTML, err = unifiedRenderer.ProcessTemplate(context.Background(), renderOptions)
+				if err != nil {
+					resultChan <- slotResult{
+						position: slotInfo.Position,
+						html:     "",
+						err:      fmt.Errorf("failed to render private plugin slot %s: %w", slotInfo.Position, err),
+					}
+					return
+				}
 			}
 			
 			resultChan <- slotResult{
@@ -479,6 +510,107 @@ func (p *MashupPlugin) buildMashupHTML(layout string, renderedSlots map[string]s
 		false, // removeBleedMargin - TODO: Make configurable if needed
 		false, // enableDarkMode - TODO: Make configurable if needed
 	)
+}
+
+// fetchExternalPluginSlotHTML fetches rendered HTML from Ruby service for external plugin slots in mashup
+func (p *MashupPlugin) fetchExternalPluginSlotHTML(childInfo ChildData, slotInfo database.MashupSlotInfo, ctx plugins.PluginContext) (string, error) {
+	// Get service URL (same as external plugin)
+	serviceURL := os.Getenv("EXTERNAL_PLUGIN_SERVICES")
+	if serviceURL == "" {
+		serviceURL = "http://stationmaster-plugins:3000"
+	}
+	
+	// Get plugin identifier from definition
+	pluginIdentifier := childInfo.Instance.PluginDefinition.Identifier
+	
+	// Build URL for plugin execution
+	url := fmt.Sprintf("%s/api/plugins/%s/execute", serviceURL, pluginIdentifier)
+	
+	// Create HTTP client with timeout
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+	}
+	
+	// Parse settings from child instance
+	var formFieldValues map[string]interface{}
+	if childInfo.Instance.Settings != nil {
+		if err := json.Unmarshal(childInfo.Instance.Settings, &formFieldValues); err != nil {
+			formFieldValues = make(map[string]interface{})
+		}
+	} else {
+		formFieldValues = make(map[string]interface{})
+	}
+	
+	// Determine layout based on slot template type
+	layout := p.getLayoutForSlot(slotInfo.Position, &childInfo.Instance.PluginDefinition)
+	
+	// Create TRMNL data structure using shared builder
+	trmnlBuilder := rendering.NewTRNMLDataBuilder()
+	trmnlData := trmnlBuilder.BuildTRNMLData(ctx, childInfo.Instance, formFieldValues)
+	
+	// Prepare POST request with settings and layout info
+	requestBody := map[string]interface{}{
+		"settings": formFieldValues,
+		"layout":   layout,
+		"trmnl":    trmnlData,
+	}
+	
+	jsonData, err := json.Marshal(requestBody)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request body: %w", err)
+	}
+	
+	// Create POST request
+	req, err := http.NewRequest("POST", url, strings.NewReader(string(jsonData)))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	
+	// Execute request
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("HTTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("plugin service returned status %d", resp.StatusCode)
+	}
+	
+	// Read response as plain text (HTML)
+	var buf strings.Builder
+	_, err = io.Copy(&buf, resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response body: %w", err)
+	}
+	
+	html := buf.String()
+	logging.Debug("[MASHUP] Fetched rendered HTML for external plugin slot", 
+		"plugin", pluginIdentifier, 
+		"slot", slotInfo.Position,
+		"layout", layout,
+		"html_length", len(html))
+	
+	return html, nil
+}
+
+// getLayoutForSlot maps slot position to the appropriate layout name for external plugins
+func (p *MashupPlugin) getLayoutForSlot(slotPosition string, definition *database.PluginDefinition) string {
+	// Get the template type that would be used for this slot
+	templateType := p.getTemplateTypeForSlot(*p.definition.MashupLayout, slotPosition)
+	
+	// Map template types to layout names that the Ruby service expects
+	switch templateType {
+	case "half_vertical":
+		return "half_vertical"
+	case "half_horizontal":
+		return "half_horizontal"  
+	case "quadrant":
+		return "quadrant"
+	default:
+		return "full" // fallback
+	}
 }
 
 // getMapKeys returns the keys of a map for debugging purposes

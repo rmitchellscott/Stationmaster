@@ -115,7 +115,12 @@ export function AddPluginPage() {
 
     // Filter by type
     if (selectedType !== 'all') {
-      filtered = filtered.filter(plugin => plugin.type === selectedType);
+      if (selectedType === 'system') {
+        // Include both system and external plugins in "Native" category
+        filtered = filtered.filter(plugin => plugin.type === 'system' || plugin.type === 'external');
+      } else {
+        filtered = filtered.filter(plugin => plugin.type === selectedType);
+      }
     }
 
     // Filter by search query
@@ -362,7 +367,7 @@ export function AddPluginPage() {
   }, [expandedPlugin]);
 
   const getPluginTypeBadge = (type: string) => {
-    if (type === 'system') {
+    if (type === 'system' || type === 'external') {
       return <Badge variant="outline">Native</Badge>;
     }
     return <Badge variant="outline">Private</Badge>;

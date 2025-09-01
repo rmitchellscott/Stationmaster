@@ -1,6 +1,10 @@
 package rendering
 
-import "fmt"
+import (
+	"fmt"
+	"html/template"
+	"strings"
+)
 
 // HTMLAssetsManager handles shared HTML generation for all plugin types
 type HTMLAssetsManager struct{}
@@ -253,34 +257,34 @@ func (h *HTMLAssetsManager) GenerateCompleteHTMLDocument(opts HTMLDocumentOption
         }
         %s`, opts.Width, opts.Height, opts.AdditionalCSS)
 	
-	return fmt.Sprintf(`<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>%s</title>
-    %s
-    <style>%s</style>
-</head>
-<body>
-    <div id="loading">Loading...</div>
-    <div id="output">%s</div>
-    
-    <script>
-        %s
-        %s
-        %s
-    </script>
-</body>
-</html>`, 
-		opts.Title,
-		h.GenerateTRNMLHeadScripts(),
-		additionalStyles,
-		opts.Content,
-		h.GenerateSharedJavaScript(),
-		h.GenerateServerSideInitializationJS(),
-		opts.AdditionalJS,
-	)
+	// Use string concatenation instead of fmt.Sprintf to avoid escaping issues with JavaScript content
+	// The opts.Content may contain complete HTML with <script> tags and regex patterns that get mangled by fmt.Sprintf
+	var htmlBuilder strings.Builder
+	
+	htmlBuilder.WriteString("<!DOCTYPE html>\n<html>\n<head>\n")
+	htmlBuilder.WriteString("    <meta charset=\"utf-8\">\n")
+	htmlBuilder.WriteString("    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n")
+	htmlBuilder.WriteString("    <title>")
+	htmlBuilder.WriteString(template.HTMLEscapeString(opts.Title))
+	htmlBuilder.WriteString("</title>\n")
+	htmlBuilder.WriteString("    ")
+	htmlBuilder.WriteString(h.GenerateTRNMLHeadScripts())
+	htmlBuilder.WriteString("\n    <style>")
+	htmlBuilder.WriteString(additionalStyles)
+	htmlBuilder.WriteString("</style>\n</head>\n<body>\n")
+	htmlBuilder.WriteString("    <div id=\"loading\">Loading...</div>\n")
+	htmlBuilder.WriteString("    <div id=\"output\">")
+	// Don't escape opts.Content - it may contain complete HTML with <script> tags that should be preserved as-is
+	htmlBuilder.WriteString(opts.Content)
+	htmlBuilder.WriteString("</div>\n    \n    <script>\n        ")
+	htmlBuilder.WriteString(h.GenerateSharedJavaScript())
+	htmlBuilder.WriteString("\n        ")
+	htmlBuilder.WriteString(h.GenerateServerSideInitializationJS())
+	htmlBuilder.WriteString("\n        ")
+	htmlBuilder.WriteString(opts.AdditionalJS)
+	htmlBuilder.WriteString("\n    </script>\n</body>\n</html>")
+	
+	return htmlBuilder.String()
 }
 
 // WrapWithTRNMLAssets takes processed content and wraps it with complete TRMNL HTML document

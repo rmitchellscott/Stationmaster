@@ -4,12 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/rmitchellscott/stationmaster/internal/database"
 	"github.com/rmitchellscott/stationmaster/internal/logging"
+	"github.com/rmitchellscott/stationmaster/internal/validation"
 	"github.com/rmitchellscott/stationmaster/internal/plugins"
 	"github.com/rmitchellscott/stationmaster/internal/rendering"
 )
@@ -76,12 +79,26 @@ func (p *ExternalPlugin) RequiresProcessing() bool {
 // ConfigSchema returns the JSON schema for form fields
 func (p *ExternalPlugin) ConfigSchema() string {
 	if p.definition.FormFields != nil {
-		return string(p.definition.FormFields)
+		// Parse the FormFields JSON and convert YAML to JSON schema
+		var formFieldsData interface{}
+		if err := json.Unmarshal(p.definition.FormFields, &formFieldsData); err != nil {
+			logging.Debug("[EXTERNAL_PLUGIN] Failed to parse FormFields JSON", "plugin", p.definition.Identifier, "error", err)
+			return `{"type": "object", "properties": {}}`
+		}
+		
+		// Use the validation function to convert YAML form fields to JSON schema
+		jsonSchema, err := validation.ValidateFormFields(formFieldsData)
+		if err != nil {
+			logging.Debug("[EXTERNAL_PLUGIN] Failed to convert form fields to JSON schema", "plugin", p.definition.Identifier, "error", err)
+			return `{"type": "object", "properties": {}}`
+		}
+		
+		return jsonSchema
 	}
 	return `{"type": "object", "properties": {}}`
 }
 
-// Process executes the plugin logic - fetches data via HTTP and renders with stored templates
+// Process executes the plugin logic - fetches fully rendered HTML from Ruby service
 func (p *ExternalPlugin) Process(ctx plugins.PluginContext) (plugins.PluginResponse, error) {
 	// Validate device model information
 	if ctx.Device == nil || ctx.Device.DeviceModel == nil {
@@ -89,24 +106,6 @@ func (p *ExternalPlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespo
 			fmt.Errorf("device model is required for external plugin processing")
 	}
 	
-	// Get the stored template from the definition
-	if p.definition.MarkupFull == nil || *p.definition.MarkupFull == "" {
-		return plugins.CreateErrorResponse("No template defined for external plugin"),
-			fmt.Errorf("markup_full is empty for external plugin %s", p.definition.ID)
-	}
-	
-	// Get plugin instance ID for the wrapper
-	instanceID := "unknown"
-	if p.instance != nil {
-		instanceID = p.instance.ID.String()
-	}
-	
-	// Get shared markup if available
-	sharedMarkup := ""
-	if p.definition.SharedMarkup != nil {
-		sharedMarkup = *p.definition.SharedMarkup
-	}
-
 	// Parse form field values from instance settings
 	var formFieldValues map[string]interface{}
 	if p.instance != nil && p.instance.Settings != nil {
@@ -117,49 +116,35 @@ func (p *ExternalPlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespo
 		formFieldValues = make(map[string]interface{})
 	}
 
-	// Fetch data from external plugin service
-	templateData, err := p.fetchPluginData(formFieldValues)
+	// For standalone external plugins, use "full" layout
+	layout := "full"
+	
+	// Fetch processed HTML from Ruby service (includes plugin execution + ERB rendering)
+	processedContent, err := p.fetchRenderedHTML(formFieldValues, layout, ctx)
 	if err != nil {
-		return plugins.CreateErrorResponse(fmt.Sprintf("Failed to fetch plugin data: %v", err)),
-			fmt.Errorf("failed to fetch data for external plugin %s: %w", p.definition.ID, err)
-	}
-
-	// Create TRMNL data structure using shared builder
-	trmnlBuilder := rendering.NewTRNMLDataBuilder()
-	trmnlData := trmnlBuilder.BuildTRNMLData(ctx, p.instance, formFieldValues)
-	
-	templateData["trmnl"] = trmnlData
-	
-	// Get screen options from definition, defaulting to false if nil
-	removeBleedMargin := false
-	if p.definition.RemoveBleedMargin != nil {
-		removeBleedMargin = *p.definition.RemoveBleedMargin
-	}
-	enableDarkMode := false
-	if p.definition.EnableDarkMode != nil {
-		enableDarkMode = *p.definition.EnableDarkMode
+		return plugins.CreateErrorResponse(fmt.Sprintf("Failed to fetch rendered HTML: %v", err)),
+			fmt.Errorf("failed to fetch rendered HTML for external plugin %s: %w", p.definition.ID, err)
 	}
 	
-	// Render template using unified renderer
-	unifiedRenderer := rendering.NewUnifiedRenderer()
-	renderOptions := rendering.PluginRenderOptions{
-		SharedMarkup:      sharedMarkup,
-		LayoutTemplate:    *p.definition.MarkupFull,
-		Data:              templateData,
-		Width:             ctx.Device.DeviceModel.ScreenWidth,
-		Height:            ctx.Device.DeviceModel.ScreenHeight,
-		PluginName:        p.definition.Name,
-		InstanceID:        instanceID,
-		InstanceName:      p.Name(),
-		RemoveBleedMargin: removeBleedMargin,
-		EnableDarkMode:    enableDarkMode,
-	}
+	// Wrap content with same structure as private plugins get from generateHTMLStructure()
+	// This provides the .environment.trmnl and .screen wrappers needed for proper CSS layout
+	// Note: Don't add extra .view wrapper since external plugin content already has it
+	structuredContent := fmt.Sprintf(`<div id="plugin-%s" class="environment trmnl">
+		<div class="screen">
+			%s
+		</div>
+	</div>`, p.instance.ID.String(), processedContent)
 	
-	html, err := unifiedRenderer.RenderToHTML(context.Background(), renderOptions)
-	if err != nil {
-		return plugins.CreateErrorResponse(fmt.Sprintf("Template rendering failed: %v", err)),
-			fmt.Errorf("failed to render template via external service: %w", err)
-	}
+	// Wrap with TRMNL assets like private plugins do (same as UnifiedRenderer does)
+	assetsManager := rendering.NewHTMLAssetsManager()
+	wrappedHTML := assetsManager.WrapWithTRNMLAssets(
+		structuredContent,
+		p.Name(),
+		ctx.Device.DeviceModel.ScreenWidth,
+		ctx.Device.DeviceModel.ScreenHeight,
+		false, // removeBleedMargin - TODO: Make configurable if needed
+		false, // enableDarkMode - TODO: Make configurable if needed
+	)
 	
 	// Create browserless renderer
 	browserRenderer, err := rendering.NewBrowserlessRenderer()
@@ -169,13 +154,13 @@ func (p *ExternalPlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespo
 	}
 	defer browserRenderer.Close()
 	
-	// Always render HTML to image using browserless
+	// Render wrapped HTML to image using browserless (same as private plugins)
 	renderCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	
 	imageData, err := browserRenderer.RenderHTML(
 		renderCtx,
-		html,
+		wrappedHTML,
 		ctx.Device.DeviceModel.ScreenWidth,
 		ctx.Device.DeviceModel.ScreenHeight,
 	)
@@ -195,9 +180,9 @@ func (p *ExternalPlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespo
 }
 
 
-// fetchPluginData fetches data from the external plugin service
-func (p *ExternalPlugin) fetchPluginData(settings map[string]interface{}) (map[string]interface{}, error) {
-	// Build URL for plugin execution
+// fetchRenderedHTML fetches fully rendered HTML from the external plugin service
+func (p *ExternalPlugin) fetchRenderedHTML(settings map[string]interface{}, layout string, ctx plugins.PluginContext) (string, error) {
+	// Build URL for plugin execution - use plugin identifier as name
 	url := fmt.Sprintf("%s/api/plugins/%s/execute", p.serviceURL, p.definition.Identifier)
 	
 	// Create HTTP client with timeout
@@ -205,27 +190,51 @@ func (p *ExternalPlugin) fetchPluginData(settings map[string]interface{}) (map[s
 		Timeout: 30 * time.Second,
 	}
 	
-	// For now, use GET request (similar to private plugin polling)
-	// TODO: Support POST with settings if needed
-	resp, err := client.Get(url)
+	// Create TRMNL data structure using shared builder
+	trmnlBuilder := rendering.NewTRNMLDataBuilder()
+	trmnlData := trmnlBuilder.BuildTRNMLData(ctx, p.instance, settings)
+	
+	// Prepare POST request with settings and layout info
+	requestBody := map[string]interface{}{
+		"settings": settings,
+		"layout":   layout,
+		"trmnl":    trmnlData,
+	}
+	
+	jsonData, err := json.Marshal(requestBody)
 	if err != nil {
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
+		return "", fmt.Errorf("failed to marshal request body: %w", err)
+	}
+	
+	// Create POST request
+	req, err := http.NewRequest("POST", url, strings.NewReader(string(jsonData)))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	
+	// Execute request
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("HTTP request failed: %w", err)
 	}
 	defer resp.Body.Close()
 	
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("plugin service returned status %d", resp.StatusCode)
+		return "", fmt.Errorf("plugin service returned status %d", resp.StatusCode)
 	}
 	
-	// Parse JSON response
-	var data map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return nil, fmt.Errorf("failed to parse JSON response: %w", err)
+	// Read response as plain text (HTML)
+	var buf strings.Builder
+	_, err = io.Copy(&buf, resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response body: %w", err)
 	}
 	
-	logging.Debug("[EXTERNAL_PLUGIN] Fetched data successfully", "plugin", p.definition.Identifier, "data_keys", len(data))
+	html := buf.String()
+	logging.Debug("[EXTERNAL_PLUGIN] Fetched rendered HTML", "plugin", p.definition.Identifier, "html_length", len(html))
 	
-	return data, nil
+	return html, nil
 }
 
 // Validate validates the plugin settings against the form fields schema

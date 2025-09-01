@@ -81,6 +81,14 @@ func (s *PluginScannerService) ScanAndRegisterPlugins(ctx context.Context) error
 	return nil
 }
 
+// ExternalServiceResponse represents the Ruby service response structure
+type ExternalServiceResponse struct {
+	Success bool `json:"success"`
+	Data    struct {
+		Plugins map[string]*ExternalPluginData `json:"plugins"`
+	} `json:"data"`
+}
+
 // fetchPluginMetadata retrieves plugin metadata from the external service
 func (s *PluginScannerService) fetchPluginMetadata(ctx context.Context) (map[string]*ExternalPluginData, error) {
 	url := fmt.Sprintf("%s/api/plugins", s.serviceURL)
@@ -100,12 +108,16 @@ func (s *PluginScannerService) fetchPluginMetadata(ctx context.Context) (map[str
 		return nil, fmt.Errorf("service returned status %d", resp.StatusCode)
 	}
 
-	var plugins map[string]*ExternalPluginData
-	if err := json.NewDecoder(resp.Body).Decode(&plugins); err != nil {
+	var response ExternalServiceResponse
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
 		return nil, fmt.Errorf("failed to parse JSON response: %w", err)
 	}
 
-	return plugins, nil
+	if !response.Success {
+		return nil, fmt.Errorf("service returned success=false")
+	}
+
+	return response.Data.Plugins, nil
 }
 
 // registerPlugin registers or updates a plugin definition in the database
@@ -131,6 +143,7 @@ func (s *PluginScannerService) registerPlugin(identifier string, data *ExternalP
 		FormFields:         datatypes.JSON(data.FormFields),
 		EnableDarkMode:     &[]bool{false}[0], // Default to false
 		RemoveBleedMargin:  &[]bool{false}[0], // Default to false
+		IsActive:           true,  // External plugins should be active by default
 	}
 
 	// Set template fields from the templates map

@@ -286,10 +286,13 @@ func (r *BrowserlessRenderer) RenderHTML(ctx context.Context, html string, width
 			"img_tags", imgCount,
 		)
 		
-		// Log the complete HTML content
+		// Log the complete HTML content (JSON-escaped in structured logs)
 		logging.Browserless("Complete HTML content",
 			"content", html,
 		)
+		
+		// TEMPORARY: Log raw HTML content without JSON escaping to verify it's correct
+		fmt.Printf("=== RAW HTML START ===\n%s\n=== RAW HTML END ===\n", html)
 		
 		// Check for potentially problematic patterns
 		if strings.Contains(html, "data:image/") {

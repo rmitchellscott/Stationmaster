@@ -16,6 +16,7 @@ import (
 	"github.com/rmitchellscott/stationmaster/internal/database"
 	"github.com/rmitchellscott/stationmaster/internal/logging"
 	"github.com/rmitchellscott/stationmaster/internal/plugins"
+	"github.com/rmitchellscott/stationmaster/internal/plugins/external"
 	"github.com/rmitchellscott/stationmaster/internal/plugins/private"
 	"github.com/rmitchellscott/stationmaster/internal/utils"
 	"github.com/rmitchellscott/stationmaster/internal/validation"
@@ -23,11 +24,11 @@ import (
 	"github.com/rmitchellscott/stationmaster/internal/rendering"
 )
 
-// UnifiedPluginDefinition represents a plugin definition that can be system or private
+// UnifiedPluginDefinition represents a plugin definition that can be system, private, or external
 type UnifiedPluginDefinition struct {
 	ID                 string `json:"id"`
 	Name               string `json:"name"`
-	Type               string `json:"type"`               // "system" or "private"
+	Type               string `json:"type"`               // "system", "private", or "external"
 	PluginType         string `json:"plugin_type"`       // "image" or "data"
 	Description        string `json:"description"`
 	ConfigSchema       string `json:"config_schema"`
@@ -68,8 +69,34 @@ func GetAvailablePluginDefinitionsHandler(c *gin.Context) {
 		allPlugins = append(allPlugins, unifiedPlugin)
 	}
 
-	// Get user's private plugins from unified plugin_definitions table
+	// Get external plugins from database (available to all users like system plugins)
 	db := database.GetDB()
+	var externalPlugins []database.PluginDefinition
+	err := db.Where("plugin_type = ? AND is_active = ?", "external", true).Find(&externalPlugins).Error
+	if err == nil {
+		for _, extPlugin := range externalPlugins {
+			// Create external plugin instance to get properly processed ConfigSchema
+			externalPluginInstance := external.NewExternalPlugin(&extPlugin, nil)
+			configSchema := externalPluginInstance.ConfigSchema()
+			
+			unifiedPlugin := UnifiedPluginDefinition{
+				ID:                 extPlugin.ID,
+				Name:               extPlugin.Name,
+				Type:               "external", // Keep true type, UI will handle display
+				PluginType:         extPlugin.PluginType,
+				Description:        extPlugin.Description,
+				ConfigSchema:       configSchema, // Use processed schema from plugin method
+				Version:            extPlugin.Version,
+				Author:             extPlugin.Author,
+				IsActive:           extPlugin.IsActive,
+				RequiresProcessing: extPlugin.RequiresProcessing,
+				// No InstanceCount for external plugins (like system plugins)
+			}
+			allPlugins = append(allPlugins, unifiedPlugin)
+		}
+	}
+
+	// Get user's private plugins from unified plugin_definitions table
 	
 	// Filter by plugin_type query parameter if provided
 	pluginType := c.Query("plugin_type")
@@ -83,7 +110,7 @@ func GetAvailablePluginDefinitionsHandler(c *gin.Context) {
 		query = query.Where("plugin_type = ?", "private")
 	}
 	
-	err := query.Find(&privatePlugins).Error
+	err = query.Find(&privatePlugins).Error
 	if err == nil {
 		for _, privatePlugin := range privatePlugins {
 			// Count how many instances user has created of this private plugin
@@ -108,13 +135,22 @@ func GetAvailablePluginDefinitionsHandler(c *gin.Context) {
 		}
 	}
 
-	// Sort plugins by type (system first) then by name
+	// Sort plugins by type (native first) then by name
 	sort.Slice(allPlugins, func(i, j int) bool {
-		if allPlugins[i].Type == allPlugins[j].Type {
+		// Helper function to determine if plugin is "native" (system or external)
+		isNative := func(pluginType string) bool {
+			return pluginType == "system" || pluginType == "external"
+		}
+		
+		iTypeNative := isNative(allPlugins[i].Type)
+		jTypeNative := isNative(allPlugins[j].Type)
+		
+		if iTypeNative == jTypeNative {
+			// Both native or both non-native, sort by name
 			return allPlugins[i].Name < allPlugins[j].Name
 		}
-		// System plugins first
-		return allPlugins[i].Type == "system" && allPlugins[j].Type == "private"
+		// Native plugins (system + external) first, then private
+		return iTypeNative && !jTypeNative
 	})
 
 	// If requesting only private plugins, transform to PrivatePluginList format
@@ -716,7 +752,7 @@ func CreatePluginDefinitionHandler(c *gin.Context) {
 	}
 
 	// Validate and convert form fields to JSON schema
-	configSchema, err := ValidateFormFields(req.FormFields)
+	configSchema, err := validation.ValidateFormFields(req.FormFields)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Form fields validation failed", "details": err.Error()})
 		return
@@ -841,7 +877,7 @@ func UpdatePluginDefinitionHandler(c *gin.Context) {
 	}
 
 	// Validate and convert form fields to JSON schema
-	configSchema, err := ValidateFormFields(req.FormFields)
+	configSchema, err := validation.ValidateFormFields(req.FormFields)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Form fields validation failed", "details": err.Error()})
 		return
@@ -1808,13 +1844,13 @@ func GetUserPrivatePluginInstancesHandler(c *gin.Context) {
 		return
 	}
 
-	// Filter for private plugins that can be used in mashups
+	// Filter for private and external plugins that can be used in mashups
 	var availableInstances []gin.H
 	mashupService := database.NewMashupService(db)
 
 	for _, instance := range instances {
-		// Skip if not private plugin
-		if instance.PluginDefinition.PluginType != "private" {
+		// Skip if not private or external plugin
+		if instance.PluginDefinition.PluginType != "private" && instance.PluginDefinition.PluginType != "external" {
 			continue
 		}
 

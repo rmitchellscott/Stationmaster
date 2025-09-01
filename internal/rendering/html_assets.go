@@ -37,10 +37,10 @@ func (h *HTMLAssetsManager) GenerateSharedJavaScript() string {
         // Server-side rendering completion signal
         setTimeout(() => {
             if (document.body && !document.body.hasAttribute('data-render-complete')) {
-                console.log('FALLBACK: Setting completion signal after 3-second timeout');
+                console.log('FALLBACK: Setting completion signal after 10-second timeout');
                 document.body.setAttribute('data-render-complete', 'true');
             }
-        }, 3000);
+        }, 10000);
         
         console.log('Server-side Ruby rendered template loaded successfully');
         

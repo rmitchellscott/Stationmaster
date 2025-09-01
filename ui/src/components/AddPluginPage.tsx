@@ -323,6 +323,25 @@ export function AddPluginPage() {
             );
           }
           
+          // Handle date type
+          if (prop.type === "string" && prop.format === "date") {
+            return (
+              <div key={key}>
+                <Label htmlFor={key}>{prop.title || key}</Label>
+                <Input
+                  id={key}
+                  type="date"
+                  value={value}
+                  onChange={(e) => onChange(key, e.target.value)}
+                  className="mt-2"
+                />
+                {prop.description && (
+                  <p className="text-xs text-muted-foreground mt-1">{prop.description}</p>
+                )}
+              </div>
+            );
+          }
+          
           // Default to string type
           return (
             <div key={key}>

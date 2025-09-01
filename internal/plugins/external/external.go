@@ -78,24 +78,33 @@ func (p *ExternalPlugin) RequiresProcessing() bool {
 
 // ConfigSchema returns the JSON schema for form fields
 func (p *ExternalPlugin) ConfigSchema() string {
-	if p.definition.FormFields != nil {
-		// Parse the FormFields JSON and convert YAML to JSON schema
-		var formFieldsData interface{}
-		if err := json.Unmarshal(p.definition.FormFields, &formFieldsData); err != nil {
-			logging.Debug("[EXTERNAL_PLUGIN] Failed to parse FormFields JSON", "plugin", p.definition.Identifier, "error", err)
-			return `{"type": "object", "properties": {}}`
-		}
-		
-		// Use the validation function to convert YAML form fields to JSON schema
-		jsonSchema, err := validation.ValidateFormFields(formFieldsData)
-		if err != nil {
-			logging.Debug("[EXTERNAL_PLUGIN] Failed to convert form fields to JSON schema", "plugin", p.definition.Identifier, "error", err)
-			return `{"type": "object", "properties": {}}`
-		}
-		
-		return jsonSchema
+	logging.Info("[EXTERNAL_PLUGIN] ConfigSchema called", "plugin", p.definition.Identifier)
+	
+	if p.definition.FormFields == nil {
+		logging.Info("[EXTERNAL_PLUGIN] FormFields is nil", "plugin", p.definition.Identifier)
+		return `{"type": "object", "properties": {}}`
 	}
-	return `{"type": "object", "properties": {}}`
+	
+	logging.Info("[EXTERNAL_PLUGIN] FormFields found", "plugin", p.definition.Identifier, "formFields", string(p.definition.FormFields))
+	
+	// Parse the FormFields JSON and convert YAML to JSON schema
+	var formFieldsData interface{}
+	if err := json.Unmarshal(p.definition.FormFields, &formFieldsData); err != nil {
+		logging.Error("[EXTERNAL_PLUGIN] Failed to parse FormFields JSON", "plugin", p.definition.Identifier, "error", err, "formFields", string(p.definition.FormFields))
+		return `{"type": "object", "properties": {}}`
+	}
+	
+	logging.Info("[EXTERNAL_PLUGIN] FormFields JSON parsed successfully", "plugin", p.definition.Identifier, "parsedData", formFieldsData)
+	
+	// Use the validation function to convert YAML form fields to JSON schema
+	jsonSchema, err := validation.ValidateFormFields(formFieldsData)
+	if err != nil {
+		logging.Error("[EXTERNAL_PLUGIN] Failed to convert form fields to JSON schema", "plugin", p.definition.Identifier, "error", err, "formFieldsData", formFieldsData)
+		return `{"type": "object", "properties": {}}`
+	}
+	
+	logging.Info("[EXTERNAL_PLUGIN] JSON schema generated successfully", "plugin", p.definition.Identifier, "schema", jsonSchema)
+	return jsonSchema
 }
 
 // Process executes the plugin logic - fetches fully rendered HTML from Ruby service

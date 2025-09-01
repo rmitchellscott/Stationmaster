@@ -313,7 +313,16 @@ func GetPluginInstancesHandler(c *gin.Context) {
 				instance.Plugin.Name = pluginInstance.PluginDefinition.Name
 				instance.Plugin.Type = pluginInstance.PluginDefinition.PluginType
 				instance.Plugin.Description = pluginInstance.PluginDefinition.Description
-				instance.Plugin.ConfigSchema = pluginInstance.PluginDefinition.ConfigSchema
+				
+				// For external plugins, generate schema dynamically from YAML form fields
+				if pluginInstance.PluginDefinition.PluginType == "external" {
+					externalPlugin := external.NewExternalPlugin(&pluginInstance.PluginDefinition, &pluginInstance)
+					instance.Plugin.ConfigSchema = externalPlugin.ConfigSchema()
+				} else {
+					// For other plugins, use database field
+					instance.Plugin.ConfigSchema = pluginInstance.PluginDefinition.ConfigSchema
+				}
+				
 				instance.Plugin.Version = pluginInstance.PluginDefinition.Version
 				instance.Plugin.Author = pluginInstance.PluginDefinition.Author
 				instance.Plugin.IsActive = true

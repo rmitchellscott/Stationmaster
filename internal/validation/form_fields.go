@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/rmitchellscott/stationmaster/internal/logging"
 	"gopkg.in/yaml.v3"
 )
 
@@ -86,10 +87,15 @@ func NormalizeFormFields(formFields interface{}) interface{} {
 
 // ValidateFormFields validates the form fields configuration and converts YAML to JSON schema
 func ValidateFormFields(formFields interface{}) (string, error) {
+	logging.Info("[VALIDATION] ValidateFormFields called", "input", formFields)
+	
 	// Normalize first to handle all empty cases consistently
 	normalized := NormalizeFormFields(formFields)
 	
+	logging.Info("[VALIDATION] After normalization", "normalized", normalized)
+	
 	if normalized == nil {
+		logging.Info("[VALIDATION] Normalized is nil, returning empty schema")
 		return `{"type": "object", "properties": {}}`, nil
 	}
 
@@ -117,7 +123,10 @@ func ValidateFormFields(formFields interface{}) (string, error) {
 
 	// Try to parse as YAML string first
 	if yamlStr, ok := formFieldsMap["yaml"].(string); ok {
-		return convertYAMLFormFieldsToJSONSchema(yamlStr)
+		logging.Info("[VALIDATION] Found YAML string, converting", "yamlStr", yamlStr)
+		result, err := convertYAMLFormFieldsToJSONSchema(yamlStr)
+		logging.Info("[VALIDATION] YAML conversion result", "result", result, "error", err)
+		return result, err
 	}
 
 	// If not YAML string, treat as direct form field config

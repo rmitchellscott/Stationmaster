@@ -54,6 +54,10 @@ import (
 //go:embed ui/dist/assets
 var embeddedUI embed.FS
 
+//go:embed assets/trmnl/*
+var embeddedTRNMLAssets embed.FS
+
+
 // Global render poller for handlers to schedule renders
 var globalRenderPoller *pollers.RenderPoller
 
@@ -573,6 +577,29 @@ func main() {
 		if strings.HasPrefix(filepath, "/") {
 			filepath = filepath[1:]
 		}
+		
+		// First try to serve from embedded TRMNL assets
+		embedPath := "assets/trmnl/images/" + filepath
+		if data, err := embeddedTRNMLAssets.ReadFile(embedPath); err == nil {
+			// Determine content type from file extension
+			contentType := "application/octet-stream"
+			if strings.HasSuffix(strings.ToLower(filepath), ".png") {
+				contentType = "image/png"
+			} else if strings.HasSuffix(strings.ToLower(filepath), ".jpg") || strings.HasSuffix(strings.ToLower(filepath), ".jpeg") {
+				contentType = "image/jpeg"
+			} else if strings.HasSuffix(strings.ToLower(filepath), ".gif") {
+				contentType = "image/gif"
+			} else if strings.HasSuffix(strings.ToLower(filepath), ".svg") {
+				contentType = "image/svg+xml"
+			}
+			
+			c.Header("Content-Type", contentType)
+			c.Header("Cache-Control", "public, max-age=31536000") // Cache for 1 year
+			c.Data(http.StatusOK, contentType, data)
+			return
+		}
+		
+		// Fallback to filesystem images
 		c.File("./images/" + filepath)
 	})
 	router.GET("/static/rendered/*filepath", func(c *gin.Context) {
@@ -582,6 +609,72 @@ func main() {
 			filepath = filepath[1:]
 		}
 		c.File("./static/rendered/" + filepath)
+	})
+
+	// TRMNL assets (no authentication required - used by browserless)
+	router.GET("/assets/trmnl/*filepath", func(c *gin.Context) {
+		filepath := c.Param("filepath")
+		// Remove leading slash from filepath
+		if strings.HasPrefix(filepath, "/") {
+			filepath = filepath[1:]
+		}
+		
+		// Serve from embedded assets
+		assetPath := "assets/trmnl/" + filepath
+		data, err := embeddedTRNMLAssets.ReadFile(assetPath)
+		if err != nil {
+			c.Status(http.StatusNotFound)
+			return
+		}
+		
+		// Set appropriate content type based on file extension
+		if strings.HasSuffix(filepath, ".css") {
+			c.Header("Content-Type", "text/css")
+		} else if strings.HasSuffix(filepath, ".js") {
+			c.Header("Content-Type", "application/javascript")
+		} else if strings.HasSuffix(filepath, ".ttf") {
+			c.Header("Content-Type", "font/ttf")
+		} else if strings.HasSuffix(filepath, ".woff") {
+			c.Header("Content-Type", "font/woff")
+		} else if strings.HasSuffix(filepath, ".woff2") {
+			c.Header("Content-Type", "font/woff2")
+		}
+		
+		// Set cache headers for assets
+		c.Header("Cache-Control", "public, max-age=31536000") // 1 year
+		
+		c.Data(http.StatusOK, c.GetHeader("Content-Type"), data)
+	})
+
+	// TRMNL fonts at expected /fonts/ path (no authentication required)
+	router.GET("/fonts/*filepath", func(c *gin.Context) {
+		filepath := c.Param("filepath")
+		// Remove leading slash from filepath
+		if strings.HasPrefix(filepath, "/") {
+			filepath = filepath[1:]
+		}
+		
+		// Serve TRMNL fonts from embedded assets
+		assetPath := "assets/trmnl/fonts/" + filepath
+		data, err := embeddedTRNMLAssets.ReadFile(assetPath)
+		if err != nil {
+			c.Status(http.StatusNotFound)
+			return
+		}
+		
+		// Set appropriate content type for fonts
+		if strings.HasSuffix(filepath, ".ttf") {
+			c.Header("Content-Type", "font/ttf")
+		} else if strings.HasSuffix(filepath, ".woff") {
+			c.Header("Content-Type", "font/woff")
+		} else if strings.HasSuffix(filepath, ".woff2") {
+			c.Header("Content-Type", "font/woff2")
+		}
+		
+		// Set cache headers for fonts
+		c.Header("Cache-Control", "public, max-age=31536000") // 1 year
+		
+		c.Data(http.StatusOK, c.GetHeader("Content-Type"), data)
 	})
 
 	// Serve UI

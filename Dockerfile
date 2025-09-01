@@ -23,6 +23,12 @@ RUN go mod download
 COPY . .
 COPY --from=ui-builder /app/ui/dist ./ui/dist
 
+# Download TRMNL assets at build time
+RUN apk add --no-cache curl bash \
+    && chmod +x ./scripts/download-trmnl-assets.sh \
+    && ./scripts/download-trmnl-assets.sh \
+    && apk del curl bash
+
 # Build args for version injection
 ARG VERSION=dev
 ARG GIT_COMMIT=unknown
@@ -31,6 +37,7 @@ ARG TARGETPLATFORM
 
 RUN --mount=type=cache,target=/root/.cache \
     CGO_ENABLED=0 xx-go build \
+    -tags production \
     -ldflags="-w -s \
         -X github.com/rmitchellscott/stationmaster/internal/version.Version=${VERSION} \
         -X github.com/rmitchellscott/stationmaster/internal/version.GitCommit=${GIT_COMMIT} \

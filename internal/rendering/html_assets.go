@@ -15,20 +15,19 @@ func NewHTMLAssetsManager() *HTMLAssetsManager {
 }
 
 // GenerateTRNMLHeadScripts returns TRMNL scripts to be loaded in the document head
-func (h *HTMLAssetsManager) GenerateTRNMLHeadScripts() string {
-	return `<!-- TRMNL Scripts for core functionality, filters, and rendering -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://usetrmnl.com/css/latest/plugins.css">
-    <script src="https://usetrmnl.com/js/latest/plugins.js"></script>
-    <script src="https://usetrmnl.com/assets/plugin-bfbd7e9488fd0d6dff2f619b5cb963c0772a24d6d0b537f60089dc53aa4746ff.js"></script>
-    <script src="https://usetrmnl.com/assets/plugin_legacy-0c72702a185603fd7fc5eb915658f49486903cb5c92cd6153a336b8ce3973452.js"></script>
-    <script src="https://usetrmnl.com/assets/plugin_demo-25268352c5a400b970985521a5eaa3dc90c736ce0cbf42d749e7e253f0c227f5.js"></script>
-    <script src="https://usetrmnl.com/assets/plugin-render/plugins-332ca4207dd02576b3641691907cb829ef52a36c4a092a75324a8fc860906967.js"></script>
-    <script src="https://usetrmnl.com/assets/plugin-render/plugins_legacy-a6b0b3aeac32ca71413f1febc053c59a528d4c6bb2173c22bd94ff8e0b9650f1.js"></script>
-    <script src="https://usetrmnl.com/assets/plugin-render/dithering-d697f6229e3bd6e2455425d647e5395bb608999c2039a9837a903c7c7e952d61.js"></script>
-    <script src="https://usetrmnl.com/assets/plugin-render/asset-deduplication-39fa2231b7a5bd5bedf4a1782b6a95d8b87eb3aaaa5e2b6cee287133d858bc96.js"></script>`
+func (h *HTMLAssetsManager) GenerateTRNMLHeadScripts(assetBaseURL string) string {
+	return fmt.Sprintf(`<!-- TRMNL Scripts for core functionality, filters, and rendering -->
+    <link rel="stylesheet" href="%s/assets/trmnl/fonts/inter.css">
+    <link rel="stylesheet" href="%s/assets/trmnl/css/plugins.css">
+    <script src="%s/assets/trmnl/js/plugins.js"></script>
+    <script src="%s/assets/trmnl/js/plugin.js"></script>
+    <script src="%s/assets/trmnl/js/plugin_legacy.js"></script>
+    <script src="%s/assets/trmnl/js/plugin_demo.js"></script>
+    <script src="%s/assets/trmnl/plugin-render/plugins.js"></script>
+    <script src="%s/assets/trmnl/plugin-render/plugins_legacy.js"></script>
+    <script src="%s/assets/trmnl/plugin-render/dithering.js"></script>
+    <script src="%s/assets/trmnl/plugin-render/asset.js"></script>`, 
+		assetBaseURL, assetBaseURL, assetBaseURL, assetBaseURL, assetBaseURL, assetBaseURL, assetBaseURL, assetBaseURL, assetBaseURL, assetBaseURL)
 }
 
 // GenerateSharedJavaScript returns exact working JavaScript from private plugin backup
@@ -218,7 +217,7 @@ type HTMLDocumentOptions struct {
 }
 
 // GenerateCompleteHTMLDocument creates a complete HTML document with TRMNL assets and proper structure
-func (h *HTMLAssetsManager) GenerateCompleteHTMLDocument(opts HTMLDocumentOptions) string {
+func (h *HTMLAssetsManager) GenerateCompleteHTMLDocument(opts HTMLDocumentOptions, assetBaseURL string) string {
 	// Build screen classes based on options
 	screenClasses := []string{"screen"}
 	if opts.RemoveBleedMargin {
@@ -268,7 +267,7 @@ func (h *HTMLAssetsManager) GenerateCompleteHTMLDocument(opts HTMLDocumentOption
 	htmlBuilder.WriteString(template.HTMLEscapeString(opts.Title))
 	htmlBuilder.WriteString("</title>\n")
 	htmlBuilder.WriteString("    ")
-	htmlBuilder.WriteString(h.GenerateTRNMLHeadScripts())
+	htmlBuilder.WriteString(h.GenerateTRNMLHeadScripts(assetBaseURL))
 	htmlBuilder.WriteString("\n    <style>")
 	htmlBuilder.WriteString(additionalStyles)
 	htmlBuilder.WriteString("</style>\n</head>\n<body>\n")
@@ -288,7 +287,7 @@ func (h *HTMLAssetsManager) GenerateCompleteHTMLDocument(opts HTMLDocumentOption
 }
 
 // WrapWithTRNMLAssets takes processed content and wraps it with complete TRMNL HTML document
-func (h *HTMLAssetsManager) WrapWithTRNMLAssets(content string, title string, width, height int, removeBleedMargin, enableDarkMode bool) string {
+func (h *HTMLAssetsManager) WrapWithTRNMLAssets(content string, title string, width, height int, removeBleedMargin, enableDarkMode bool, assetBaseURL string) string {
 	// Additional CSS for error handling and mashup-specific styles
 	additionalCSS := `
         #error {
@@ -339,5 +338,5 @@ func (h *HTMLAssetsManager) WrapWithTRNMLAssets(content string, title string, wi
 		AdditionalJS:      "",
 		RemoveBleedMargin: removeBleedMargin,
 		EnableDarkMode:    enableDarkMode,
-	})
+	}, assetBaseURL)
 }

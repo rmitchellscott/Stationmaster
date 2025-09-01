@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rmitchellscott/stationmaster/internal/config"
 	"github.com/rmitchellscott/stationmaster/internal/database"
 	"github.com/rmitchellscott/stationmaster/internal/logging"
 	"github.com/rmitchellscott/stationmaster/internal/validation"
@@ -146,6 +147,7 @@ func (p *ExternalPlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespo
 	
 	// Wrap with TRMNL assets like private plugins do (same as UnifiedRenderer does)
 	assetsManager := rendering.NewHTMLAssetsManager()
+	assetBaseURL := config.GetAssetBaseURL()
 	wrappedHTML := assetsManager.WrapWithTRNMLAssets(
 		structuredContent,
 		p.Name(),
@@ -153,6 +155,7 @@ func (p *ExternalPlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespo
 		ctx.Device.DeviceModel.ScreenHeight,
 		false, // removeBleedMargin - TODO: Make configurable if needed
 		false, // enableDarkMode - TODO: Make configurable if needed
+		assetBaseURL,
 	)
 	
 	// Create browserless renderer

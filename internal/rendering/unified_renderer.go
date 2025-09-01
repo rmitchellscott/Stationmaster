@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	
+	"github.com/rmitchellscott/stationmaster/internal/config"
 )
 
 // PluginRenderOptions contains options for rendering a plugin template
@@ -50,6 +52,7 @@ func (r *UnifiedRenderer) RenderToHTML(ctx context.Context, opts PluginRenderOpt
 
 	// Use external function to wrap with TRMNL assets
 	assetsManager := NewHTMLAssetsManager()
+	assetBaseURL := config.GetAssetBaseURL()
 	html := assetsManager.WrapWithTRNMLAssets(
 		htmlContent,
 		opts.PluginName,
@@ -57,6 +60,7 @@ func (r *UnifiedRenderer) RenderToHTML(ctx context.Context, opts PluginRenderOpt
 		opts.Height,
 		opts.RemoveBleedMargin,
 		opts.EnableDarkMode,
+		assetBaseURL,
 	)
 
 	return html, nil

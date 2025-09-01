@@ -73,3 +73,11 @@ func GetDuration(key string, def time.Duration) time.Duration {
 	}
 	return def
 }
+
+// GetAssetBaseURL returns the base URL for serving static assets.
+// This is used when generating HTML for browserless to ensure it can access
+// self-hosted CSS/JS assets. Defaults to "http://stationmaster:8000" for Docker
+// environments where browserless needs to access the stationmaster container.
+func GetAssetBaseURL() string {
+	return Get("ASSET_BASE_URL", "http://stationmaster:8000")
+}

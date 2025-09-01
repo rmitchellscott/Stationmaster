@@ -21,6 +21,7 @@ vendor/
 .env
 .env.local
 .env.*.local
+docker-compose.dev.yaml
 
 # Database files
 *.db
@@ -57,3 +58,6 @@ postgres_data/
 # Sensitive files
 cookies.txt
 Gemfile.lock
+
+# Downloaded assets (generated at build time)
+assets/

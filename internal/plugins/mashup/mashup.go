@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rmitchellscott/stationmaster/internal/config"
 	"github.com/rmitchellscott/stationmaster/internal/database"
 	"github.com/rmitchellscott/stationmaster/internal/logging"
 	"github.com/rmitchellscott/stationmaster/internal/plugins"
@@ -501,6 +502,7 @@ func (p *MashupPlugin) buildMashupHTML(layout string, renderedSlots map[string]s
 	
 	// Use new external function to wrap mashup with TRMNL assets (no duplication!)
 	assetsManager := rendering.NewHTMLAssetsManager()
+	assetBaseURL := config.GetAssetBaseURL()
 	
 	return assetsManager.WrapWithTRNMLAssets(
 		mashupContent,
@@ -509,6 +511,7 @@ func (p *MashupPlugin) buildMashupHTML(layout string, renderedSlots map[string]s
 		ctx.Device.DeviceModel.ScreenHeight,
 		false, // removeBleedMargin - TODO: Make configurable if needed
 		false, // enableDarkMode - TODO: Make configurable if needed
+		assetBaseURL,
 	)
 }
 

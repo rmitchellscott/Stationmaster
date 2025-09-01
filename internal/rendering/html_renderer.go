@@ -33,7 +33,7 @@ func NewBaseHTMLRenderer() *BaseHTMLRenderer {
 }
 
 // GenerateHTML creates a complete HTML document for server-side rendered content (no liquidjs)
-func (r *BaseHTMLRenderer) GenerateHTML(opts BaseHTMLOptions, content string, dataJSON []byte, additionalJS string) string {
+func (r *BaseHTMLRenderer) GenerateHTML(opts BaseHTMLOptions, content string, dataJSON []byte, additionalJS string, assetBaseURL string) string {
 	// Build screen classes based on options
 	screenClasses := []string{"screen"}
 	if opts.RemoveBleedMargin {
@@ -46,7 +46,7 @@ func (r *BaseHTMLRenderer) GenerateHTML(opts BaseHTMLOptions, content string, da
 	// Generate TRMNL scripts section based on strategy
 	var scriptsSection string
 	if opts.ScriptLoadStrategy == ScriptLoadInHead {
-		scriptsSection = r.generateHeadScripts()
+		scriptsSection = r.generateHeadScripts(assetBaseURL)
 	} else {
 		scriptsSection = "" // Sequential loading handled in JavaScript
 	}
@@ -58,10 +58,8 @@ func (r *BaseHTMLRenderer) GenerateHTML(opts BaseHTMLOptions, content string, da
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>%s</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://usetrmnl.com/css/latest/plugins.css">
+    <link rel="stylesheet" href="%s/assets/trmnl/fonts/inter.css">
+    <link rel="stylesheet" href="%s/assets/trmnl/css/plugins.css">
     %s
     <style>
         body { 
@@ -136,6 +134,8 @@ func (r *BaseHTMLRenderer) GenerateHTML(opts BaseHTMLOptions, content string, da
 </body>
 </html>`,
 		opts.Title,
+		assetBaseURL,
+		assetBaseURL,
 		scriptsSection,
 		opts.Width,
 		opts.Height,
@@ -144,27 +144,28 @@ func (r *BaseHTMLRenderer) GenerateHTML(opts BaseHTMLOptions, content string, da
 		opts.RemoveBleedMargin,
 		opts.EnableDarkMode,
 		int(opts.ScriptLoadStrategy),
-		r.generateSharedJavaScriptFunctions(),
+		r.generateSharedJavaScriptFunctions(assetBaseURL),
 		additionalJS,
 	)
 }
 
 // generateHeadScripts returns TRMNL scripts to be loaded in the document head (no liquidjs)
-func (r *BaseHTMLRenderer) generateHeadScripts() string {
-	return `<!-- TRMNL Scripts for core functionality, filters, and rendering -->
-    <script src="https://usetrmnl.com/js/latest/plugins.js"></script>
-    <script src="https://usetrmnl.com/assets/plugin-bfbd7e9488fd0d6dff2f619b5cb963c0772a24d6d0b537f60089dc53aa4746ff.js"></script>
-    <script src="https://usetrmnl.com/assets/plugin_legacy-0c72702a185603fd7fc5eb915658f49486903cb5c92cd6153a336b8ce3973452.js"></script>
-    <script src="https://usetrmnl.com/assets/plugin_demo-25268352c5a400b970985521a5eaa3dc90c736ce0cbf42d749e7e253f0c227f5.js"></script>
-    <script src="https://usetrmnl.com/assets/plugin-render/plugins-332ca4207dd02576b3641691907cb829ef52a36c4a092a75324a8fc860906967.js"></script>
-    <script src="https://usetrmnl.com/assets/plugin-render/plugins_legacy-a6b0b3aeac32ca71413f1febc053c59a528d4c6bb2173c22bd94ff8e0b9650f1.js"></script>
-    <script src="https://usetrmnl.com/assets/plugin-render/dithering-d697f6229e3bd6e2455425d647e5395bb608999c2039a9837a903c7c7e952d61.js"></script>
-    <script src="https://usetrmnl.com/assets/plugin-render/asset-deduplication-39fa2231b7a5bd5bedf4a1782b6a95d8b87eb3aaaa5e2b6cee287133d858bc96.js"></script>`
+func (r *BaseHTMLRenderer) generateHeadScripts(assetBaseURL string) string {
+	return fmt.Sprintf(`<!-- TRMNL Scripts for core functionality, filters, and rendering -->
+    <script src="%s/assets/trmnl/js/plugins.js"></script>
+    <script src="%s/assets/trmnl/js/plugin.js"></script>
+    <script src="%s/assets/trmnl/js/plugin_legacy.js"></script>
+    <script src="%s/assets/trmnl/js/plugin_demo.js"></script>
+    <script src="%s/assets/trmnl/plugin-render/plugins.js"></script>
+    <script src="%s/assets/trmnl/plugin-render/plugins_legacy.js"></script>
+    <script src="%s/assets/trmnl/plugin-render/dithering.js"></script>
+    <script src="%s/assets/trmnl/plugin-render/asset.js"></script>`, 
+		assetBaseURL, assetBaseURL, assetBaseURL, assetBaseURL, assetBaseURL, assetBaseURL, assetBaseURL, assetBaseURL)
 }
 
 // generateSharedJavaScriptFunctions returns common JavaScript functions for server-side rendered content
-func (r *BaseHTMLRenderer) generateSharedJavaScriptFunctions() string {
-	return `
+func (r *BaseHTMLRenderer) generateSharedJavaScriptFunctions(assetBaseURL string) string {
+	return fmt.Sprintf(`
         // CRITICAL: Immediate fallback timer - starts when page loads regardless of other code
         setTimeout(() => {
             if (document.body && !document.body.hasAttribute('data-render-complete')) {
@@ -234,9 +235,9 @@ func (r *BaseHTMLRenderer) generateSharedJavaScriptFunctions() string {
             // For server-side rendering, content is already rendered
             // We just need to load TRMNL scripts for styling/dithering
             const scripts = [
-                'https://usetrmnl.com/js/latest/plugins.js',
-                'https://usetrmnl.com/assets/plugin-render/plugins-332ca4207dd02576b3641691907cb829ef52a36c4a092a75324a8fc860906967.js',
-                'https://usetrmnl.com/assets/plugin-render/dithering-d697f6229e3bd6e2455425d647e5395bb608999c2039a9837a903c7c7e952d61.js'
+                '%s/assets/trmnl/js/plugins.js',
+                '%s/assets/trmnl/plugin-render/plugins.js',
+                '%s/assets/trmnl/plugin-render/dithering.js'
             ];
             
             let loadedCount = 0;
@@ -291,5 +292,5 @@ func (r *BaseHTMLRenderer) generateSharedJavaScriptFunctions() string {
                 }
             }
         }
-	`
+	`, assetBaseURL, assetBaseURL, assetBaseURL)
 }

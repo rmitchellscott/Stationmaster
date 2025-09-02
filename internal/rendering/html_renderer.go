@@ -156,11 +156,10 @@ func (r *BaseHTMLRenderer) generateHeadScripts(assetBaseURL string) string {
     <script src="%s/assets/trmnl/js/plugin.js"></script>
     <script src="%s/assets/trmnl/js/plugin_legacy.js"></script>
     <script src="%s/assets/trmnl/js/plugin_demo.js"></script>
-    <script src="%s/assets/trmnl/plugin-render/plugins.js"></script>
     <script src="%s/assets/trmnl/plugin-render/plugins_legacy.js"></script>
     <script src="%s/assets/trmnl/plugin-render/dithering.js"></script>
     <script src="%s/assets/trmnl/plugin-render/asset.js"></script>`, 
-		assetBaseURL, assetBaseURL, assetBaseURL, assetBaseURL, assetBaseURL, assetBaseURL, assetBaseURL, assetBaseURL)
+		assetBaseURL, assetBaseURL, assetBaseURL, assetBaseURL, assetBaseURL, assetBaseURL, assetBaseURL)
 }
 
 // generateSharedJavaScriptFunctions returns common JavaScript functions for server-side rendered content
@@ -236,7 +235,6 @@ func (r *BaseHTMLRenderer) generateSharedJavaScriptFunctions(assetBaseURL string
             // We just need to load TRMNL scripts for styling/dithering
             const scripts = [
                 '%s/assets/trmnl/js/plugins.js',
-                '%s/assets/trmnl/plugin-render/plugins.js',
                 '%s/assets/trmnl/plugin-render/dithering.js'
             ];
             

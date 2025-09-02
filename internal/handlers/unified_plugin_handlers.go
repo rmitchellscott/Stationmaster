@@ -140,22 +140,9 @@ func GetAvailablePluginDefinitionsHandler(c *gin.Context) {
 		}
 	}
 
-	// Sort plugins by type (native first) then by name
+	// Sort plugins by name only
 	sort.Slice(allPlugins, func(i, j int) bool {
-		// Helper function to determine if plugin is "native" (system or external)
-		isNative := func(pluginType string) bool {
-			return pluginType == "system" || pluginType == "external"
-		}
-		
-		iTypeNative := isNative(allPlugins[i].Type)
-		jTypeNative := isNative(allPlugins[j].Type)
-		
-		if iTypeNative == jTypeNative {
-			// Both native or both non-native, sort by name
-			return allPlugins[i].Name < allPlugins[j].Name
-		}
-		// Native plugins (system + external) first, then private
-		return iTypeNative && !jTypeNative
+		return allPlugins[i].Name < allPlugins[j].Name
 	})
 
 	// If requesting only private plugins, transform to PrivatePluginList format
@@ -254,7 +241,24 @@ type UnifiedPluginInstance struct {
 		IsActive           bool   `json:"is_active"`
 		RequiresProcessing bool   `json:"requires_processing"`
 		DataStrategy       string `json:"data_strategy"`
+		IsMashup           bool   `json:"is_mashup"`
 	} `json:"plugin"`
+	
+	// Plugin definition info (for compatibility with frontend expecting plugin_definition)
+	PluginDefinition struct {
+		ID                 string `json:"id"`
+		Name               string `json:"name"`
+		PluginType         string `json:"plugin_type"`
+		Description        string `json:"description"`
+		Status             string `json:"status"`
+		ConfigSchema       string `json:"config_schema"`
+		Version            string `json:"version"`
+		Author             string `json:"author"`
+		IsActive           bool   `json:"is_active"`
+		RequiresProcessing bool   `json:"requires_processing"`
+		DataStrategy       string `json:"data_strategy"`
+		IsMashup           bool   `json:"is_mashup"`
+	} `json:"plugin_definition"`
 }
 
 // GetPluginInstancesHandler returns all plugin instances for the user
@@ -334,6 +338,7 @@ func GetPluginInstancesHandler(c *gin.Context) {
 				instance.Plugin.Author = pluginInstance.PluginDefinition.Author
 				instance.Plugin.IsActive = true
 				instance.Plugin.RequiresProcessing = pluginInstance.PluginDefinition.RequiresProcessing
+				instance.Plugin.IsMashup = pluginInstance.PluginDefinition.IsMashup
 				
 				// Set data strategy (no fallback - only set if explicitly defined)
 				if pluginInstance.PluginDefinition.DataStrategy != nil {
@@ -341,11 +346,35 @@ func GetPluginInstancesHandler(c *gin.Context) {
 				} else {
 					instance.Plugin.DataStrategy = ""
 				}
+				
+				// Populate plugin_definition for frontend compatibility
+				instance.PluginDefinition.ID = pluginInstance.PluginDefinition.ID
+				instance.PluginDefinition.Name = pluginInstance.PluginDefinition.Name
+				instance.PluginDefinition.PluginType = pluginInstance.PluginDefinition.PluginType
+				instance.PluginDefinition.Description = pluginInstance.PluginDefinition.Description
+				instance.PluginDefinition.Status = pluginInstance.PluginDefinition.Status
+				instance.PluginDefinition.ConfigSchema = instance.Plugin.ConfigSchema // Use the processed schema
+				instance.PluginDefinition.Version = pluginInstance.PluginDefinition.Version
+				instance.PluginDefinition.Author = pluginInstance.PluginDefinition.Author
+				instance.PluginDefinition.IsActive = true
+				instance.PluginDefinition.RequiresProcessing = pluginInstance.PluginDefinition.RequiresProcessing
+				instance.PluginDefinition.IsMashup = pluginInstance.PluginDefinition.IsMashup
+				
+				if pluginInstance.PluginDefinition.DataStrategy != nil {
+					instance.PluginDefinition.DataStrategy = *pluginInstance.PluginDefinition.DataStrategy
+				} else {
+					instance.PluginDefinition.DataStrategy = ""
+				}
 			}
 
 			allInstances = append(allInstances, instance)
 		}
 	}
+
+	// Sort instances alphabetically by name
+	sort.Slice(allInstances, func(i, j int) bool {
+		return allInstances[i].Name < allInstances[j].Name
+	})
 
 	c.JSON(http.StatusOK, gin.H{"plugin_instances": allInstances})
 }

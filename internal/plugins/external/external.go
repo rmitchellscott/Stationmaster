@@ -79,14 +79,14 @@ func (p *ExternalPlugin) RequiresProcessing() bool {
 
 // ConfigSchema returns the JSON schema for form fields
 func (p *ExternalPlugin) ConfigSchema() string {
-	logging.Info("[EXTERNAL_PLUGIN] ConfigSchema called", "plugin", p.definition.Identifier)
+	logging.Debug("[EXTERNAL_PLUGIN] ConfigSchema called", "plugin", p.definition.Identifier)
 	
 	if p.definition.FormFields == nil {
-		logging.Info("[EXTERNAL_PLUGIN] FormFields is nil", "plugin", p.definition.Identifier)
+		logging.Debug("[EXTERNAL_PLUGIN] FormFields is nil", "plugin", p.definition.Identifier)
 		return `{"type": "object", "properties": {}}`
 	}
 	
-	logging.Info("[EXTERNAL_PLUGIN] FormFields found", "plugin", p.definition.Identifier, "formFields", string(p.definition.FormFields))
+	logging.Debug("[EXTERNAL_PLUGIN] FormFields found", "plugin", p.definition.Identifier, "formFields", string(p.definition.FormFields))
 	
 	// Parse the FormFields JSON and convert YAML to JSON schema
 	var formFieldsData interface{}
@@ -95,7 +95,7 @@ func (p *ExternalPlugin) ConfigSchema() string {
 		return `{"type": "object", "properties": {}}`
 	}
 	
-	logging.Info("[EXTERNAL_PLUGIN] FormFields JSON parsed successfully", "plugin", p.definition.Identifier, "parsedData", formFieldsData)
+	logging.Debug("[EXTERNAL_PLUGIN] FormFields JSON parsed successfully", "plugin", p.definition.Identifier, "parsedData", formFieldsData)
 	
 	// Use the validation function to convert YAML form fields to JSON schema
 	jsonSchema, err := validation.ValidateFormFields(formFieldsData)
@@ -104,7 +104,7 @@ func (p *ExternalPlugin) ConfigSchema() string {
 		return `{"type": "object", "properties": {}}`
 	}
 	
-	logging.Info("[EXTERNAL_PLUGIN] JSON schema generated successfully", "plugin", p.definition.Identifier, "schema", jsonSchema)
+	logging.Debug("[EXTERNAL_PLUGIN] JSON schema generated successfully", "plugin", p.definition.Identifier, "schema", jsonSchema)
 	return jsonSchema
 }
 

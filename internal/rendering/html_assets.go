@@ -23,11 +23,10 @@ func (h *HTMLAssetsManager) GenerateTRNMLHeadScripts(assetBaseURL string) string
     <script src="%s/assets/trmnl/js/plugin.js"></script>
     <script src="%s/assets/trmnl/js/plugin_legacy.js"></script>
     <script src="%s/assets/trmnl/js/plugin_demo.js"></script>
-    <script src="%s/assets/trmnl/plugin-render/plugins.js"></script>
     <script src="%s/assets/trmnl/plugin-render/plugins_legacy.js"></script>
     <script src="%s/assets/trmnl/plugin-render/dithering.js"></script>
     <script src="%s/assets/trmnl/plugin-render/asset.js"></script>`, 
-		assetBaseURL, assetBaseURL, assetBaseURL, assetBaseURL, assetBaseURL, assetBaseURL, assetBaseURL, assetBaseURL, assetBaseURL, assetBaseURL)
+		assetBaseURL, assetBaseURL, assetBaseURL, assetBaseURL, assetBaseURL, assetBaseURL, assetBaseURL, assetBaseURL, assetBaseURL)
 }
 
 // GenerateSharedJavaScript returns exact working JavaScript from private plugin backup

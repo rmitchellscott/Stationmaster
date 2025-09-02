@@ -603,6 +603,60 @@ func main() {
 			return
 		}
 		
+		// Check if this is a plugin image request that should be proxied to Ruby app
+		if strings.HasPrefix(filepath, "plugins/") {
+			externalPluginServices := config.Get("EXTERNAL_PLUGIN_SERVICES", "")
+			if externalPluginServices != "" {
+				// Proxy to Ruby app for plugin images
+				proxyURL := externalPluginServices + "/images/" + filepath
+				
+				// Create HTTP client with timeout
+				client := &http.Client{
+					Timeout: 10 * time.Second,
+				}
+				
+				// Create request to Ruby app
+				req, err := http.NewRequest("GET", proxyURL, nil)
+				if err != nil {
+					logging.Warn("[IMAGE_PROXY] Failed to create proxy request", "url", proxyURL, "error", err)
+					c.Status(http.StatusInternalServerError)
+					return
+				}
+				
+				// Forward relevant headers from original request
+				req.Header.Set("User-Agent", c.GetHeader("User-Agent"))
+				if acceptHeader := c.GetHeader("Accept"); acceptHeader != "" {
+					req.Header.Set("Accept", acceptHeader)
+				}
+				
+				// Make request to Ruby app
+				resp, err := client.Do(req)
+				if err != nil {
+					logging.Warn("[IMAGE_PROXY] Failed to proxy image request", "url", proxyURL, "error", err)
+					c.Status(http.StatusBadGateway)
+					return
+				}
+				defer resp.Body.Close()
+				
+				// Forward status code
+				c.Status(resp.StatusCode)
+				
+				// Forward response headers
+				for key, values := range resp.Header {
+					for _, value := range values {
+						c.Header(key, value)
+					}
+				}
+				
+				// Stream response body
+				_, err = io.Copy(c.Writer, resp.Body)
+				if err != nil {
+					logging.Warn("[IMAGE_PROXY] Failed to stream proxy response", "url", proxyURL, "error", err)
+				}
+				return
+			}
+		}
+		
 		// Fallback to filesystem images
 		c.File("./images/" + filepath)
 	})

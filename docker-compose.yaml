@@ -71,6 +71,8 @@ services:
       - RAILS_LOG_TO_STDOUT=true
       - RAILS_BASE_URL=http://stationmaster:8000
       - GITHUB_API_TOKEN=${GITHUB_API_TOKEN:-your_github_token_here}
+      - MARKETDATA_API_TOKEN=${MARKETDATA_API_TOKEN:-}
+      - CURRENCY_API_KEY=${CURRENCY_API_KEY:-}
     ports:
       - "3000:3000"
     networks:

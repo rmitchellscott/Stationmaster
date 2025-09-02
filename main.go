@@ -475,6 +475,10 @@ func main() {
 		// Manual polling endpoints
 		admin.POST("/firmware/poll", handlers.TriggerFirmwarePollHandler) // POST /api/admin/firmware/poll - trigger manual firmware poll
 		admin.POST("/models/poll", handlers.TriggerModelPollHandler)      // POST /api/admin/models/poll - trigger manual model poll
+		
+		// External plugin management endpoints
+		admin.GET("/external-plugins", handlers.AdminGetExternalPluginsHandler)       // GET /api/admin/external-plugins - list external plugins for admin
+		admin.DELETE("/external-plugins/:id", handlers.AdminDeleteExternalPluginHandler) // DELETE /api/admin/external-plugins/:id - delete external plugin
 	}
 
 	// Device management endpoints

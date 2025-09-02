@@ -43,6 +43,7 @@ interface Plugin {
   version: string;
   config_schema: string;
   requires_processing: boolean;
+  status: string; // "available", "unavailable", "error"
 }
 
 interface RefreshRateOption {
@@ -112,6 +113,9 @@ export function AddPluginPage() {
   // Filter and search plugins
   useEffect(() => {
     let filtered = plugins;
+
+    // Filter out unavailable plugins
+    filtered = filtered.filter(plugin => plugin.status !== 'unavailable');
 
     // Filter by type
     if (selectedType !== 'all') {

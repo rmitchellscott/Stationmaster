@@ -52,20 +52,37 @@ func NewPluginScannerService(db *gorm.DB) *PluginScannerService {
 func (s *PluginScannerService) ScanAndRegisterPlugins(ctx context.Context) error {
 	logging.InfoWithComponent(logging.ComponentPlugins, "Starting external plugin discovery", "service_url", s.serviceURL)
 
+	// Check if service is available first
+	if !s.IsServiceAvailable(ctx) {
+		// Mark all external plugins as unavailable if service is down
+		err := s.markAllExternalPluginsUnavailable()
+		if err != nil {
+			logging.WarnWithComponent(logging.ComponentPlugins, "Failed to mark external plugins as unavailable", "error", err)
+		}
+		return fmt.Errorf("external plugin service is unavailable")
+	}
+
 	// Fetch plugin metadata from external service
 	plugins, err := s.fetchPluginMetadata(ctx)
 	if err != nil {
+		// Mark all external plugins as unavailable if fetch fails
+		if markErr := s.markAllExternalPluginsUnavailable(); markErr != nil {
+			logging.WarnWithComponent(logging.ComponentPlugins, "Failed to mark external plugins as unavailable", "error", markErr)
+		}
 		return fmt.Errorf("failed to fetch plugin metadata: %w", err)
 	}
 
-	if len(plugins) == 0 {
-		logging.InfoWithComponent(logging.ComponentPlugins, "No external plugins found")
-		return nil
+	// Get existing external plugins to check which ones are missing
+	existingPlugins, err := s.getExistingExternalPlugins()
+	if err != nil {
+		logging.WarnWithComponent(logging.ComponentPlugins, "Failed to get existing external plugins", "error", err)
 	}
 
-	// Register each discovered plugin
+	// Mark plugins found in service as available and register/update them
+	foundPlugins := make(map[string]bool)
 	for identifier, pluginData := range plugins {
-		if err := s.registerPlugin(identifier, pluginData); err != nil {
+		foundPlugins[identifier] = true
+		if err := s.registerPlugin(identifier, pluginData, "available"); err != nil {
 			logging.WarnWithComponent(logging.ComponentPlugins, "Failed to register external plugin", 
 				"plugin", identifier, "error", err)
 			continue
@@ -75,8 +92,21 @@ func (s *PluginScannerService) ScanAndRegisterPlugins(ctx context.Context) error
 			"plugin", identifier, "version", pluginData.Version)
 	}
 
+	// Mark plugins not found in service as unavailable
+	for _, existingPlugin := range existingPlugins {
+		if !foundPlugins[existingPlugin.Identifier] {
+			if err := s.markPluginUnavailable(existingPlugin.Identifier); err != nil {
+				logging.WarnWithComponent(logging.ComponentPlugins, "Failed to mark plugin as unavailable", 
+					"plugin", existingPlugin.Identifier, "error", err)
+			} else {
+				logging.InfoWithComponent(logging.ComponentPlugins, "Marked external plugin as unavailable", 
+					"plugin", existingPlugin.Identifier)
+			}
+		}
+	}
+
 	logging.InfoWithComponent(logging.ComponentPlugins, "External plugin discovery completed", 
-		"discovered_count", len(plugins))
+		"discovered_count", len(plugins), "unavailable_count", len(existingPlugins)-len(foundPlugins))
 
 	return nil
 }
@@ -121,7 +151,7 @@ func (s *PluginScannerService) fetchPluginMetadata(ctx context.Context) (map[str
 }
 
 // registerPlugin registers or updates a plugin definition in the database
-func (s *PluginScannerService) registerPlugin(identifier string, data *ExternalPluginData) error {
+func (s *PluginScannerService) registerPlugin(identifier string, data *ExternalPluginData, status string) error {
 	// Check if plugin already exists
 	var existing database.PluginDefinition
 	err := s.db.Where("identifier = ? AND plugin_type = ?", identifier, "external").First(&existing).Error
@@ -144,6 +174,7 @@ func (s *PluginScannerService) registerPlugin(identifier string, data *ExternalP
 		EnableDarkMode:     &[]bool{false}[0], // Default to false
 		RemoveBleedMargin:  &[]bool{false}[0], // Default to false
 		IsActive:           true,  // External plugins should be active by default
+		Status:             status, // Set availability status
 	}
 
 	// Set template fields from the templates map
@@ -220,4 +251,36 @@ func (s *PluginScannerService) StartPeriodicScanning(interval time.Duration) {
 			}
 		}
 	}()
+}
+
+// getExistingExternalPlugins returns all external plugin definitions from the database
+func (s *PluginScannerService) getExistingExternalPlugins() ([]database.PluginDefinition, error) {
+	var plugins []database.PluginDefinition
+	err := s.db.Where("plugin_type = ?", "external").Find(&plugins).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to get existing external plugins: %w", err)
+	}
+	return plugins, nil
+}
+
+// markAllExternalPluginsUnavailable marks all external plugins as unavailable
+func (s *PluginScannerService) markAllExternalPluginsUnavailable() error {
+	err := s.db.Model(&database.PluginDefinition{}).
+		Where("plugin_type = ?", "external").
+		Update("status", "unavailable").Error
+	if err != nil {
+		return fmt.Errorf("failed to mark external plugins as unavailable: %w", err)
+	}
+	return nil
+}
+
+// markPluginUnavailable marks a specific external plugin as unavailable
+func (s *PluginScannerService) markPluginUnavailable(identifier string) error {
+	err := s.db.Model(&database.PluginDefinition{}).
+		Where("identifier = ? AND plugin_type = ?", identifier, "external").
+		Update("status", "unavailable").Error
+	if err != nil {
+		return fmt.Errorf("failed to mark plugin as unavailable: %w", err)
+	}
+	return nil
 }

@@ -109,6 +109,7 @@ interface PluginInstance {
     name: string;
     type: string;
     description: string;
+    status: string; // "available", "unavailable", "error"
   };
 }
 
@@ -412,7 +413,10 @@ function SortableTableRow({
     <TableRow 
       ref={setNodeRef} 
       style={style} 
-      className={`${animationClasses} ${item.plugin_instance?.needs_config_update ? 'opacity-60 bg-muted/30' : ''}`}
+      className={`${animationClasses} ${
+        item.plugin_instance?.plugin?.status === 'unavailable' ? 'opacity-70 bg-muted/30' : 
+        item.plugin_instance?.needs_config_update ? 'opacity-60 bg-muted/30' : ''
+      }`}
     >
       <TableCell>
         <div className="flex items-center gap-2">
@@ -460,7 +464,11 @@ function SortableTableRow({
         </div>
         <div className="text-xs md:hidden mt-1">
             <span className="flex items-center gap-1">
-              {item.plugin_instance?.needs_config_update ? (
+              {item.plugin_instance?.plugin?.status === 'unavailable' ? (
+                <Badge variant="secondary" className="text-xs !opacity-100 relative z-10">
+                  Unavailable
+                </Badge>
+              ) : item.plugin_instance?.needs_config_update ? (
                 <Badge 
                   variant="destructive" 
                   className="text-xs cursor-pointer hover:bg-destructive/80 !opacity-100 relative z-10"
@@ -489,8 +497,13 @@ function SortableTableRow({
           </div>
       </TableCell>
       <TableCell className="hidden md:table-cell">
-        {item.plugin_instance?.needs_config_update ? (
-          // Config update takes priority over all other statuses
+        {item.plugin_instance?.plugin?.status === 'unavailable' ? (
+          // Unavailable takes highest priority
+          <Badge variant="secondary" className="!opacity-100 relative z-10">
+            Unavailable
+          </Badge>
+        ) : item.plugin_instance?.needs_config_update ? (
+          // Config update takes second priority
           <Badge 
             variant="destructive"
             className="cursor-pointer hover:bg-destructive/80 !opacity-100 relative z-10"

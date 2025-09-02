@@ -36,6 +36,7 @@ type UnifiedPluginDefinition struct {
 	Author             string `json:"author"`
 	IsActive           bool   `json:"is_active"`
 	RequiresProcessing bool   `json:"requires_processing"`
+	Status             string `json:"status"`             // "available", "unavailable", "error"
 	
 	// Private plugin specific fields
 	InstanceCount      *int   `json:"instance_count,omitempty"` // Number of instances user has created
@@ -65,6 +66,7 @@ func GetAvailablePluginDefinitionsHandler(c *gin.Context) {
 			Author:             plugin.Author,
 			IsActive:           true,
 			RequiresProcessing: plugin.RequiresProcessing,
+			Status:             "available", // System plugins are always available
 		}
 		allPlugins = append(allPlugins, unifiedPlugin)
 	}
@@ -90,6 +92,7 @@ func GetAvailablePluginDefinitionsHandler(c *gin.Context) {
 				Author:             extPlugin.Author,
 				IsActive:           extPlugin.IsActive,
 				RequiresProcessing: extPlugin.RequiresProcessing,
+				Status:             extPlugin.Status, // Include availability status
 				// No InstanceCount for external plugins (like system plugins)
 			}
 			allPlugins = append(allPlugins, unifiedPlugin)
@@ -129,6 +132,7 @@ func GetAvailablePluginDefinitionsHandler(c *gin.Context) {
 				Author:             privatePlugin.Author,
 				IsActive:           privatePlugin.IsActive,
 				RequiresProcessing: privatePlugin.RequiresProcessing,
+				Status:             privatePlugin.Status, // Include availability status
 				InstanceCount:      &instances,
 			}
 			allPlugins = append(allPlugins, unifiedPlugin)
@@ -1883,4 +1887,90 @@ func GetUserPrivatePluginInstancesHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"instances": availableInstances})
+}
+
+// AdminGetExternalPluginsHandler returns all external plugin definitions for admin management
+func AdminGetExternalPluginsHandler(c *gin.Context) {
+	user, ok := auth.RequireUser(c)
+	if !ok {
+		return
+	}
+	
+	if !user.IsAdmin {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Admin access required"})
+		return
+	}
+
+	db := database.GetDB()
+	var externalPlugins []database.PluginDefinition
+	err := db.Where("plugin_type = ?", "external").Order("name").Find(&externalPlugins).Error
+	if err != nil {
+		logging.Error("Failed to fetch external plugins for admin", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch external plugins"})
+		return
+	}
+
+	// Count instances for each plugin
+	var result []gin.H
+	for _, plugin := range externalPlugins {
+		var instanceCount int64
+		db.Model(&database.PluginInstance{}).Where("plugin_definition_id = ?", plugin.ID).Count(&instanceCount)
+		
+		result = append(result, gin.H{
+			"id":                plugin.ID,
+			"identifier":        plugin.Identifier,
+			"name":              plugin.Name,
+			"description":       plugin.Description,
+			"version":           plugin.Version,
+			"author":            plugin.Author,
+			"status":            plugin.Status,
+			"is_active":         plugin.IsActive,
+			"instance_count":    instanceCount,
+			"created_at":        plugin.CreatedAt,
+			"updated_at":        plugin.UpdatedAt,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{"plugins": result})
+}
+
+// AdminDeleteExternalPluginHandler deletes an external plugin definition and all its instances
+func AdminDeleteExternalPluginHandler(c *gin.Context) {
+	user, ok := auth.RequireUser(c)
+	if !ok {
+		return
+	}
+	
+	if !user.IsAdmin {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Admin access required"})
+		return
+	}
+
+	pluginID := c.Param("id")
+	if pluginID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Plugin ID required"})
+		return
+	}
+
+	db := database.GetDB()
+	
+	// Verify this is an external plugin
+	var plugin database.PluginDefinition
+	err := db.Where("id = ? AND plugin_type = ?", pluginID, "external").First(&plugin).Error
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "External plugin not found"})
+		return
+	}
+
+	// Use the unified plugin service to delete (handles cascading deletes)
+	pluginService := database.NewUnifiedPluginService(db)
+	err = pluginService.DeletePluginDefinition(pluginID, nil)
+	if err != nil {
+		logging.Error("Failed to delete external plugin", "plugin_id", pluginID, "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete plugin"})
+		return
+	}
+
+	logging.Info("Admin deleted external plugin", "plugin_id", pluginID, "plugin_name", plugin.Name, "admin_user", user.Username)
+	c.JSON(http.StatusOK, gin.H{"message": "Plugin deleted successfully"})
 }

@@ -89,6 +89,7 @@ interface Plugin {
   author: string;
   is_active: boolean;
   requires_processing: boolean;
+  status: string; // "available", "unavailable", "error"
   data_strategy?: string;
   created_at: string;
   updated_at: string;
@@ -967,9 +968,15 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
           bValue = b.plugin?.name?.toLowerCase() || '';
           break;
         case 'status':
-          // Priority system: Update Config (3) > Active (2) > Unused (1)
-          aValue = a.needs_config_update ? 3 : (a.is_used_in_playlists ? 2 : 1);
-          bValue = b.needs_config_update ? 3 : (b.is_used_in_playlists ? 2 : 1);
+          // Priority system: Unavailable (4) > Update Config (3) > Active (2) > Unused (1)
+          const getStatusPriority = (instance: PluginInstance) => {
+            if (instance.plugin?.status === 'unavailable') return 4;
+            if (instance.needs_config_update) return 3;
+            if (instance.is_used_in_playlists) return 2;
+            return 1;
+          };
+          aValue = getStatusPriority(a);
+          bValue = getStatusPriority(b);
           break;
         case 'created':
           aValue = new Date(a.created_at).getTime();
@@ -1450,11 +1457,15 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                               </>
                             ) : (userPlugin.plugin?.name || "Unknown Plugin")}
                           </span>
-                          {userPlugin.needs_config_update ? (
+                          {userPlugin.plugin?.status === 'unavailable' ? (
+                            <Badge variant="secondary" className="text-xs">
+                              Unavailable
+                            </Badge>
+                          ) : userPlugin.needs_config_update ? (
                             <Badge 
                               variant="destructive" 
-                              className="text-xs cursor-pointer hover:bg-destructive/80"
-                              onClick={() => openEditDialog(userPlugin)}
+                              className={`text-xs ${userPlugin.plugin?.status !== 'unavailable' ? 'cursor-pointer hover:bg-destructive/80' : 'opacity-60 cursor-not-allowed'}`}
+                              onClick={userPlugin.plugin?.status !== 'unavailable' ? () => openEditDialog(userPlugin) : undefined}
                             >
                               Update Config
                             </Badge>
@@ -1480,11 +1491,13 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                     </TableCell>
                     <TableCell className="hidden md:table-cell">
                       <div className="flex gap-1 flex-wrap">
-                        {userPlugin.needs_config_update ? (
+                        {userPlugin.plugin?.status === 'unavailable' ? (
+                          <Badge variant="secondary">Unavailable</Badge>
+                        ) : userPlugin.needs_config_update ? (
                           <Badge 
                             variant="destructive" 
-                            className="cursor-pointer hover:bg-destructive/80"
-                            onClick={() => openEditDialog(userPlugin)}
+                            className={userPlugin.plugin?.status !== 'unavailable' ? 'cursor-pointer hover:bg-destructive/80' : 'opacity-60 cursor-not-allowed'}
+                            onClick={userPlugin.plugin?.status !== 'unavailable' ? () => openEditDialog(userPlugin) : undefined}
                           >
                             Update Config
                           </Badge>
@@ -1514,13 +1527,24 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                             <TooltipContent>Copy Webhook URL</TooltipContent>
                           </Tooltip>
                         )}
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => openEditDialog(userPlugin)}
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => openEditDialog(userPlugin)}
+                              disabled={userPlugin.plugin?.status === 'unavailable'}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {userPlugin.plugin?.status === 'unavailable' 
+                              ? "Plugin unavailable - cannot edit settings"
+                              : "Edit plugin instance"
+                            }
+                          </TooltipContent>
+                        </Tooltip>
                         <Button
                           size="sm"
                           variant="outline"

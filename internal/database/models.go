@@ -361,6 +361,7 @@ type PluginDefinition struct {
 	Author            string `gorm:"size:255" json:"author"`
 	ConfigSchema      string `gorm:"type:text" json:"config_schema"` // JSON schema for settings
 	RequiresProcessing bool   `gorm:"default:false" json:"requires_processing"`
+	Status            string `gorm:"size:20;default:'available'" json:"status"` // "available", "unavailable", "error"
 	
 	// Private/Public plugin specific fields (NULL for system plugins)
 	MarkupFull      *string        `gorm:"type:text" json:"markup_full,omitempty"`

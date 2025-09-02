@@ -173,6 +173,12 @@ func (w *RenderWorker) processRenderJob(ctx context.Context, job database.Render
 		return nil
 	}
 
+	// Skip rendering for unavailable plugins - they can't be processed
+	if pluginInstance.PluginDefinition.Status == "unavailable" {
+		w.markJobCancelled(ctx, job, "plugin definition is unavailable")
+		return nil
+	}
+
 	// Get only devices that have this plugin instance in their playlists
 	playlistService := database.NewPlaylistService(w.db)
 	devices, err := playlistService.GetDevicesUsingPluginInstance(pluginInstance.ID)

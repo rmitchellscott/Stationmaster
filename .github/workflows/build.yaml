@@ -88,12 +88,10 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: |
-            type=gha,scope=ruby-builder
             type=gha,scope=ui-builder
             type=gha,scope=stationmaster-builder
             type=gha
           cache-to: |
-            type=gha,scope=ruby-builder,mode=max
             type=gha,scope=ui-builder,mode=max
             type=gha,scope=stationmaster-builder,mode=max
             type=gha,mode=max

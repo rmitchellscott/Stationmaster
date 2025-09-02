@@ -141,10 +141,63 @@ func GetPlaylistHandler(c *gin.Context) {
 	}
 
 	// Get playlist items
-	items, err := playlistService.GetPlaylistItems(playlistID)
+	rawItems, err := playlistService.GetPlaylistItems(playlistID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch playlist items"})
 		return
+	}
+
+	// Transform playlist items to match frontend expected structure
+	items := make([]map[string]interface{}, len(rawItems))
+	for i, item := range rawItems {
+		// Create base item structure
+		transformedItem := map[string]interface{}{
+			"id":                item.ID,
+			"playlist_id":       item.PlaylistID,
+			"plugin_instance_id": item.PluginInstanceID,
+			"order_index":       item.OrderIndex,
+			"is_visible":        item.IsVisible,
+			"importance":        item.Importance,
+			"duration_override": item.DurationOverride,
+			"created_at":        item.CreatedAt,
+			"updated_at":        item.UpdatedAt,
+			"schedules":         item.Schedules,
+		}
+
+		// Transform PluginInstance to match frontend expectations
+		if item.PluginInstance.ID != uuid.Nil {
+			pluginInstance := map[string]interface{}{
+				"id":                  item.PluginInstance.ID,
+				"user_id":            item.PluginInstance.UserID,
+				"name":               item.PluginInstance.Name,
+				"settings":           string(item.PluginInstance.Settings),
+				"refresh_interval":   item.PluginInstance.RefreshInterval,
+				"is_active":          item.PluginInstance.IsActive,
+				"created_at":         item.PluginInstance.CreatedAt,
+				"updated_at":         item.PluginInstance.UpdatedAt,
+				"needs_config_update": item.PluginInstance.NeedsConfigUpdate,
+				"last_schema_version": item.PluginInstance.LastSchemaVersion,
+			}
+
+			// Add both original plugin_definition (for existing frontend logic) and flattened plugin (for status badges)
+			if item.PluginInstance.PluginDefinition.ID != "" {
+				// Keep original plugin_definition structure that frontend expects
+				pluginInstance["plugin_definition"] = item.PluginInstance.PluginDefinition
+				
+				// Add flattened plugin structure for status badges
+				pluginInstance["plugin"] = map[string]interface{}{
+					"id":          item.PluginInstance.PluginDefinition.ID,
+					"name":        item.PluginInstance.PluginDefinition.Name,
+					"type":        item.PluginInstance.PluginDefinition.PluginType,
+					"description": item.PluginInstance.PluginDefinition.Description,
+					"status":      item.PluginInstance.PluginDefinition.Status,
+				}
+			}
+
+			transformedItem["plugin_instance"] = pluginInstance
+		}
+
+		items[i] = transformedItem
 	}
 
 	c.JSON(http.StatusOK, gin.H{"playlist": playlist, "items": items})

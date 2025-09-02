@@ -414,6 +414,12 @@ func (pls *PlaylistService) GetActivePlaylistItemsForTime(deviceID uuid.UUID, cu
 		if item.PluginInstance.NeedsConfigUpdate {
 			continue
 		}
+		
+		// Skip items with unavailable plugins - they can't be rendered
+		if item.PluginInstance.PluginDefinition.ID != "" && 
+		   item.PluginInstance.PluginDefinition.Status == "unavailable" {
+			continue
+		}
 
 		// If no schedules, item is always active
 		if len(item.Schedules) == 0 {

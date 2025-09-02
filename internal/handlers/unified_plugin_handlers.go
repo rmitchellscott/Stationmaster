@@ -72,9 +72,10 @@ func GetAvailablePluginDefinitionsHandler(c *gin.Context) {
 	}
 
 	// Get external plugins from database (available to all users like system plugins)
+	// Only include plugins with status = "available" so unavailable plugins don't show in "Add Plugin" UI
 	db := database.GetDB()
 	var externalPlugins []database.PluginDefinition
-	err := db.Where("plugin_type = ? AND is_active = ?", "external", true).Find(&externalPlugins).Error
+	err := db.Where("plugin_type = ? AND is_active = ? AND status = ?", "external", true, "available").Find(&externalPlugins).Error
 	if err == nil {
 		for _, extPlugin := range externalPlugins {
 			// Create external plugin instance to get properly processed ConfigSchema
@@ -246,6 +247,7 @@ type UnifiedPluginInstance struct {
 		Name               string `json:"name"`
 		Type               string `json:"type"`
 		Description        string `json:"description"`
+		Status             string `json:"status"`
 		ConfigSchema       string `json:"config_schema"`
 		Version            string `json:"version"`
 		Author             string `json:"author"`
@@ -317,6 +319,7 @@ func GetPluginInstancesHandler(c *gin.Context) {
 				instance.Plugin.Name = pluginInstance.PluginDefinition.Name
 				instance.Plugin.Type = pluginInstance.PluginDefinition.PluginType
 				instance.Plugin.Description = pluginInstance.PluginDefinition.Description
+				instance.Plugin.Status = pluginInstance.PluginDefinition.Status
 				
 				// For external plugins, generate schema dynamically from YAML form fields
 				if pluginInstance.PluginDefinition.PluginType == "external" {

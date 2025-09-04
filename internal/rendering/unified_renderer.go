@@ -28,14 +28,12 @@ type PluginRenderOptions struct {
 // UnifiedRenderer handles template rendering using external Ruby service with TRMNL asset wrapping
 type UnifiedRenderer struct {
 	externalRubyService *ExternalRubyService
-	baseRenderer        *BaseHTMLRenderer
 }
 
 // NewUnifiedRenderer creates a new unified renderer
 func NewUnifiedRenderer() *UnifiedRenderer {
 	return &UnifiedRenderer{
 		externalRubyService: NewExternalRubyService(),
-		baseRenderer:        NewBaseHTMLRenderer(),
 	}
 }
 
@@ -124,7 +122,7 @@ func (r *UnifiedRenderer) generateHTMLStructure(content string, opts PluginRende
 		screenClasses = append(screenClasses, "screen--no-bleed")
 	}
 	if opts.EnableDarkMode {
-		screenClasses = append(screenClasses, "screen--dark")
+		screenClasses = append(screenClasses, "screen--dark-mode")
 	}
 
 	screenClassStr := ""
@@ -135,7 +133,7 @@ func (r *UnifiedRenderer) generateHTMLStructure(content string, opts PluginRende
 		screenClassStr += class
 	}
 
-	// Always wrap content with view wrapper for consistent structure
+	// Always wrap content with TRMNL structure including screen classes
 	wrappedContent := fmt.Sprintf(`<div id="plugin-%s" class="environment trmnl">
 		<div class="%s">
 			<div class="view view--full">%s</div>

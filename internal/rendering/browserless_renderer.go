@@ -261,9 +261,6 @@ func (r *BrowserlessRenderer) RenderHTMLWithResult(ctx context.Context, html str
 			"content", html,
 		)
 		
-		// TEMPORARY: Log raw HTML content without JSON escaping to verify it's correct
-		fmt.Printf("=== RAW HTML START ===\n%s\n=== RAW HTML END ===\n", html)
-		
 		// Check for potentially problematic patterns
 		if strings.Contains(html, "data:image/") {
 			dataImageCount := strings.Count(html, "data:image/")

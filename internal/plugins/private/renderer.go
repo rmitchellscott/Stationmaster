@@ -27,7 +27,6 @@ type RenderOptions struct {
 
 // PrivatePluginRenderer handles HTML generation for private plugins
 type PrivatePluginRenderer struct {
-	baseRenderer    *rendering.BaseHTMLRenderer
 	unifiedRenderer *rendering.UnifiedRenderer
 }
 
@@ -43,7 +42,6 @@ func NewPrivatePluginRenderer(appDir string) (*PrivatePluginRenderer, error) {
 	}
 	
 	return &PrivatePluginRenderer{
-		baseRenderer:    rendering.NewBaseHTMLRenderer(),
 		unifiedRenderer: unifiedRenderer,
 	}, nil
 }

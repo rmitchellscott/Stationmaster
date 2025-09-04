@@ -247,22 +247,7 @@ type HTMLDocumentOptions struct {
 
 // GenerateCompleteHTMLDocument creates a complete HTML document with TRMNL assets and proper structure
 func (h *HTMLAssetsManager) GenerateCompleteHTMLDocument(opts HTMLDocumentOptions, assetBaseURL string) string {
-	// Build screen classes based on options
-	screenClasses := []string{"screen"}
-	if opts.RemoveBleedMargin {
-		screenClasses = append(screenClasses, "screen--no-bleed")
-	}
-	if opts.EnableDarkMode {
-		screenClasses = append(screenClasses, "screen--dark")
-	}
-	
-	screenClassStr := ""
-	for i, class := range screenClasses {
-		if i > 0 {
-			screenClassStr += " "
-		}
-		screenClassStr += class
-	}
+	// Screen classes are now handled by UnifiedRenderer.generateHTMLStructure()
 	
 	// Additional styles for loading states
 	additionalStyles := fmt.Sprintf(`
@@ -303,6 +288,7 @@ func (h *HTMLAssetsManager) GenerateCompleteHTMLDocument(opts HTMLDocumentOption
 	htmlBuilder.WriteString("    <div id=\"loading\">Loading...</div>\n")
 	htmlBuilder.WriteString("    <div id=\"output\">")
 	// Don't escape opts.Content - it may contain complete HTML with <script> tags that should be preserved as-is
+	// Screen classes are now handled by UnifiedRenderer.generateHTMLStructure()
 	htmlBuilder.WriteString(opts.Content)
 	htmlBuilder.WriteString("</div>\n    \n    <script>\n        ")
 	htmlBuilder.WriteString(h.GenerateSharedJavaScript())

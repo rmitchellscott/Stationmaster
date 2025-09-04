@@ -290,5 +290,5 @@ func (r *BaseHTMLRenderer) generateSharedJavaScriptFunctions(assetBaseURL string
                 }
             }
         }
-	`, assetBaseURL, assetBaseURL, assetBaseURL)
+	`, assetBaseURL, assetBaseURL)
 }

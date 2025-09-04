@@ -23,6 +23,12 @@ export interface PlaylistIndexChangeEvent {
   sleep_config: SleepConfig;
 }
 
+export interface PlaylistItemSkipUpdatedEvent {
+  plugin_instance_id: string;
+  skip_display: boolean;
+  timestamp: string;
+}
+
 export interface DeviceEventsHookState {
   connected: boolean;
   error: string | null;
@@ -171,6 +177,12 @@ export function useDeviceEvents(deviceId: string): DeviceEventsHookResult {
               ...prev,
               sleepConfig: data.sleep_config || null,
             }));
+          } else if (parsedEvent.type === 'playlist_item_skip_updated') {
+            // Handle playlist item skip display updates
+            // Note: This event doesn't directly update state here since playlist items
+            // are managed in the PlaylistManagement component. The component can listen 
+            // for lastEvent changes and refresh data accordingly.
+            // We still update lastEvent to allow parent components to react
           }
         } catch (parseError) {
         }

@@ -11,6 +11,7 @@ import (
 	_ "image/png" // Register PNG decoder
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -20,6 +21,7 @@ import (
 	"github.com/rmitchellscott/stationmaster/internal/imageprocessing"
 	"github.com/rmitchellscott/stationmaster/internal/logging"
 	"github.com/rmitchellscott/stationmaster/internal/plugins"
+	"github.com/rmitchellscott/stationmaster/internal/sse"
 )
 
 // RenderWorker handles background rendering of plugin content
@@ -197,6 +199,9 @@ func (w *RenderWorker) processRenderJob(ctx context.Context, job database.Render
 		return nil
 	}
 
+	// Track if SKIP_DISPLAY flag was detected for any device
+	var skipDisplayDetected bool
+	
 	// Process plugin and render for each individual device
 	for _, device := range devices {
 		if ctx.Err() != nil {
@@ -209,11 +214,25 @@ func (w *RenderWorker) processRenderJob(ctx context.Context, job database.Render
 			continue
 		}
 
-		err := w.renderForDevice(ctx, pluginInstance, device)
+		skipDisplay, err := w.renderForDevice(ctx, pluginInstance, device)
 		if err != nil {
+			// Check if error is due to SKIP_SCREEN_GENERATION
+			if strings.Contains(err.Error(), "render skipped due at plugin's request") {
+				logging.Info("[RENDER_WORKER] Render skipped due at plugin's request", "plugin_instance_id", pluginInstance.ID, "device_id", device.ID)
+				continue
+			}
 			logging.Error("[RENDER_WORKER] Failed to render for device", "device_id", device.ID, "friendly_id", device.FriendlyID, "error", err)
 			continue // Continue with other devices
 		}
+		
+		if skipDisplay {
+			skipDisplayDetected = true
+		}
+	}
+	
+	// Always update playlist items with current skip display status (true or false)
+	if err := w.updatePlaylistItemsSkipDisplay(ctx, pluginInstance.ID, skipDisplayDetected); err != nil {
+		logging.Error("[RENDER_WORKER] Failed to update playlist items with skip display flag", "plugin_instance_id", pluginInstance.ID, "skip_display", skipDisplayDetected, "error", err)
 	}
 
 
@@ -238,8 +257,8 @@ func (w *RenderWorker) processRenderJob(ctx context.Context, job database.Render
 	return nil
 }
 
-// renderForDevice renders a plugin for a specific device
-func (w *RenderWorker) renderForDevice(ctx context.Context, pluginInstance database.PluginInstance, device database.Device) error {
+// renderForDevice renders a plugin for a specific device and returns whether SKIP_DISPLAY was detected
+func (w *RenderWorker) renderForDevice(ctx context.Context, pluginInstance database.PluginInstance, device database.Device) (bool, error) {
 	var plugin plugins.Plugin
 	var err error
 	
@@ -248,60 +267,60 @@ func (w *RenderWorker) renderForDevice(ctx context.Context, pluginInstance datab
 		// Use private plugin factory
 		plugin, err = w.factory.CreatePlugin(&pluginInstance.PluginDefinition, &pluginInstance)
 		if err != nil {
-			return fmt.Errorf("failed to create private plugin: %w", err)
+			return false, fmt.Errorf("failed to create private plugin: %w", err)
 		}
 	} else if pluginInstance.PluginDefinition.PluginType == "system" {
 		// System plugin - get from registry
 		var exists bool
 		plugin, exists = plugins.Get(pluginInstance.PluginDefinition.Identifier)
 		if !exists {
-			return fmt.Errorf("system plugin %s not found in registry", pluginInstance.PluginDefinition.Identifier)
+			return false, fmt.Errorf("system plugin %s not found in registry", pluginInstance.PluginDefinition.Identifier)
 		}
 	} else if pluginInstance.PluginDefinition.PluginType == "mashup" {
 		// Use mashup plugin factory
 		plugin, err = w.factory.CreatePlugin(&pluginInstance.PluginDefinition, &pluginInstance)
 		if err != nil {
-			return fmt.Errorf("failed to create mashup plugin: %w", err)
+			return false, fmt.Errorf("failed to create mashup plugin: %w", err)
 		}
 	} else if pluginInstance.PluginDefinition.PluginType == "external" {
 		// Use external plugin factory
 		plugin, err = w.factory.CreatePlugin(&pluginInstance.PluginDefinition, &pluginInstance)
 		if err != nil {
-			return fmt.Errorf("failed to create external plugin: %w", err)
+			return false, fmt.Errorf("failed to create external plugin: %w", err)
 		}
 	} else {
-		return fmt.Errorf("unknown plugin type: %s", pluginInstance.PluginDefinition.PluginType)
+		return false, fmt.Errorf("unknown plugin type: %s", pluginInstance.PluginDefinition.PluginType)
 	}
 
 	// Skip rendering for plugins that don't require processing
 	if !plugin.RequiresProcessing() {
 		logging.Debug("[RENDER_WORKER] Skipping render - plugin doesn't require processing", "plugin_type", pluginInstance.PluginDefinition.PluginType)
-		return nil
+		return false, nil
 	}
 
 	// Fetch user data for plugin context
 	user, err := database.NewUserService(w.db).GetUserByID(pluginInstance.UserID)
 	if err != nil {
-		return fmt.Errorf("failed to get user: %w", err)
+		return false, fmt.Errorf("failed to get user: %w", err)
 	}
 	
 	// Create plugin context with real device instance
 	pluginCtx, err := plugins.NewPluginContext(&device, &pluginInstance, user)
 	if err != nil {
-		return fmt.Errorf("failed to create plugin context: %w", err)
+		return false, fmt.Errorf("failed to create plugin context: %w", err)
 	}
 
 	// Process plugin
 	response, err := plugin.Process(pluginCtx)
 	if err != nil {
-		return fmt.Errorf("plugin processing failed: %w", err)
+		return false, fmt.Errorf("plugin processing failed: %w", err)
 	}
 	
 	// Handle no-change responses - skip rendering
 	if plugins.IsNoChangeResponse(response) {
 		logging.Info("[RENDER_WORKER] Skipping render - no data changes", 
 			"plugin", pluginInstance.Name, "device", device.FriendlyID, "device_model", fmt.Sprintf("%dx%d", device.DeviceModel.ScreenWidth, device.DeviceModel.ScreenHeight))
-		return nil
+		return false, nil
 	}
 
 	// Note: Old content cleanup now happens AFTER new content is saved to avoid
@@ -311,6 +330,19 @@ func (w *RenderWorker) renderForDevice(ctx context.Context, pluginInstance datab
 	var fileSize int64
 	var contentHash *string
 	var contentChanged bool = true // Default to true, set to false if content unchanged
+	var skipDisplay bool = false // Track if SKIP_DISPLAY flag was detected
+	
+	// Check for skip_display flag in response
+	if skipVal, exists := response["skip_display"]; exists {
+		if skip, ok := skipVal.(bool); ok {
+			skipDisplay = skip
+			if skip {
+				logging.Info("[RENDER_WORKER] TRMNL_SKIP_DISPLAY flag detected", 
+					"plugin_instance_id", pluginInstance.ID,
+					"device_id", device.ID)
+			}
+		}
+	}
 
 	if plugin.PluginType() == plugins.PluginTypeImage {
 		// Check if plugin provided image data (new approach)
@@ -323,19 +355,19 @@ func (w *RenderWorker) renderForDevice(ctx context.Context, pluginInstance datab
 				// Decode the raw PNG image from browserless
 				img, _, err := image.Decode(bytes.NewReader(imageData))
 				if err != nil {
-					return fmt.Errorf("failed to decode browserless plugin image: %w", err)
+					return false, fmt.Errorf("failed to decode browserless plugin image: %w", err)
 				}
 
 				// Convert to grayscale and quantize to target bit depth (no dithering)
 				quantizedImg := imageprocessing.QuantizeToGrayscalePalette(img, device.DeviceModel.BitDepth)
 				if quantizedImg == nil {
-					return fmt.Errorf("failed to quantize browserless plugin image")
+					return false, fmt.Errorf("failed to quantize browserless plugin image")
 				}
 
 				// Encode as PNG with correct bit depth
 				processedImageData, err = imageprocessing.EncodePalettedPNG(quantizedImg, device.DeviceModel.BitDepth)
 				if err != nil {
-					return fmt.Errorf("failed to encode browserless plugin image: %w", err)
+					return false, fmt.Errorf("failed to encode browserless plugin image: %w", err)
 				}
 
 				logging.Debug("[RENDER_WORKER] Processed browserless plugin image", 
@@ -400,12 +432,12 @@ func (w *RenderWorker) renderForDevice(ctx context.Context, pluginInstance datab
 			// Write file with better error handling
 			err = os.WriteFile(imagePath, processedImageData, 0644)
 			if err != nil {
-				return fmt.Errorf("failed to save image plugin image: %w", err)
+				return false, fmt.Errorf("failed to save image plugin image: %w", err)
 			}
 
 			// Verify file was actually written and is accessible
 			if _, err := os.Stat(imagePath); os.IsNotExist(err) {
-				return fmt.Errorf("image file was not created successfully: %s", imagePath)
+				return false, fmt.Errorf("image file was not created successfully: %s", imagePath)
 			} else if err != nil {
 				logging.Warn("[RENDER_WORKER] File verification failed", "path", imagePath, "error", err)
 			}
@@ -424,7 +456,7 @@ func (w *RenderWorker) renderForDevice(ctx context.Context, pluginInstance datab
 			// Fallback to URL reference for backward compatibility
 			imageURL, ok := plugins.GetImageURL(response)
 			if !ok {
-				return fmt.Errorf("image plugin response missing image URL and image data")
+				return false, fmt.Errorf("image plugin response missing image URL and image data")
 			}
 			imagePath = imageURL
 			fileSize = 0 // URL reference, no local file
@@ -432,7 +464,7 @@ func (w *RenderWorker) renderForDevice(ctx context.Context, pluginInstance datab
 	} else if plugin.PluginType() == plugins.PluginTypeData {
 		// Data plugins are not supported without HTML renderer
 		logging.Debug("[RENDER_WORKER] Skipping data plugin rendering - HTML rendering not available", "plugin_type", pluginInstance.PluginDefinition.PluginType)
-		return nil // Skip this render, don't error
+		return false, nil // Skip this render, don't error
 	}
 
 	// Store rendered content record only if content changed
@@ -466,7 +498,7 @@ func (w *RenderWorker) renderForDevice(ctx context.Context, pluginInstance datab
 
 		err = w.db.WithContext(ctx).Create(&renderedContent).Error
 		if err != nil {
-			return fmt.Errorf("failed to store rendered content: %w", err)
+			return false, fmt.Errorf("failed to store rendered content: %w", err)
 		}
 		
 		// Cleanup old content for this plugin after successful save
@@ -497,7 +529,7 @@ func (w *RenderWorker) renderForDevice(ctx context.Context, pluginInstance datab
 	// Cleanup is now handled synchronously after content save (above)
 	// This ensures proper timing and prevents race conditions
 
-	return nil
+	return skipDisplay, nil
 }
 
 // scheduleNextRender schedules the next render for a plugin based on its refresh interval with timezone support
@@ -950,4 +982,75 @@ func (w *RenderWorker) CleanupOrphanedFiles(ctx context.Context) error {
 func (w *RenderWorker) calculateImageHash(imageBytes []byte) string {
 	hash := sha256.Sum256(imageBytes)
 	return fmt.Sprintf("%x", hash)
+}
+
+// updatePlaylistItemsSkipDisplay updates all playlist items for a plugin instance with the skip display flag
+func (w *RenderWorker) updatePlaylistItemsSkipDisplay(ctx context.Context, pluginInstanceID uuid.UUID, skipDisplay bool) error {
+	// Get all playlist items that use this plugin instance
+	var playlistItems []database.PlaylistItem
+	err := w.db.WithContext(ctx).
+		Where("plugin_instance_id = ?", pluginInstanceID).
+		Find(&playlistItems).Error
+	if err != nil {
+		return fmt.Errorf("failed to find playlist items: %w", err)
+	}
+	
+	// Update each playlist item with the skip display flag
+	updatedCount := 0
+	updatedItems := []database.PlaylistItem{} // Track which items were actually updated
+	for _, item := range playlistItems {
+		// Only update if the value has changed to reduce unnecessary DB writes
+		if item.SkipDisplay != skipDisplay {
+			item.SkipDisplay = skipDisplay
+			if err := w.db.WithContext(ctx).Save(&item).Error; err != nil {
+				logging.Warn("[RENDER_WORKER] Failed to update playlist item skip display flag", 
+					"item_id", item.ID, "skip_display", skipDisplay, "error", err)
+			} else {
+				updatedCount++
+				updatedItems = append(updatedItems, item) // Track this item as updated
+			}
+		}
+	}
+	
+	if updatedCount > 0 || len(playlistItems) > 0 {
+		logging.Info("[RENDER_WORKER] Updated playlist items with skip display flag", 
+			"plugin_instance_id", pluginInstanceID,
+			"skip_display", skipDisplay,
+			"total_items", len(playlistItems),
+			"items_changed", updatedCount)
+	}
+	
+	// Send SSE broadcast to all affected devices if there were actual updates
+	if updatedCount > 0 {
+		// Get unique device IDs for items that were actually updated
+		deviceIDs := make(map[uuid.UUID]bool)
+		for _, item := range updatedItems { // Use updatedItems instead of all items
+			// Get the playlist to find the device ID
+			var playlist database.Playlist
+			err := w.db.WithContext(ctx).Where("id = ?", item.PlaylistID).First(&playlist).Error
+			if err == nil {
+				deviceIDs[playlist.DeviceID] = true
+			}
+		}
+		
+		// Broadcast to all affected devices
+		sseService := sse.GetSSEService()
+		for deviceID := range deviceIDs {
+			sseService.BroadcastToDevice(deviceID, sse.Event{
+				Type: "playlist_item_skip_updated",
+				Data: map[string]interface{}{
+					"plugin_instance_id": pluginInstanceID.String(),
+					"skip_display":       skipDisplay,
+					"timestamp":          time.Now().UTC().Format(time.RFC3339),
+				},
+			})
+		}
+		
+		logging.Info("[RENDER_WORKER] Broadcasted skip display update via SSE",
+			"plugin_instance_id", pluginInstanceID,
+			"skip_display", skipDisplay,
+			"affected_devices", len(deviceIDs))
+	}
+	
+	return nil
 }

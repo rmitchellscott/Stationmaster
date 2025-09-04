@@ -203,6 +203,36 @@ func (h *HTMLAssetsManager) GenerateServerSideInitializationJS() string {
 `
 }
 
+// GenerateFlagDetectionJS returns JavaScript for detecting TRMNL skip flags
+func (h *HTMLAssetsManager) GenerateFlagDetectionJS() string {
+	return `
+		// Check for render completion signal every 500ms
+		let checkCount = 0;
+		const checkInterval = setInterval(function() {
+			checkCount++;
+			const hasSignal = document.body && document.body.hasAttribute('data-render-complete');
+			
+			if (hasSignal) {
+				// Check for TRMNL skip flags right before screenshot when ALL JavaScript has executed
+				if (typeof window.TRMNL_SKIP_DISPLAY !== 'undefined' && window.TRMNL_SKIP_DISPLAY) {
+					document.body.setAttribute('data-trmnl-skip-display', 'true');
+					console.log('[TRMNL] SKIP_DISPLAY flag detected - marking for skip display');
+				}
+				if (typeof window.TRMNL_SKIP_SCREEN_GENERATION !== 'undefined' && window.TRMNL_SKIP_SCREEN_GENERATION) {
+					document.body.setAttribute('data-trmnl-skip-screen-generation', 'true');
+					console.log('[TRMNL] SKIP_SCREEN_GENERATION flag detected - marking for abort');
+				}
+				
+				clearInterval(checkInterval);
+			}
+			
+			if (checkCount >= 40) { // 20 seconds max
+				clearInterval(checkInterval);
+			}
+		}, 500);
+`
+}
+
 // HTMLDocumentOptions contains options for generating complete HTML documents
 type HTMLDocumentOptions struct {
 	Title             string
@@ -278,6 +308,8 @@ func (h *HTMLAssetsManager) GenerateCompleteHTMLDocument(opts HTMLDocumentOption
 	htmlBuilder.WriteString(h.GenerateSharedJavaScript())
 	htmlBuilder.WriteString("\n        ")
 	htmlBuilder.WriteString(h.GenerateServerSideInitializationJS())
+	htmlBuilder.WriteString("\n        ")
+	htmlBuilder.WriteString(h.GenerateFlagDetectionJS())
 	htmlBuilder.WriteString("\n        ")
 	htmlBuilder.WriteString(opts.AdditionalJS)
 	htmlBuilder.WriteString("\n    </script>\n</body>\n</html>")

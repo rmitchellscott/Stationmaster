@@ -90,6 +90,7 @@ import {
   GripVertical,
   Moon,
   Layers,
+  CircleMinus,
 } from "lucide-react";
 import { Device, isDeviceCurrentlySleeping } from "@/utils/deviceHelpers";
 
@@ -127,6 +128,7 @@ interface PlaylistItem {
   schedules?: any[];
   is_sleep_mode?: boolean; // Virtual field for sleep mode items
   sleep_schedule_text?: string; // Schedule text for sleep mode items
+  skip_display?: boolean; // Skip display flag from TRMNL_SKIP_DISPLAY
 }
 
 interface PlaylistManagementProps {
@@ -479,17 +481,27 @@ function SortableTableRow({
                 >
                   Update Config
                 </Badge>
+              ) : !item.is_visible ? (
+                <Badge variant="secondary" className="text-xs !opacity-100 relative z-10">
+                  <EyeOff className="h-3 w-3 mr-1" />
+                  Hidden
+                </Badge>
+              ) : item.skip_display ? (
+                <Badge variant="secondary" className="text-xs !opacity-100 relative z-10">
+                  <CircleMinus className="h-3 w-3 mr-1" />
+                  Skipped
+                </Badge>
               ) : (
                 <>
                   {isCurrentlyShowing ? (
                     <PlayCircle className="h-3 w-3" />
-                  ) : isActive && item.is_visible ? (
+                  ) : isActive ? (
                     <Eye className="h-3 w-3" />
                   ) : (
                     <EyeOff className="h-3 w-3" />
                   )}
                   <span className="text-muted-foreground">
-                    {isCurrentlyShowing ? "Now Showing" : isActive ? "Active" : item.is_visible ? "Scheduled" : "Hidden"} • {item.importance ? "Important" : "Normal"}
+                    {isCurrentlyShowing ? "Now Showing" : isActive ? "Active" : "Scheduled"} • {item.importance ? "Important" : "Normal"}
                   </span>
                 </>
               )}
@@ -513,6 +525,18 @@ function SortableTableRow({
             }}
           >
             Update Config
+          </Badge>
+        ) : !item.is_visible ? (
+          // Hidden takes third priority
+          <Badge variant="secondary" className="!opacity-100 relative z-10">
+            <EyeOff className="h-3 w-3 mr-1" />
+            Hidden
+          </Badge>
+        ) : item.skip_display ? (
+          // Skip display takes fourth priority
+          <Badge variant="secondary" className="!opacity-100 relative z-10">
+            <CircleMinus className="h-3 w-3 mr-1" />
+            Skipped
           </Badge>
         ) : item.is_sleep_mode ? (
           // Special status logic for sleep mode items
@@ -567,20 +591,15 @@ function SortableTableRow({
               <PlayCircle className="h-3 w-3 mr-1" />
               Now Showing
             </Badge>
-          ) : isActive && item.is_visible ? (
+          ) : isActive ? (
             <Badge variant="outline">
               <Eye className="h-3 w-3 mr-1" />
               Active
             </Badge>
-          ) : item.is_visible ? (
-            <Badge variant="secondary">
-              <EyeOff className="h-3 w-3 mr-1" />
-              Scheduled
-            </Badge>
           ) : (
             <Badge variant="secondary">
               <EyeOff className="h-3 w-3 mr-1" />
-              Hidden
+              Scheduled
             </Badge>
           )
         )}
@@ -1473,6 +1492,14 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
       handleTimeTravelChange();
     }
   }, [timeTravelDate, timeTravelTime, timeTravelMode]);
+
+  // Listen for skip display updates via SSE and refresh playlist items
+  useEffect(() => {
+    if (deviceEvents.lastEvent?.type === 'playlist_item_skip_updated') {
+      // Refresh playlist items when skip display status changes
+      fetchPlaylistItems();
+    }
+  }, [deviceEvents.lastEvent]);
 
 
   return (

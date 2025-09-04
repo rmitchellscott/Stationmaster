@@ -227,7 +227,7 @@ func (p *MashupPlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespons
 	renderCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	
-	imageData, err := browserRenderer.RenderHTML(
+	renderResult, err := browserRenderer.RenderHTMLWithResult(
 		renderCtx,
 		finalHTML,
 		ctx.Device.DeviceModel.ScreenWidth,
@@ -238,6 +238,9 @@ func (p *MashupPlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespons
 			fmt.Errorf("failed to render HTML to image: %w", err)
 	}
 	
+	imageData := renderResult.ImageData
+	flags := renderResult.Flags
+	
 	// Generate filename
 	filename := fmt.Sprintf("mashup_%s_%dx%d.png",
 		time.Now().Format("20060102_150405"),
@@ -245,7 +248,13 @@ func (p *MashupPlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespons
 		ctx.Device.DeviceModel.ScreenHeight)
 	
 	// Return image data response (like private plugins do)
-	return plugins.CreateImageDataResponse(imageData, filename), nil
+	response := plugins.CreateImageDataResponse(imageData, filename)
+	// Add flags to response metadata if needed
+	if flags.SkipDisplay {
+		response["skip_display"] = true
+	}
+	
+	return response, nil
 }
 
 // Validate validates the plugin settings (currently no special validation needed)

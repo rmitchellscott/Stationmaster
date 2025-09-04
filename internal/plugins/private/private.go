@@ -286,7 +286,7 @@ func (p *PrivatePlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespon
 	renderCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	
-	imageData, err := browserRenderer.RenderHTML(
+	renderResult, err := browserRenderer.RenderHTMLWithResult(
 		renderCtx,
 		html,
 		ctx.Device.DeviceModel.ScreenWidth,
@@ -297,6 +297,9 @@ func (p *PrivatePlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespon
 			fmt.Errorf("failed to render HTML to image: %w", err)
 	}
 	
+	imageData := renderResult.ImageData
+	flags := renderResult.Flags
+	
 	
 	// Generate filename
 	filename := fmt.Sprintf("private_plugin_%s_%dx%d.png",
@@ -305,7 +308,13 @@ func (p *PrivatePlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespon
 		ctx.Device.DeviceModel.ScreenHeight)
 	
 	// Return image data response (RenderWorker will handle storage)
-	return plugins.CreateImageDataResponse(imageData, filename), nil
+	response := plugins.CreateImageDataResponse(imageData, filename)
+	// Add flags to response metadata if needed
+	if flags.SkipDisplay {
+		response["skip_display"] = true
+	}
+	
+	return response, nil
 }
 
 // Validate validates the plugin settings against the form fields schema

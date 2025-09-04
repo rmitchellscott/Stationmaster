@@ -161,8 +161,44 @@ type HTMLScreenshotRequest struct {
 	SetExtraHTTPHeaders map[string]string `json:"setExtraHTTPHeaders,omitempty"`
 }
 
+// ContentRequest represents the request payload for browserless /content endpoint (no options field)
+type ContentRequest struct {
+	HTML     string `json:"html"`
+	Viewport struct {
+		Width  int `json:"width"`
+		Height int `json:"height"`
+	} `json:"viewport"`
+	GotoOptions struct {
+		WaitUntil string `json:"waitUntil"`
+		Timeout   int    `json:"timeout"`
+	} `json:"gotoOptions"`
+	WaitForSelector *WaitForSelector `json:"waitForSelector,omitempty"`
+}
+
+// RenderFlags contains flags detected during rendering
+type RenderFlags struct {
+	SkipScreenGeneration bool `json:"skip_screen_generation"`
+	SkipDisplay          bool `json:"skip_display"`
+}
+
+// RenderHTMLResult contains the result of HTML rendering including any flags
+type RenderHTMLResult struct {
+	ImageData []byte      `json:"image_data"`
+	Flags     RenderFlags `json:"flags"`
+}
+
 // RenderHTML renders HTML content to an image using browserless
 func (r *BrowserlessRenderer) RenderHTML(ctx context.Context, html string, width, height int) ([]byte, error) {
+	result, err := r.RenderHTMLWithResult(ctx, html, width, height)
+	if err != nil {
+		return nil, err
+	}
+	return result.ImageData, nil
+}
+
+// RenderHTMLWithResult renders HTML content and returns both image data and flags
+func (r *BrowserlessRenderer) RenderHTMLWithResult(ctx context.Context, html string, width, height int) (*RenderHTMLResult, error) {
+	
 	// Prepare browserless request for HTML content
 	req := HTMLScreenshotRequest{
 		HTML: html,
@@ -190,73 +226,7 @@ func (r *BrowserlessRenderer) RenderHTML(ctx context.Context, html string, width
 		Visible:  false,                               // Don't require visibility, just presence
 	}
 	
-	// Add debugging script to capture console output and errors
-	req.AddScriptTag = []map[string]interface{}{
-		{
-			"content": `
-				console.log('[BROWSERLESS DEBUG] Debug script injected - starting monitoring');
-				
-				// Capture all console output
-				const originalLog = console.log;
-				const originalError = console.error;
-				const originalWarn = console.warn;
-				
-				let logBuffer = [];
-				
-				console.log = function(...args) {
-					logBuffer.push(['LOG', args.join(' ')]);
-					originalLog.apply(console, args);
-				};
-				
-				console.error = function(...args) {
-					logBuffer.push(['ERROR', args.join(' ')]);
-					originalError.apply(console, args);
-				};
-				
-				console.warn = function(...args) {
-					logBuffer.push(['WARN', args.join(' ')]);
-					originalWarn.apply(console, args);
-				};
-				
-				// Track script loading
-				let scriptsLoaded = 0;
-				let scriptsTotal = document.querySelectorAll('script[src]').length;
-				console.log('[BROWSERLESS DEBUG] Found ' + scriptsTotal + ' external scripts to load');
-				
-				// Monitor for errors
-				window.addEventListener('error', function(e) {
-					console.error('[BROWSERLESS DEBUG] JavaScript error:', e.error, 'at', e.filename + ':' + e.lineno);
-				});
-				
-				window.addEventListener('unhandledrejection', function(e) {
-					console.error('[BROWSERLESS DEBUG] Unhandled promise rejection:', e.reason);
-				});
-				
-				// Monitor document ready state
-				console.log('[BROWSERLESS DEBUG] Document ready state:', document.readyState);
-				
-				// Check for render completion signal every 500ms
-				let checkCount = 0;
-				const checkInterval = setInterval(function() {
-					checkCount++;
-					const hasSignal = document.body && document.body.hasAttribute('data-render-complete');
-					console.log('[BROWSERLESS DEBUG] Check #' + checkCount + ': render-complete=' + hasSignal);
-					
-					if (hasSignal) {
-						console.log('[BROWSERLESS DEBUG] Render completion signal found! Clearing interval.');
-						clearInterval(checkInterval);
-					}
-					
-					if (checkCount >= 40) { // 20 seconds max
-						console.error('[BROWSERLESS DEBUG] Timeout waiting for render completion signal');
-						clearInterval(checkInterval);
-					}
-				}, 500);
-				
-				console.log('[BROWSERLESS DEBUG] Debug monitoring initialized');
-			`,
-		},
-	}
+	// Flag detection is now handled automatically in WrapWithTRNMLAssets - no manual injection needed
 	
 	// Add extra headers for debugging
 	req.SetExtraHTTPHeaders = map[string]string{
@@ -352,6 +322,17 @@ func (r *BrowserlessRenderer) RenderHTML(ctx context.Context, html string, width
 		return nil, fmt.Errorf("browserless HTML screenshot request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 	
+	// Debug: Log ALL response headers to understand what browserless returns
+	allHeaders := make(map[string][]string)
+	for key, values := range resp.Header {
+		allHeaders[key] = values
+	}
+	
+	logging.Browserless("Complete browserless response headers",
+		"status_code", resp.StatusCode,
+		"all_headers", allHeaders,
+	)
+	
 	// Log debug information from successful responses too
 	debugHeaders := make(map[string][]string)
 	for key, values := range resp.Header {
@@ -365,6 +346,17 @@ func (r *BrowserlessRenderer) RenderHTML(ctx context.Context, html string, width
 			"status_code", resp.StatusCode,
 			"debug_headers", debugHeaders,
 		)
+		
+		// Log console output for debugging
+		if consoleOutput, exists := debugHeaders["X-Response-Console"]; exists && len(consoleOutput) > 0 {
+			logging.Browserless("Console output from browserless",
+				"console_output", consoleOutput,
+			)
+		}
+	} else {
+		logging.Browserless("No debug headers found in browserless response",
+			"available_headers", allHeaders,
+		)
 	}
 	
 	// Read response body (image data)
@@ -373,7 +365,174 @@ func (r *BrowserlessRenderer) RenderHTML(ctx context.Context, html string, width
 		return nil, fmt.Errorf("failed to read browserless response: %w", err)
 	}
 	
-	return imageData, nil
+	// Parse TRMNL flags from DOM attributes using browserless /content endpoint
+	flags, err := r.parseTRMNLFlagsFromDOM(ctx, html)
+	if err != nil {
+		logging.Browserless("Failed to parse TRMNL flags from DOM, continuing with no flags",
+			"error", err.Error(),
+		)
+		flags = RenderFlags{} // Continue with no flags rather than failing
+	}
+	
+	// If SKIP_SCREEN_GENERATION was detected, we should abort
+	if flags.SkipScreenGeneration {
+		return nil, fmt.Errorf("render skipped due at plugin's request")
+	}
+	
+	// Return both image data and flags
+	return &RenderHTMLResult{
+		ImageData: imageData,
+		Flags:     flags,
+	}, nil
+}
+
+// parseTRMNLFlagsFromHeaders extracts TRMNL flags from browserless response headers
+func (r *BrowserlessRenderer) parseTRMNLFlagsFromHeaders(headers http.Header) RenderFlags {
+	flags := RenderFlags{}
+	
+	logging.Browserless("Starting TRMNL flag parsing from headers",
+		"total_headers", len(headers),
+	)
+	
+	// Check X-Response-Console header for our TRMNL flag messages
+	consoleOutputs := headers["X-Response-Console"]
+	logging.Browserless("Checking X-Response-Console header",
+		"header_exists", len(consoleOutputs) > 0,
+		"console_entries_count", len(consoleOutputs),
+		"console_outputs", consoleOutputs,
+	)
+	
+	for i, output := range consoleOutputs {
+		logging.Browserless("Processing console output entry",
+			"entry_index", i,
+			"output_length", len(output),
+			"output_content", output,
+		)
+		
+		// Look for our specific console log messages
+		if strings.Contains(output, "[TRMNL] SKIP_SCREEN_GENERATION flag detected") {
+			flags.SkipScreenGeneration = true
+			logging.Info("[BROWSERLESS] TRMNL_SKIP_SCREEN_GENERATION detected in console output")
+		}
+		if strings.Contains(output, "[TRMNL] SKIP_DISPLAY flag detected") {
+			flags.SkipDisplay = true
+			logging.Info("[BROWSERLESS] TRMNL_SKIP_DISPLAY detected in console output")
+		}
+	}
+	
+	// Fallback: Check other debug headers if console output not available
+	if !flags.SkipScreenGeneration && !flags.SkipDisplay {
+		logging.Browserless("No flags found in console output, trying fallback DOM check")
+		flags = r.fallbackDOMCheck(headers)
+	}
+	
+	logging.Browserless("Final TRMNL flag parsing result",
+		"skip_screen_generation", flags.SkipScreenGeneration,
+		"skip_display", flags.SkipDisplay,
+	)
+	
+	return flags
+}
+
+// parseTRMNLFlagsFromDOM extracts TRMNL flags by checking DOM attributes via browserless /content endpoint
+func (r *BrowserlessRenderer) parseTRMNLFlagsFromDOM(ctx context.Context, html string) (RenderFlags, error) {
+	flags := RenderFlags{}
+	
+	logging.Browserless("Starting TRMNL flag detection via DOM content check",
+		"method", "content_endpoint",
+	)
+	
+	// Prepare browserless content request to get DOM after JavaScript execution
+	contentReq := ContentRequest{
+		HTML: html,
+		Viewport: struct {
+			Width  int `json:"width"`
+			Height int `json:"height"`
+		}{
+			Width:  800,
+			Height: 480,
+		},
+	}
+	
+	// Set wait options for complete JavaScript execution (same as screenshot request)
+	contentReq.GotoOptions.WaitUntil = "networkidle0"
+	contentReq.GotoOptions.Timeout = 60000
+	
+	// Wait for completion signal (same as screenshot request)  
+	contentReq.WaitForSelector = &WaitForSelector{
+		Selector: "body[data-render-complete='true']",
+		Timeout:  20000,
+		Visible:  false,
+	}
+	
+	// Marshal request to JSON
+	requestBody, err := json.Marshal(contentReq)
+	if err != nil {
+		return flags, fmt.Errorf("failed to marshal content request: %w", err)
+	}
+	
+	// Make request to browserless /content endpoint
+	contentURL := fmt.Sprintf("%s/content", r.baseURL)
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", contentURL, bytes.NewBuffer(requestBody))
+	if err != nil {
+		return flags, fmt.Errorf("failed to create content HTTP request: %w", err)
+	}
+	
+	httpReq.Header.Set("Content-Type", "application/json")
+	
+	resp, err := r.client.Do(httpReq)
+	if err != nil {
+		return flags, fmt.Errorf("failed to make content request to browserless: %w", err)
+	}
+	defer resp.Body.Close()
+	
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return flags, fmt.Errorf("browserless content request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+	
+	// Read DOM content
+	domContent, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return flags, fmt.Errorf("failed to read browserless content response: %w", err)
+	}
+	
+	domHTML := string(domContent)
+	logging.Browserless("Received DOM content from browserless",
+		"content_length", len(domHTML),
+		"has_body_tag", strings.Contains(domHTML, "<body"),
+	)
+	
+	// Check for TRMNL flag attributes in the DOM
+	if strings.Contains(domHTML, `data-trmnl-skip-screen-generation="true"`) ||
+		strings.Contains(domHTML, `data-trmnl-skip-screen-generation='true'`) {
+		flags.SkipScreenGeneration = true
+		logging.Info("[BROWSERLESS] TRMNL_SKIP_SCREEN_GENERATION detected in DOM attributes")
+	}
+	
+	if strings.Contains(domHTML, `data-trmnl-skip-display="true"`) ||
+		strings.Contains(domHTML, `data-trmnl-skip-display='true'`) {
+		flags.SkipDisplay = true
+		logging.Info("[BROWSERLESS] TRMNL_SKIP_DISPLAY detected in DOM attributes")
+	}
+	
+	logging.Browserless("DOM flag detection completed",
+		"skip_screen_generation", flags.SkipScreenGeneration,
+		"skip_display", flags.SkipDisplay,
+	)
+	
+	return flags, nil
+}
+
+// fallbackDOMCheck provides a fallback method using /content endpoint to check DOM
+func (r *BrowserlessRenderer) fallbackDOMCheck(headers http.Header) RenderFlags {
+	// This is now obsolete since we moved to DOM-based detection
+	// Keeping for backward compatibility but it will always return empty flags
+	flags := RenderFlags{}
+	
+	logging.Debug("[BROWSERLESS] fallbackDOMCheck called but DOM detection now handled in parseTRMNLFlagsFromDOM")
+	
+	return flags
 }
 
 // DefaultBrowserlessRenderer creates a renderer with default options

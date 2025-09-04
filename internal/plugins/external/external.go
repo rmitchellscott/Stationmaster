@@ -170,7 +170,7 @@ func (p *ExternalPlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespo
 	renderCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	
-	imageData, err := browserRenderer.RenderHTML(
+	renderResult, err := browserRenderer.RenderHTMLWithResult(
 		renderCtx,
 		wrappedHTML,
 		ctx.Device.DeviceModel.ScreenWidth,
@@ -181,6 +181,9 @@ func (p *ExternalPlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespo
 			fmt.Errorf("failed to render HTML to image: %w", err)
 	}
 	
+	imageData := renderResult.ImageData
+	flags := renderResult.Flags
+	
 	// Generate filename
 	filename := fmt.Sprintf("external_plugin_%s_%dx%d.png",
 		time.Now().Format("20060102_150405"),
@@ -188,7 +191,13 @@ func (p *ExternalPlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespo
 		ctx.Device.DeviceModel.ScreenHeight)
 	
 	// Return image data response (RenderWorker will handle storage)
-	return plugins.CreateImageDataResponse(imageData, filename), nil
+	response := plugins.CreateImageDataResponse(imageData, filename)
+	// Add flags to response metadata if needed
+	if flags.SkipDisplay {
+		response["skip_display"] = true
+	}
+	
+	return response, nil
 }
 
 

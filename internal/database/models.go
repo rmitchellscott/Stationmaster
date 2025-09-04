@@ -307,6 +307,7 @@ type PlaylistItem struct {
 	IsVisible        bool      `gorm:"default:true" json:"is_visible"`
 	Importance       bool      `gorm:"default:false" json:"importance"` // false=normal, true=important
 	DurationOverride *int      `json:"duration_override,omitempty"`     // override default refresh rate
+	SkipDisplay      bool      `gorm:"default:false" json:"skip_display"` // true if plugin requested to skip display
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`
 

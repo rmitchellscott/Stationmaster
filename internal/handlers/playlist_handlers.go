@@ -159,6 +159,7 @@ func GetPlaylistHandler(c *gin.Context) {
 			"is_visible":        item.IsVisible,
 			"importance":        item.Importance,
 			"duration_override": item.DurationOverride,
+			"skip_display":      item.SkipDisplay,
 			"created_at":        item.CreatedAt,
 			"updated_at":        item.UpdatedAt,
 			"schedules":         item.Schedules,

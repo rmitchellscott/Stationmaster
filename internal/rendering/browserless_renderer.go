@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -17,7 +18,7 @@ import (
 // BrowserlessRenderer captures screenshots using an external browserless service
 type BrowserlessRenderer struct {
 	client  *http.Client
-	baseURL string
+	baseURL *url.URL
 }
 
 // NewBrowserlessRenderer creates a new browserless renderer
@@ -27,16 +28,16 @@ func NewBrowserlessRenderer() (*BrowserlessRenderer, error) {
 		return nil, fmt.Errorf("BROWSERLESS_URL environment variable is required")
 	}
 
-	// Remove trailing slash if present
-	if baseURL[len(baseURL)-1] == '/' {
-		baseURL = baseURL[:len(baseURL)-1]
+	u, err := url.Parse(baseURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse BROWSERLESS_URL: %w", err)
 	}
 
 	return &BrowserlessRenderer{
 		client: &http.Client{
 			Timeout: 60 * time.Second,
 		},
-		baseURL: baseURL,
+		baseURL: u,
 	}, nil
 }
 
@@ -102,7 +103,7 @@ func (r *BrowserlessRenderer) CaptureScreenshot(ctx context.Context, url string,
 	}
 	
 	// Make request to browserless
-	screenshotURL := fmt.Sprintf("%s/screenshot", r.baseURL)
+	screenshotURL := r.baseURL.JoinPath("screenshot").String()
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", screenshotURL, bytes.NewBuffer(requestBody))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
@@ -287,7 +288,7 @@ func (r *BrowserlessRenderer) RenderHTMLWithResult(ctx context.Context, html str
 	}
 	
 	// Make request to browserless screenshot endpoint
-	screenshotURL := fmt.Sprintf("%s/screenshot", r.baseURL)
+	screenshotURL := r.baseURL.JoinPath("screenshot").String()
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", screenshotURL, bytes.NewBuffer(requestBody))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
@@ -469,7 +470,7 @@ func (r *BrowserlessRenderer) parseTRMNLFlagsFromDOM(ctx context.Context, html s
 	}
 	
 	// Make request to browserless /content endpoint
-	contentURL := fmt.Sprintf("%s/content", r.baseURL)
+	contentURL := r.baseURL.JoinPath("content").String()
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", contentURL, bytes.NewBuffer(requestBody))
 	if err != nil {
 		return flags, fmt.Errorf("failed to create content HTTP request: %w", err)

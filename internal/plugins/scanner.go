@@ -20,8 +20,9 @@ type ExternalPluginData struct {
 	Description string            `json:"description"`
 	Author      string            `json:"author"`
 	Version     string            `json:"version"`
-	Templates   map[string]string `json:"templates"`   // Layout name -> Liquid template
-	FormFields  json.RawMessage   `json:"form_fields"` // JSON schema for form configuration
+	Templates   map[string]string `json:"templates"`     // Layout name -> Liquid template
+	FormFields  json.RawMessage   `json:"form_fields"`   // JSON schema for form configuration
+	OAuthConfig json.RawMessage   `json:"oauth_config"`  // OAuth provider configuration
 	Enabled     bool              `json:"enabled"`
 }
 
@@ -171,6 +172,7 @@ func (s *PluginScannerService) registerPlugin(identifier string, data *ExternalP
 		Version:            data.Version,
 		RequiresProcessing: true, // External plugins always require processing
 		FormFields:         datatypes.JSON(data.FormFields),
+		OAuthConfig:        datatypes.JSON(data.OAuthConfig), // Store OAuth configuration
 		EnableDarkMode:     &[]bool{false}[0], // Default to false
 		RemoveBleedMargin:  &[]bool{false}[0], // Default to false
 		IsActive:           true,  // External plugins should be active by default
@@ -283,4 +285,11 @@ func (s *PluginScannerService) markPluginUnavailable(identifier string) error {
 		return fmt.Errorf("failed to mark plugin as unavailable: %w", err)
 	}
 	return nil
+}
+
+// GetAvailablePluginDefinitions returns all available plugin definitions from the database
+func (s *PluginScannerService) GetAvailablePluginDefinitions() ([]database.PluginDefinition, error) {
+	var plugins []database.PluginDefinition
+	err := s.db.Where("is_active = ? AND status = ?", true, "available").Find(&plugins).Error
+	return plugins, err
 }

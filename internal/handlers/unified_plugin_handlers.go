@@ -37,6 +37,7 @@ type UnifiedPluginDefinition struct {
 	IsActive           bool   `json:"is_active"`
 	RequiresProcessing bool   `json:"requires_processing"`
 	Status             string `json:"status"`             // "available", "unavailable", "error"
+	OAuthConfig        json.RawMessage `json:"oauth_config,omitempty"` // OAuth configuration for external plugins
 	
 	// Private plugin specific fields
 	InstanceCount      *int   `json:"instance_count,omitempty"` // Number of instances user has created
@@ -94,6 +95,7 @@ func GetAvailablePluginDefinitionsHandler(c *gin.Context) {
 				IsActive:           extPlugin.IsActive,
 				RequiresProcessing: extPlugin.RequiresProcessing,
 				Status:             extPlugin.Status, // Include availability status
+				OAuthConfig:        json.RawMessage(extPlugin.OAuthConfig), // Include OAuth configuration for external plugins
 				// No InstanceCount for external plugins (like system plugins)
 			}
 			allPlugins = append(allPlugins, unifiedPlugin)

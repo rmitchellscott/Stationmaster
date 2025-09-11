@@ -4,6 +4,7 @@ import (
 	// standard library
 	"context"
 	"embed"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
@@ -137,12 +138,20 @@ func main() {
 	// Initialize external plugin scanner
 	pluginScanner := plugins.NewPluginScannerService(db)
 	
+	// Initialize OAuth manager for external service integration
+	auth.InitOAuthManager()
+	
 	// Perform initial plugin scan
 	scanCtx, scanCancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	if err := pluginScanner.ScanAndRegisterPlugins(scanCtx); err != nil {
 		logging.WarnWithComponent(logging.ComponentStartup, "Initial external plugin scan failed", "error", err)
 	}
 	scanCancel()
+	
+	// Register OAuth providers from plugin discovery
+	if err := registerOAuthProvidersFromPlugins(pluginScanner); err != nil {
+		logging.WarnWithComponent(logging.ComponentStartup, "Failed to register OAuth providers", "error", err)
+	}
 	
 	// Start periodic plugin scanning (every 5 minutes)
 	pluginScanner.StartPeriodicScanning(5 * time.Minute)
@@ -384,6 +393,9 @@ func main() {
 	router.POST("/api/auth/password-reset", auth.PasswordResetHandler)
 	router.POST("/api/auth/password-reset/confirm", auth.PasswordResetConfirmHandler)
 
+	// OAuth callback route - must be outside protected group since it's the return from OAuth provider
+	router.GET("/api/oauth/:provider/callback", auth.OAuthCallbackHandler) // No auth required for callback
+
 	// Protected routes (always require authentication)
 	protected := router.Group("/api")
 	protected.Use(auth.MultiUserAuthMiddleware())
@@ -411,6 +423,14 @@ func main() {
 		profile.POST("/password", auth.UpdatePasswordHandler)  // POST /api/profile/password - update password
 		profile.GET("/stats", auth.GetCurrentUserStatsHandler) // GET /api/profile/stats - get current user stats
 		profile.DELETE("", auth.DeleteCurrentUserHandler)      // DELETE /api/profile - delete current user account
+	}
+
+	// OAuth endpoints for external service integration
+	oauth := protected.Group("/oauth")
+	{
+		oauth.GET("/:provider/auth", auth.OAuthAuthHandler)         // GET /api/oauth/:provider/auth - initiate OAuth flow (requires auth)
+		oauth.GET("/:provider/status", auth.OAuthStatusHandler)     // GET /api/oauth/:provider/status - check connection status
+		oauth.DELETE("/:provider/disconnect", auth.OAuthDisconnectHandler) // DELETE /api/oauth/:provider/disconnect - disconnect provider
 	}
 
 	// API key management endpoints
@@ -816,4 +836,51 @@ func main() {
 	}
 
 	logging.Info("[SHUTDOWN] Server and pollers stopped")
+}
+
+// registerOAuthProvidersFromPlugins registers OAuth providers based on plugin discovery
+func registerOAuthProvidersFromPlugins(scanner *plugins.PluginScannerService) error {
+	// Get all registered plugin definitions that have OAuth configs
+	pluginDefinitions, err := scanner.GetAvailablePluginDefinitions()
+	if err != nil {
+		return fmt.Errorf("failed to get plugin definitions: %w", err)
+	}
+	
+	logging.InfoWithComponent(logging.ComponentStartup, "Checking plugins for OAuth configs", "total_plugins", len(pluginDefinitions))
+	
+	for _, plugin := range pluginDefinitions {
+		if len(plugin.OAuthConfig) > 0 {
+			logging.InfoWithComponent(logging.ComponentStartup, "Found plugin with OAuth config", "plugin", plugin.Identifier, "oauth_config_length", len(plugin.OAuthConfig))
+			
+			// Parse OAuth config from JSON
+			var oauthData struct {
+				Provider     string   `json:"provider"`
+				AuthURL      string   `json:"auth_url"`
+				TokenURL     string   `json:"token_url"`
+				Scopes       []string `json:"scopes"`
+				ClientID     string   `json:"client_id"`
+				ClientSecret string   `json:"client_secret"`
+			}
+			
+			if err := json.Unmarshal(plugin.OAuthConfig, &oauthData); err != nil {
+				logging.WarnWithComponent(logging.ComponentStartup, 
+					"Failed to parse OAuth config for plugin", "plugin", plugin.Identifier, "error", err, "raw_config", string(plugin.OAuthConfig))
+				continue
+			}
+			
+			oauthConfig := auth.OAuthProviderConfig{
+				Provider:     oauthData.Provider,
+				AuthURL:      oauthData.AuthURL,
+				TokenURL:     oauthData.TokenURL,
+				Scopes:       oauthData.Scopes,
+				ClientID:     oauthData.ClientID,
+				ClientSecret: oauthData.ClientSecret,
+			}
+			
+			logging.InfoWithComponent(logging.ComponentStartup, "Registering OAuth provider", "provider", oauthData.Provider, "plugin", plugin.Identifier)
+			auth.RegisterOAuthProvider(oauthConfig)
+		}
+	}
+	
+	return nil
 }

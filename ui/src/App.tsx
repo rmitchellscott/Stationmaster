@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom';
 import HomePage from './HomePage';
 import { ThemeProvider } from '@/components/theme-provider';
 import { AuthProvider } from '@/components/AuthProvider';
@@ -12,8 +12,40 @@ import { AddPluginPage } from '@/components/AddPluginPage';
 import { AdminPage } from '@/components/AdminPage';
 import { PasswordReset } from '@/components/PasswordReset';
 import { RegisterForm } from '@/components/RegisterForm';
+import { oauthService } from '@/services/oauthService';
+import { toast, Toaster } from 'sonner';
 
 function AppContent() {
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    // Handle OAuth return flow
+    const handleOAuthReturn = () => {
+      const result = oauthService.handleOAuthReturn();
+      
+      if (result.success && result.provider) {
+        const providerName = oauthService.getProviderDisplayName(result.provider);
+        toast.success(`Successfully connected to ${providerName}!`);
+        
+        // Redirect to stored return URL or home
+        const returnUrl = oauthService.getReturnUrl();
+        if (returnUrl && returnUrl !== '/') {
+          navigate(returnUrl);
+        }
+      } else if (result.provider && result.error) {
+        const providerName = oauthService.getProviderDisplayName(result.provider);
+        toast.error(`Failed to connect to ${providerName}: ${result.error}`);
+        
+        // Still redirect to return URL so user can retry
+        const returnUrl = oauthService.getReturnUrl();
+        if (returnUrl && returnUrl !== '/') {
+          navigate(returnUrl);
+        }
+      }
+    };
+
+    handleOAuthReturn();
+  }, [navigate]);
   
   return (
     <>
@@ -62,6 +94,7 @@ export default function App() {
         <BrowserRouter>
           <AuthProvider>
             <AppContent />
+            <Toaster richColors position="top-right" />
           </AuthProvider>
         </BrowserRouter>
       </ConfigProvider>

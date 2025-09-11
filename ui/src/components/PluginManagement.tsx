@@ -63,6 +63,7 @@ import {
   Settings as SettingsIcon,
   AlertTriangle,
   CheckCircle,
+  Loader2,
   RefreshCw,
   ChevronUp,
   ChevronDown,
@@ -78,6 +79,8 @@ import { AddPluginDropdown } from "./AddPluginDropdown";
 import { MashupSlotGrid } from "./MashupSlotGrid";
 import { getMashupLayoutGrid } from "./MashupLayoutGrid";
 import { MashupLayout, MashupSlotInfo, AvailablePluginInstance, mashupService } from "@/services/mashupService";
+import { OAuthConnection } from "./OAuthConnection";
+import { useOAuthStatus } from "@/hooks/useOAuthStatus";
 
 interface Plugin {
   id: string;
@@ -93,6 +96,14 @@ interface Plugin {
   data_strategy?: string;
   created_at: string;
   updated_at: string;
+  oauth_config?: {
+    provider: string;
+    auth_url: string;
+    token_url: string;
+    scopes: string[];
+    client_id_env: string;
+    client_secret_env: string;
+  };
 }
 
 interface PluginInstance {
@@ -1023,6 +1034,65 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
     }
   };
 
+  // OAuth Status Badge Component for Plugin Cards
+  const OAuthStatusBadge: React.FC<{ plugin: Plugin }> = ({ plugin }) => {
+    const { connection, loading } = useOAuthStatus(plugin.oauth_config?.provider);
+
+    if (loading) {
+      return (
+        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-600">
+          <Loader2 className="h-3 w-3 animate-spin mr-1" />
+          Checking...
+        </span>
+      );
+    }
+
+    if (connection?.connected) {
+      return (
+        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-green-100 text-green-800">
+          <CheckCircle className="h-3 w-3 mr-1" />
+          Connected
+        </span>
+      );
+    }
+
+    return (
+      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-amber-100 text-amber-800">
+        <AlertTriangle className="h-3 w-3 mr-1" />
+        Needs Connection
+      </span>
+    );
+  };
+
+  // OAuth Connection Wrapper Component
+  const OAuthConnectionWrapper: React.FC<{
+    plugin: Plugin;
+    onConnectionChange: (connected: boolean) => void;
+  }> = ({ plugin, onConnectionChange }) => {
+    const { connection, loading } = useOAuthStatus(plugin.oauth_config?.provider);
+
+    if (!plugin.oauth_config) return null;
+
+    return (
+      <div className="mb-6">
+        <OAuthConnection
+          oauthConfig={plugin.oauth_config}
+          onConnectionChange={onConnectionChange}
+          className="mb-4"
+        />
+        {connection && !connection.connected && (
+          <Alert className="border-amber-200 bg-amber-50">
+            <AlertTriangle className="h-4 w-4 text-amber-600" />
+            <AlertDescription>
+              You must connect to {plugin.oauth_config.provider} to configure this plugin. 
+              The settings below will be available after connecting your account.
+            </AlertDescription>
+          </Alert>
+        )}
+      </div>
+    );
+  };
+
   const renderSettingsForm = (plugin: Plugin, settings: Record<string, any>, onChange: (key: string, value: any) => void) => {
     let schema;
     try {
@@ -1035,6 +1105,16 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
 
     return (
       <div className="space-y-4">
+        {/* OAuth Connection Section */}
+        {plugin.oauth_config && (
+          <OAuthConnectionWrapper 
+            plugin={plugin} 
+            onConnectionChange={(connected) => {
+              // Optionally trigger form validation or state updates
+              console.log(`OAuth connection changed for ${plugin.name}:`, connected);
+            }}
+          />
+        )}
         {Object.keys(properties).map((key) => {
           const prop = properties[key];
           const value = settings[key] || prop.default || "";
@@ -1679,6 +1759,9 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                                   }`}>
                                     {plugin.type === 'system' ? 'System' : 'Private'}
                                   </span>
+                                  {plugin.oauth_config && (
+                                    <OAuthStatusBadge plugin={plugin} />
+                                  )}
                                 </div>
                                 <div className="text-xs text-muted-foreground">
                                   v{plugin.version} by {plugin.author}

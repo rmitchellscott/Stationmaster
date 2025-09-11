@@ -33,6 +33,7 @@ import {
   AlertTriangle,
   CheckCircle,
 } from "lucide-react";
+import { OAuthConnection } from "@/components/OAuthConnection";
 
 interface Plugin {
   id: string;
@@ -44,6 +45,14 @@ interface Plugin {
   config_schema: string;
   requires_processing: boolean;
   status: string; // "available", "unavailable", "error"
+  oauth_config?: {
+    provider: string;
+    auth_url: string;
+    token_url: string;
+    scopes: string[];
+    client_id_env: string;
+    client_secret_env: string;
+  };
 }
 
 interface RefreshRateOption {
@@ -565,6 +574,25 @@ export function AddPluginPage() {
                   }}
                 />
               </div>
+
+              {/* OAuth Connection */}
+              {expandedPlugin.oauth_config && (
+                <>
+                  <Separator />
+                  <div>
+                    <h3 className="text-base font-semibold mb-3">
+                      Authentication Required
+                    </h3>
+                    <OAuthConnection 
+                      oauthConfig={expandedPlugin.oauth_config}
+                      onConnectionChange={(connected) => {
+                        // You can add additional logic here if needed
+                        // For now, the component handles its own state
+                      }}
+                    />
+                  </div>
+                </>
+              )}
 
               {/* Instance Name */}
               <div>

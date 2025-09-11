@@ -98,6 +98,7 @@ func (b *TRNMLDataBuilder) BuildTRNMLData(ctx plugins.PluginContext, instance *d
 		}
 
 		userData := map[string]interface{}{
+			"id":             ctx.User.ID.String(),
 			"name":           fullName,
 			"first_name":     firstName,
 			"last_name":      lastName,

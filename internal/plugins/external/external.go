@@ -215,6 +215,14 @@ func (p *ExternalPlugin) fetchRenderedHTML(settings map[string]interface{}, layo
 	trmnlBuilder := rendering.NewTRNMLDataBuilder()
 	trmnlData := trmnlBuilder.BuildTRNMLData(ctx, p.instance, settings)
 	
+	// Inject OAuth tokens for external service integration
+	if ctx.User != nil {
+		oauthTokens, err := p.getOAuthTokensForUser(ctx.User.ID.String())
+		if err == nil && len(oauthTokens) > 0 {
+			trmnlData["oauth_tokens"] = oauthTokens
+		}
+	}
+	
 	// Prepare POST request with settings and layout info
 	requestBody := map[string]interface{}{
 		"settings": settings,
@@ -267,6 +275,44 @@ func (p *ExternalPlugin) Validate(settings map[string]interface{}) error {
 // GetInstance returns the plugin instance
 func (p *ExternalPlugin) GetInstance() *database.PluginInstance {
 	return p.instance
+}
+
+// getOAuthTokensForUser retrieves OAuth refresh tokens for the user to inject into plugin execution
+func (p *ExternalPlugin) getOAuthTokensForUser(userID string) (map[string]map[string]string, error) {
+	// Import auth package to access OAuth token functions
+	// We need to get OAuth tokens that might be relevant to this plugin
+	
+	tokens := make(map[string]map[string]string)
+	
+	// Try to get Google OAuth token (for Google Analytics, YouTube Analytics)
+	if googleToken, err := getOAuthTokenFromAuth(userID, "google"); err == nil && googleToken != nil {
+		tokens["google"] = map[string]string{
+			"refresh_token": googleToken.RefreshToken,
+		}
+	}
+	
+	// Try to get Todoist OAuth token
+	if todoistToken, err := getOAuthTokenFromAuth(userID, "todoist"); err == nil && todoistToken != nil {
+		tokens["todoist"] = map[string]string{
+			"refresh_token": todoistToken.RefreshToken,
+		}
+	}
+	
+	// Add other providers as needed
+	
+	return tokens, nil
+}
+
+// getOAuthTokenFromAuth is a helper function to get OAuth tokens from the auth package
+func getOAuthTokenFromAuth(userID, provider string) (*database.UserOAuthToken, error) {
+	// This function needs to access the auth package to retrieve tokens
+	// We'll implement this by directly querying the database to avoid circular imports
+	var token database.UserOAuthToken
+	err := database.DB.Where("user_id = ? AND provider = ?", userID, provider).First(&token).Error
+	if err != nil {
+		return nil, err
+	}
+	return &token, nil
 }
 
 // Register the external plugin factory when this package is imported

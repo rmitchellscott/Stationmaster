@@ -92,6 +92,29 @@ func (s *UserSession) BeforeCreate(tx *gorm.DB) error {
 	return nil
 }
 
+// UserOAuthToken represents stored OAuth tokens for external service integrations
+type UserOAuthToken struct {
+	ID           uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
+	UserID       uuid.UUID `gorm:"type:uuid;not null;index" json:"user_id"`
+	Provider     string    `gorm:"size:50;not null" json:"provider"`         // "google", "todoist", etc.
+	ServiceName  string    `gorm:"size:50;not null" json:"service_name"`     // "google_analytics", "youtube_analytics"
+	RefreshToken string    `gorm:"type:text;not null" json:"-"`              // Encrypted refresh token, never expose in JSON
+	Scopes       string    `gorm:"type:text" json:"scopes,omitempty"`        // JSON array of granted scopes
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+
+	// Association
+	User User `gorm:"foreignKey:UserID" json:"-"`
+}
+
+// BeforeCreate sets UUID if not already set
+func (t *UserOAuthToken) BeforeCreate(tx *gorm.DB) error {
+	if t.ID == uuid.Nil {
+		t.ID = uuid.New()
+	}
+	return nil
+}
+
 // SystemSetting represents system-wide configuration
 type SystemSetting struct {
 	Key         string     `gorm:"primaryKey" json:"key"`
@@ -373,6 +396,7 @@ type PluginDefinition struct {
 	DataStrategy    *string        `gorm:"size:50" json:"data_strategy,omitempty"`      // webhook, polling, static
 	PollingConfig   datatypes.JSON `json:"polling_config,omitempty"`   // URLs, headers, body, intervals, etc.
 	FormFields      datatypes.JSON `json:"form_fields"`                // YAML form field definitions converted to JSON schema
+	OAuthConfig     datatypes.JSON `json:"oauth_config,omitempty"`     // OAuth provider configuration for external service integration
 	
 	// Mashup specific fields (NULL for non-mashup plugins)
 	IsMashup     bool           `gorm:"default:false" json:"is_mashup"`           // True for mashup plugin definitions
@@ -603,6 +627,7 @@ func GetAllModels() []interface{} {
 		&User{},
 		&APIKey{},
 		&UserSession{},
+		&UserOAuthToken{}, // OAuth tokens for external services
 		&SystemSetting{},
 		&LoginAttempt{},
 		&BackupJob{},

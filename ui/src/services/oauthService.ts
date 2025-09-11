@@ -49,15 +49,61 @@ class OAuthService {
   }
 
   /**
-   * Initiate OAuth connection flow
+   * Initiate OAuth connection flow using popup window
    */
-  connectProvider(provider: string): void {
-    // Store current location for return after OAuth flow
-    sessionStorage.setItem('oauth_return_url', window.location.pathname);
-    sessionStorage.setItem('oauth_provider', provider);
-    
-    // Redirect to OAuth endpoint
-    window.location.href = `/api/oauth/${provider}/auth`;
+  connectProvider(provider: string): Promise<boolean> {
+    return new Promise((resolve, reject) => {
+      // Popup configuration
+      const width = 500;
+      const height = 600;
+      const left = window.screenX + (window.outerWidth - width) / 2;
+      const top = window.screenY + (window.outerHeight - height) / 2;
+      
+      // Open popup window for OAuth flow
+      const popup = window.open(
+        `/api/oauth/${provider}/auth`,
+        'oauth_popup',
+        `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`
+      );
+      
+      if (!popup) {
+        // Popup blocked - fallback to redirect
+        window.location.href = `/api/oauth/${provider}/auth`;
+        reject(new Error('Popup blocked, falling back to redirect'));
+        return;
+      }
+      
+      // Listen for messages from popup
+      const messageListener = (event: MessageEvent) => {
+        // Security: Check origin
+        if (event.origin !== window.location.origin) {
+          return;
+        }
+        
+        if (event.data.type === 'OAUTH_SUCCESS' && event.data.provider === provider) {
+          // Success - cleanup and resolve
+          window.removeEventListener('message', messageListener);
+          popup.close();
+          resolve(true);
+        } else if (event.data.type === 'OAUTH_ERROR') {
+          // Error - cleanup and reject
+          window.removeEventListener('message', messageListener);
+          popup.close();
+          reject(new Error(event.data.error || 'OAuth failed'));
+        }
+      };
+      
+      window.addEventListener('message', messageListener);
+      
+      // Handle popup closed by user
+      const checkClosed = setInterval(() => {
+        if (popup.closed) {
+          clearInterval(checkClosed);
+          window.removeEventListener('message', messageListener);
+          reject(new Error('OAuth popup closed by user'));
+        }
+      }, 1000);
+    });
   }
 
   /**

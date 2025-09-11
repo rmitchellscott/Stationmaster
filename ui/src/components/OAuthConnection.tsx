@@ -50,10 +50,19 @@ export function OAuthConnection({
     }
   };
 
-  const handleConnect = () => {
+  const handleConnect = async () => {
     setConnecting(true);
-    oauthService.connectProvider(oauthConfig.provider);
-    // Note: This will redirect to OAuth provider, so loading state will persist until page unloads
+    setError(null);
+    
+    try {
+      await oauthService.connectProvider(oauthConfig.provider);
+      // Success - refresh connection status
+      await checkConnectionStatus();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to connect OAuth provider');
+    } finally {
+      setConnecting(false);
+    }
   };
 
   const handleDisconnect = async () => {

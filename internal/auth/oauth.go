@@ -147,17 +147,18 @@ func OAuthCallbackHandler(c *gin.Context) {
 	// Handle error from provider
 	if errMsg := c.Query("error"); errMsg != "" {
 		logging.Warn("[OAUTH] OAuth provider returned error", "provider", provider, "error", errMsg)
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":   "OAuth authentication failed",
-			"details": errMsg,
-		})
+		// Redirect to popup error page
+		redirectURL := fmt.Sprintf("/oauth-success.html?provider=%s&error=%s", provider, errMsg)
+		c.Redirect(http.StatusFound, redirectURL)
 		return
 	}
 	
 	// Exchange code for token
 	code := c.Query("code")
 	if code == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing authorization code"})
+		// Redirect to popup error page
+		redirectURL := fmt.Sprintf("/oauth-success.html?provider=%s&error=Missing authorization code", provider)
+		c.Redirect(http.StatusFound, redirectURL)
 		return
 	}
 	
@@ -165,7 +166,9 @@ func OAuthCallbackHandler(c *gin.Context) {
 	userID, err := extractUserIDFromState(state)
 	if err != nil {
 		logging.Error("[OAUTH] Failed to extract user ID from state", "error", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid state format"})
+		// Redirect to popup error page
+		redirectURL := fmt.Sprintf("/oauth-success.html?provider=%s&error=Invalid state format", provider)
+		c.Redirect(http.StatusFound, redirectURL)
 		return
 	}
 	
@@ -190,7 +193,9 @@ func OAuthCallbackHandler(c *gin.Context) {
 	token, err := oauth2Config.Exchange(ctx, code)
 	if err != nil {
 		logging.Error("[OAUTH] Failed to exchange code for token", "provider", provider, "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to exchange code for token"})
+		// Redirect to popup error page
+		redirectURL := fmt.Sprintf("/oauth-success.html?provider=%s&error=Failed to exchange code for token", provider)
+		c.Redirect(http.StatusFound, redirectURL)
 		return
 	}
 	
@@ -198,14 +203,16 @@ func OAuthCallbackHandler(c *gin.Context) {
 	err = storeUserOAuthToken(userID, provider, token, providerConfig.Scopes)
 	if err != nil {
 		logging.Error("[OAUTH] Failed to store OAuth token", "provider", provider, "user_id", userID, "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to store OAuth token"})
+		// Redirect to popup error page
+		redirectURL := fmt.Sprintf("/oauth-success.html?provider=%s&error=Failed to store OAuth token", provider)
+		c.Redirect(http.StatusFound, redirectURL)
 		return
 	}
 	
 	logging.Info("[OAUTH] Successfully stored OAuth token", "provider", provider, "user_id", userID)
 	
-	// Redirect to success page or plugin settings
-	redirectURL := fmt.Sprintf("/?oauth_success=%s", provider)
+	// Redirect to popup success page
+	redirectURL := fmt.Sprintf("/oauth-success.html?provider=%s", provider)
 	c.Redirect(http.StatusFound, redirectURL)
 }
 

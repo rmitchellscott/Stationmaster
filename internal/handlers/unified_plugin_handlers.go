@@ -98,6 +98,11 @@ func GetAvailablePluginDefinitionsHandler(c *gin.Context) {
 				OAuthConfig:        json.RawMessage(extPlugin.OAuthConfig), // Include OAuth configuration for external plugins
 				// No InstanceCount for external plugins (like system plugins)
 			}
+			
+			// Debug logging for OAuth-enabled plugins
+			if extPlugin.Name == "Google Analytics" || extPlugin.Name == "Youtube Analytics" {
+				logging.Debug("[OAUTH_DEBUG] Plugin OAuth config", "plugin", extPlugin.Name, "oauth_config", string(extPlugin.OAuthConfig))
+			}
 			allPlugins = append(allPlugins, unifiedPlugin)
 		}
 	}
@@ -232,18 +237,19 @@ type UnifiedPluginInstance struct {
 	
 	// Plugin info
 	Plugin struct {
-		ID                 string `json:"id"`
-		Name               string `json:"name"`
-		Type               string `json:"type"`
-		Description        string `json:"description"`
-		Status             string `json:"status"`
-		ConfigSchema       string `json:"config_schema"`
-		Version            string `json:"version"`
-		Author             string `json:"author"`
-		IsActive           bool   `json:"is_active"`
-		RequiresProcessing bool   `json:"requires_processing"`
-		DataStrategy       string `json:"data_strategy"`
-		IsMashup           bool   `json:"is_mashup"`
+		ID                 string          `json:"id"`
+		Name               string          `json:"name"`
+		Type               string          `json:"type"`
+		Description        string          `json:"description"`
+		Status             string          `json:"status"`
+		ConfigSchema       string          `json:"config_schema"`
+		Version            string          `json:"version"`
+		Author             string          `json:"author"`
+		IsActive           bool            `json:"is_active"`
+		RequiresProcessing bool            `json:"requires_processing"`
+		DataStrategy       string          `json:"data_strategy"`
+		IsMashup           bool            `json:"is_mashup"`
+		OAuthConfig        json.RawMessage `json:"oauth_config,omitempty"`
 	} `json:"plugin"`
 	
 	// Plugin definition info (for compatibility with frontend expecting plugin_definition)
@@ -341,6 +347,7 @@ func GetPluginInstancesHandler(c *gin.Context) {
 				instance.Plugin.IsActive = true
 				instance.Plugin.RequiresProcessing = pluginInstance.PluginDefinition.RequiresProcessing
 				instance.Plugin.IsMashup = pluginInstance.PluginDefinition.IsMashup
+				instance.Plugin.OAuthConfig = json.RawMessage(pluginInstance.PluginDefinition.OAuthConfig) // Include OAuth configuration
 				
 				// Set data strategy (no fallback - only set if explicitly defined)
 				if pluginInstance.PluginDefinition.DataStrategy != nil {

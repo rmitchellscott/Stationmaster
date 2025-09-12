@@ -3,6 +3,16 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { 
   CheckCircle, 
   AlertTriangle, 
@@ -29,6 +39,7 @@ export function OAuthConnection({
   const [connecting, setConnecting] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showDisconnectDialog, setShowDisconnectDialog] = useState(false);
 
   useEffect(() => {
     checkConnectionStatus();
@@ -65,11 +76,12 @@ export function OAuthConnection({
     }
   };
 
-  const handleDisconnect = async () => {
-    if (!confirm(`Are you sure you want to disconnect from ${oauthService.getProviderDisplayName(oauthConfig.provider)}? You'll need to reconnect to use this plugin.`)) {
-      return;
-    }
+  const handleDisconnectClick = () => {
+    setShowDisconnectDialog(true);
+  };
 
+  const handleConfirmDisconnect = async () => {
+    setShowDisconnectDialog(false);
     setDisconnecting(true);
     setError(null);
     
@@ -91,119 +103,147 @@ export function OAuthConnection({
   const providerName = oauthService.getProviderDisplayName(oauthConfig.provider);
   const providerIcon = oauthService.getProviderIcon(oauthConfig.provider);
 
-  if (loading) {
-    return (
-      <Card className={className}>
-        <CardContent className="pt-6">
-          <div className="flex items-center gap-3">
-            <Skeleton className="h-10 w-10 rounded-full" />
-            <div className="flex-1">
-              <Skeleton className="h-4 w-32 mb-2" />
-              <Skeleton className="h-3 w-48" />
+  const renderContent = () => {
+    if (loading) {
+      return (
+        <Card className={className}>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <Skeleton className="h-10 w-10 rounded-full" />
+              <div className="flex-1">
+                <Skeleton className="h-4 w-32 mb-2" />
+                <Skeleton className="h-3 w-48" />
+              </div>
+              <Skeleton className="h-10 w-28" />
             </div>
-            <Skeleton className="h-10 w-28" />
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
+          </CardContent>
+        </Card>
+      );
+    }
 
-  if (error) {
-    return (
-      <Alert className={`border-red-200 ${className}`}>
-        <AlertTriangle className="h-4 w-4 text-red-600" />
-        <AlertDescription className="flex items-center justify-between">
-          <span>{error}</span>
-          <Button 
-            variant="ghost" 
-            size="sm" 
-            onClick={checkConnectionStatus}
-            disabled={loading}
-          >
-            <RefreshCw className="h-4 w-4" />
-            Retry
-          </Button>
-        </AlertDescription>
-      </Alert>
-    );
-  }
+    if (error) {
+      return (
+        <Alert className={`border-red-200 ${className}`}>
+          <AlertTriangle className="h-4 w-4 text-red-600" />
+          <AlertDescription className="flex items-center justify-between">
+            <span>{error}</span>
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              onClick={checkConnectionStatus}
+              disabled={loading}
+            >
+              <RefreshCw className="h-4 w-4" />
+              Retry
+            </Button>
+          </AlertDescription>
+        </Alert>
+      );
+    }
 
-  if (!connection?.connected) {
+    if (!connection?.connected) {
+      return (
+        <Card className={`border-amber-200 bg-amber-50/50 ${className}`}>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-4">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-100">
+                <AlertTriangle className="h-5 w-5 text-amber-600" />
+              </div>
+              <div className="flex-1">
+                <p className="font-medium text-gray-900">
+                  {providerIcon} {providerName} Not Connected
+                </p>
+                <p className="text-sm text-gray-600">
+                  Connect your {providerName} account to use this plugin
+                </p>
+              </div>
+              <Button 
+                onClick={handleConnect}
+                disabled={connecting}
+                className="gap-2"
+              >
+                {connecting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Connecting...
+                  </>
+                ) : (
+                  <>
+                    Connect to {providerName}
+                    <ExternalLink className="h-4 w-4" />
+                  </>
+                )}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      );
+    }
+
     return (
-      <Card className={`border-amber-200 bg-amber-50/50 ${className}`}>
+      <Card className={`border-green-200 bg-green-50/50 ${className}`}>
         <CardContent className="pt-6">
           <div className="flex items-center gap-4">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-100">
-              <AlertTriangle className="h-5 w-5 text-amber-600" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-green-100">
+              <CheckCircle className="h-5 w-5 text-green-600" />
             </div>
             <div className="flex-1">
               <p className="font-medium text-gray-900">
-                {providerIcon} {providerName} Not Connected
+                {providerIcon} {providerName} Connected
               </p>
               <p className="text-sm text-gray-600">
-                Connect your {providerName} account to use this plugin
+                {connection.connected_at && (
+                  <>Connected on {format(new Date(connection.connected_at), 'MMM d, yyyy')}</>
+                )}
+                {connection.scopes && connection.scopes.length > 0 && (
+                  <> • {connection.scopes.length} permission{connection.scopes.length > 1 ? 's' : ''} granted</>
+                )}
               </p>
             </div>
             <Button 
-              onClick={handleConnect}
-              disabled={connecting}
-              className="gap-2"
+              variant="outline"
+              onClick={handleDisconnectClick}
+              disabled={disconnecting}
+              className="text-gray-600 hover:text-red-600 hover:border-red-300"
             >
-              {connecting ? (
+              {disconnecting ? (
                 <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Connecting...
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Disconnecting...
                 </>
               ) : (
-                <>
-                  Connect to {providerName}
-                  <ExternalLink className="h-4 w-4" />
-                </>
+                'Disconnect'
               )}
             </Button>
           </div>
         </CardContent>
       </Card>
     );
-  }
+  };
 
   return (
-    <Card className={`border-green-200 bg-green-50/50 ${className}`}>
-      <CardContent className="pt-6">
-        <div className="flex items-center gap-4">
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-green-100">
-            <CheckCircle className="h-5 w-5 text-green-600" />
-          </div>
-          <div className="flex-1">
-            <p className="font-medium text-gray-900">
-              {providerIcon} {providerName} Connected
-            </p>
-            <p className="text-sm text-gray-600">
-              {connection.connected_at && (
-                <>Connected on {format(new Date(connection.connected_at), 'MMM d, yyyy')}</>
-              )}
-              {connection.scopes && connection.scopes.length > 0 && (
-                <> • {connection.scopes.length} permission{connection.scopes.length > 1 ? 's' : ''} granted</>
-              )}
-            </p>
-          </div>
-          <Button 
-            variant="outline"
-            onClick={handleDisconnect}
-            disabled={disconnecting}
-            className="text-gray-600 hover:text-red-600 hover:border-red-300"
-          >
-            {disconnecting ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                Disconnecting...
-              </>
-            ) : (
-              'Disconnect'
-            )}
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
+    <>
+      {renderContent()}
+      
+      <AlertDialog open={showDisconnectDialog} onOpenChange={setShowDisconnectDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Disconnect from {providerName}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to disconnect from {providerName}? You'll need to reconnect to use this plugin.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleConfirmDisconnect}
+              className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
+            >
+              Disconnect
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }

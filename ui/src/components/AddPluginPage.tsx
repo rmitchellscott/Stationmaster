@@ -262,18 +262,24 @@ export function AddPluginPage() {
     }
     
     const properties = schema.properties || {};
+    const required = schema.required || [];
+    
     return (
       <div className="space-y-4">
         {Object.keys(properties).map((key) => {
           const prop = properties[key];
           const value = settings[key] || prop.default || "";
+          const isRequired = required.includes(key);
           
           // Handle enum (select dropdown) FIRST - before string type
           if (prop.enum && Array.isArray(prop.enum)) {
             const enumNames = prop.enumNames && Array.isArray(prop.enumNames) ? prop.enumNames : prop.enum;
             return (
               <div key={key}>
-                <Label htmlFor={key}>{prop.title || key}</Label>
+                <Label htmlFor={key} className={isRequired ? "font-medium" : ""}>
+                  {prop.title || key}
+                  {isRequired && <span className="text-red-500 ml-1">*</span>}
+                </Label>
                 <Select value={value} onValueChange={(val) => onChange(key, val)}>
                   <SelectTrigger className="mt-2">
                     <SelectValue placeholder={prop.description || "Select an option"} />
@@ -305,7 +311,10 @@ export function AddPluginPage() {
                     onChange={(e) => onChange(key, e.target.checked)}
                     className="rounded border-gray-300"
                   />
-                  <Label htmlFor={key}>{prop.title || key}</Label>
+                  <Label htmlFor={key} className={isRequired ? "font-medium" : ""}>
+                    {prop.title || key}
+                    {isRequired && <span className="text-red-500 ml-1">*</span>}
+                  </Label>
                 </div>
                 {prop.description && (
                   <p className="text-xs text-muted-foreground mt-1">{prop.description}</p>
@@ -318,7 +327,10 @@ export function AddPluginPage() {
           if (prop.type === "number" || prop.type === "integer") {
             return (
               <div key={key}>
-                <Label htmlFor={key}>{prop.title || key}</Label>
+                <Label htmlFor={key} className={isRequired ? "font-medium" : ""}>
+                  {prop.title || key}
+                  {isRequired && <span className="text-red-500 ml-1">*</span>}
+                </Label>
                 <Input
                   id={key}
                   type="number"
@@ -328,6 +340,7 @@ export function AddPluginPage() {
                   className="mt-2"
                   min={prop.minimum}
                   max={prop.maximum}
+                  required={isRequired}
                 />
                 {prop.description && (
                   <p className="text-xs text-muted-foreground mt-1">{prop.description}</p>
@@ -340,13 +353,17 @@ export function AddPluginPage() {
           if (prop.type === "string" && prop.format === "date") {
             return (
               <div key={key}>
-                <Label htmlFor={key}>{prop.title || key}</Label>
+                <Label htmlFor={key} className={isRequired ? "font-medium" : ""}>
+                  {prop.title || key}
+                  {isRequired && <span className="text-red-500 ml-1">*</span>}
+                </Label>
                 <Input
                   id={key}
                   type="date"
                   value={value}
                   onChange={(e) => onChange(key, e.target.value)}
                   className="mt-2"
+                  required={isRequired}
                 />
                 {prop.description && (
                   <p className="text-xs text-muted-foreground mt-1">{prop.description}</p>
@@ -358,13 +375,17 @@ export function AddPluginPage() {
           // Default to string type
           return (
             <div key={key}>
-              <Label htmlFor={key}>{prop.title || key}</Label>
+              <Label htmlFor={key} className={isRequired ? "font-medium" : ""}>
+                {prop.title || key}
+                {isRequired && <span className="text-red-500 ml-1">*</span>}
+              </Label>
               <Input
                 id={key}
                 value={value}
                 onChange={(e) => onChange(key, e.target.value)}
                 placeholder={prop.description}
                 className="mt-2"
+                required={isRequired}
               />
               {prop.description && (
                 <p className="text-xs text-muted-foreground mt-1">{prop.description}</p>
@@ -581,7 +602,7 @@ export function AddPluginPage() {
                   <Separator />
                   <div>
                     <h3 className="text-base font-semibold mb-3">
-                      Authentication Required
+                      Authentication
                     </h3>
                     <OAuthConnection 
                       oauthConfig={expandedPlugin.oauth_config}

@@ -46,6 +46,35 @@ func RegisterOAuthProvider(config OAuthProviderConfig) {
 	if oauthManager == nil {
 		InitOAuthManager()
 	}
+	
+	// Check if provider already exists
+	if existingConfig, exists := oauthManager.providerConfigs[config.Provider]; exists {
+		// Merge scopes - combine existing scopes with new ones, avoiding duplicates
+		scopeSet := make(map[string]bool)
+		
+		// Add existing scopes
+		for _, scope := range existingConfig.Scopes {
+			scopeSet[scope] = true
+		}
+		
+		// Add new scopes
+		for _, scope := range config.Scopes {
+			scopeSet[scope] = true
+		}
+		
+		// Convert back to slice
+		mergedScopes := make([]string, 0, len(scopeSet))
+		for scope := range scopeSet {
+			mergedScopes = append(mergedScopes, scope)
+		}
+		
+		// Update config with merged scopes, keeping other fields from new config
+		config.Scopes = mergedScopes
+		logging.Info("[OAUTH] Merging OAuth provider scopes", "provider", config.Provider, "total_scopes", len(mergedScopes), "scopes", mergedScopes)
+	} else {
+		logging.Info("[OAUTH] Registering new OAuth provider", "provider", config.Provider, "scopes", config.Scopes)
+	}
+	
 	oauthManager.providerConfigs[config.Provider] = config
 	logging.Info("[OAUTH] Registered OAuth provider", "provider", config.Provider, "auth_url", config.AuthURL)
 }

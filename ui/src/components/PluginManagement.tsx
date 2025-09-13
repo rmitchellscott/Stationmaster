@@ -749,15 +749,9 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
 
   // Helper function to load mashup layout info for editing
   const loadEditMashupLayout = async (instanceId: string) => {
-    console.log('🔄 loadEditMashupLayout called with instanceId:', instanceId);
     setEditMashupLayoutLoading(true);
     try {
-      console.log('📡 Fetching mashup children data...');
       const mashupData = await mashupService.getChildren(instanceId);
-      console.log('✅ Mashup data received:', mashupData);
-      console.log('🎯 Layout extracted:', mashupData.layout);
-      console.log('🔍 Slots extracted:', mashupData.slots);
-      console.log('📋 Assignments extracted:', mashupData.assignments);
       
       setEditMashupLayout(mashupData.layout);
       setEditMashupSlots(mashupData.slots || []);
@@ -765,23 +759,17 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
       // Convert assignments from MashupChild objects to plugin instance IDs
       const assignmentMap: Record<string, string> = {};
       if (mashupData.assignments) {
-        console.log('🔍 Processing assignments:', mashupData.assignments);
         for (const [slotPosition, child] of Object.entries(mashupData.assignments)) {
-          console.log(`  - Slot ${slotPosition}:`, child);
           if (child && child.instance_id) {
             assignmentMap[slotPosition] = child.instance_id;
-            console.log(`    ✅ Mapped to instance ID: ${child.instance_id}`);
           }
         }
       }
-      console.log('📊 Final assignment map:', assignmentMap);
       setEditMashupAssignments(assignmentMap);
       setEditOriginalMashupAssignments({...assignmentMap}); // Store original for change detection
       
       // Load available plugins to display names
-      console.log('📡 Loading available plugins for edit modal...');
       const availablePlugins = await mashupService.getAvailablePluginInstances();
-      console.log('✅ Available plugins loaded:', availablePlugins);
       setEditAvailablePlugins(availablePlugins);
     } catch (error) {
       console.error('❌ Error loading mashup layout:', error);
@@ -797,10 +785,6 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
 
   // Helper function to open edit dialog for an instance
   const openEditDialog = (instanceToEdit: PluginInstance) => {
-    console.log('🚀 openEditDialog called with instance:', instanceToEdit);
-    console.log('🔍 Instance plugin object:', instanceToEdit.plugin);
-    console.log('🏷️ Plugin type:', instanceToEdit.plugin?.type);
-    console.log('📋 Plugin name:', instanceToEdit.plugin?.name);
     
     setEditPluginInstance(instanceToEdit);
     setEditInstanceName(instanceToEdit.name);
@@ -827,12 +811,9 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
     
     // If it's a mashup, load the layout info
     const isMashup = instanceToEdit.plugin?.type === 'mashup';
-    console.log('🤔 Is mashup check:', isMashup);
     if (isMashup) {
-      console.log('✅ Detected mashup - loading layout info');
       loadEditMashupLayout(instanceToEdit.id);
     } else {
-      console.log('❌ Not a mashup - clearing layout');
       setEditMashupLayout(null);
       setEditMashupSlots([]);
       setEditMashupAssignments({});
@@ -940,19 +921,14 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
     }
   }, [searchParams, plugins, setSearchParams]);
 
-  // Debug: Log when editPluginInstance changes
+  // Log when editPluginInstance changes for debugging
   useEffect(() => {
-    console.log('🔄 editPluginInstance state changed:', editPluginInstance);
-    if (editPluginInstance) {
-      console.log('  - Instance ID:', editPluginInstance.id);
-      console.log('  - Instance name:', editPluginInstance.name);
-      console.log('  - Plugin type:', editPluginInstance.plugin?.type);
-    }
+    // Debug logging removed for production
   }, [editPluginInstance]);
 
-  // Debug: Log when editMashupLayout changes
+  // Log when editMashupLayout changes for debugging
   useEffect(() => {
-    console.log('🗂️ editMashupLayout state changed:', editMashupLayout);
+    // Debug logging removed for production
   }, [editMashupLayout]);
 
   // Sort function
@@ -1111,7 +1087,6 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
             plugin={plugin} 
             onConnectionChange={(connected) => {
               // Optionally trigger form validation or state updates
-              console.log(`OAuth connection changed for ${plugin.name}:`, connected);
             }}
           />
         )}
@@ -1937,14 +1912,6 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
               const hasLayout = !!layoutId;
               const isLoading = editMashupLayoutLoading;
               const showMashupHeader = isMashup && (hasLayout || isLoading);
-              
-              console.log('🎨 Edit dialog header render:');
-              console.log('  - Plugin type:', pluginType);
-              console.log('  - Layout ID:', layoutId);
-              console.log('  - Is mashup:', isMashup);
-              console.log('  - Has layout:', hasLayout);
-              console.log('  - Is loading:', isLoading);
-              console.log('  - Show mashup header:', showMashupHeader);
               
               return showMashupHeader ? (
                 <div className="flex items-start gap-4">

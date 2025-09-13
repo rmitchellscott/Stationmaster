@@ -98,11 +98,6 @@ func GetAvailablePluginDefinitionsHandler(c *gin.Context) {
 				OAuthConfig:        json.RawMessage(extPlugin.OAuthConfig), // Include OAuth configuration for external plugins
 				// No InstanceCount for external plugins (like system plugins)
 			}
-			
-			// Debug logging for OAuth-enabled plugins
-			if extPlugin.Name == "Google Analytics" || extPlugin.Name == "Youtube Analytics" {
-				logging.Debug("[OAUTH_DEBUG] Plugin OAuth config", "plugin", extPlugin.Name, "oauth_config", string(extPlugin.OAuthConfig))
-			}
 			allPlugins = append(allPlugins, unifiedPlugin)
 		}
 	}

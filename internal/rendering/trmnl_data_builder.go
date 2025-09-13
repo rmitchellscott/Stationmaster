@@ -98,6 +98,7 @@ func (b *TRNMLDataBuilder) BuildTRNMLData(ctx plugins.PluginContext, instance *d
 		}
 
 		userData := map[string]interface{}{
+			"id":             ctx.User.ID.String(),
 			"name":           fullName,
 			"first_name":     firstName,
 			"last_name":      lastName,
@@ -113,6 +114,8 @@ func (b *TRNMLDataBuilder) BuildTRNMLData(ctx plugins.PluginContext, instance *d
 	// Add plugin settings - this contains plugin metadata, not user form data
 	pluginSettings := map[string]interface{}{
 		"instance_name": instance.Name,
+		"created_at":    instance.CreatedAt.Format(time.RFC3339),
+		"id":            instance.ID.String(),
 	}
 	
 	// Add data strategy if available

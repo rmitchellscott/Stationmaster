@@ -6,6 +6,12 @@ import { useConfig } from './ConfigProvider'
 
 const AUTH_CHECK_EXPIRY_MS = 5 * 60 * 1000; // 5 minutes
 
+// Helper to get appropriate storage (sessionStorage for auth isolation)
+const getAuthStorage = () => {
+  if (typeof window === 'undefined') return null
+  return window.sessionStorage || window.localStorage
+}
+
 interface User {
   id: string
   username: string
@@ -54,8 +60,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [wasOnPublicRoute, setWasOnPublicRoute] = useState<boolean>(false);
   
   
-  const storedConf =
-    typeof window !== 'undefined' ? localStorage.getItem('authConfigured') : null
+  const authStorage = getAuthStorage()
+  const storedConf = authStorage?.getItem('authConfigured') || null
   const initialAuthConfigured = storedConf === 'true'
   const [authConfigured, setAuthConfigured] = useState<boolean>(initialAuthConfigured)
   const [multiUserMode, setMultiUserMode] = useState<boolean>(false)
@@ -79,16 +85,17 @@ export function AuthProvider({ children }: AuthProviderProps) {
         return false
       }
       
-      const authConfigured = localStorage.getItem('authConfigured')
+      const storage = getAuthStorage()
+      const authConfigured = storage?.getItem('authConfigured')
       if (authConfigured === 'false') {
         // No web auth configured and no UI secret, start as authenticated
         return true
       }
       
       // Web auth is configured - be more conservative about initial state
-      // Only trust localStorage if we recently checked
-      const expiry = parseInt(localStorage.getItem('authExpiry') || '0', 10)
-      const lastCheck = parseInt(localStorage.getItem('lastAuthCheck') || '0', 10)
+      // Only trust storage if we recently checked
+      const expiry = parseInt(storage?.getItem('authExpiry') || '0', 10)
+      const lastCheck = parseInt(storage?.getItem('lastAuthCheck') || '0', 10)
       const recentCheck = Date.now() - lastCheck < AUTH_CHECK_EXPIRY_MS
       
       return recentCheck && expiry > Date.now()
@@ -126,10 +133,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
           setOidcEnabled(configData.oidcEnabled || false)
           setProxyAuthEnabled(configData.proxyAuthEnabled || false)
           if (typeof window !== 'undefined') {
-            localStorage.setItem('authConfigured', 'false')
+            const storage = getAuthStorage()
+            storage?.setItem('authConfigured', 'false')
             const expiry = Date.now() + 24 * 3600 * 1000
-            localStorage.setItem('authExpiry', expiry.toString())
-            localStorage.setItem('lastAuthCheck', Date.now().toString())
+            storage?.setItem('authExpiry', expiry.toString())
+            storage?.setItem('lastAuthCheck', Date.now().toString())
           }
           return
         } else if (proxyData.proxy_available === false) {
@@ -152,7 +160,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
         // Web authentication is enabled - users need to log in
         setAuthConfigured(true)
         if (typeof window !== 'undefined') {
-          localStorage.setItem('authConfigured', 'true')
+          const storage = getAuthStorage()
+          storage?.setItem('authConfigured', 'true')
         }
         const response = await fetch('/api/auth/check', {
           credentials: 'include',
@@ -164,18 +173,20 @@ export function AuthProvider({ children }: AuthProviderProps) {
         setIsAuthenticated(data.authenticated)
         setUser(data.user || null)
         if (typeof window !== 'undefined') {
+          const storage = getAuthStorage()
           if (data.authenticated) {
             const expiry = Date.now() + 24 * 3600 * 1000
-            localStorage.setItem('authExpiry', expiry.toString())
+            storage?.setItem('authExpiry', expiry.toString())
           } else {
-            localStorage.setItem('authExpiry', '0')
+            storage?.setItem('authExpiry', '0')
           }
         }
       } else if (uiSecret) {
         // Web auth is disabled but we have UI secret - call auth check to get auto-JWT
         setAuthConfigured(false)
         if (typeof window !== 'undefined') {
-          localStorage.setItem('authConfigured', 'false')
+          const storage = getAuthStorage()
+          storage?.setItem('authConfigured', 'false')
         }
         const response = await fetch('/api/auth/check', {
           credentials: 'include',
@@ -187,8 +198,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
         setIsAuthenticated(data.authenticated)
         setUser(data.user || null)
         if (typeof window !== 'undefined') {
+          const storage = getAuthStorage()
           const expiry = Date.now() + 24 * 3600 * 1000
-          localStorage.setItem('authExpiry', expiry.toString())
+          storage?.setItem('authExpiry', expiry.toString())
         }
       } else if (configData.apiKeyEnabled) {
         // Only API key auth is enabled (for external clients)
@@ -196,18 +208,20 @@ export function AuthProvider({ children }: AuthProviderProps) {
         setAuthConfigured(false)
         setIsAuthenticated(true)
         if (typeof window !== 'undefined') {
-          localStorage.setItem('authConfigured', 'false')
+          const storage = getAuthStorage()
+          storage?.setItem('authConfigured', 'false')
           const expiry = Date.now() + 365 * 24 * 3600 * 1000
-          localStorage.setItem('authExpiry', expiry.toString())
+          storage?.setItem('authExpiry', expiry.toString())
         }
       } else {
         // No authentication configured at all
         setAuthConfigured(false)
         setIsAuthenticated(true)
         if (typeof window !== 'undefined') {
-          localStorage.setItem('authConfigured', 'false')
+          const storage = getAuthStorage()
+          storage?.setItem('authConfigured', 'false')
           const expiry = Date.now() + 365 * 24 * 3600 * 1000
-          localStorage.setItem('authExpiry', expiry.toString())
+          storage?.setItem('authExpiry', expiry.toString())
         }
       }
     } catch {
@@ -215,9 +229,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setAuthConfigured(false)
       setIsAuthenticated(true)
       if (typeof window !== 'undefined') {
-        localStorage.setItem('authConfigured', 'false')
+        const storage = getAuthStorage()
+        storage?.setItem('authConfigured', 'false')
         const expiry = Date.now() + 365 * 24 * 3600 * 1000
-        localStorage.setItem('authExpiry', expiry.toString())
+        storage?.setItem('authExpiry', expiry.toString())
       }
     } finally {
       setIsLoading(false)
@@ -256,8 +271,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
     setUiSecret(null)
     
     if (typeof window !== 'undefined') {
-      localStorage.setItem('authExpiry', '0')
-      localStorage.setItem('lastAuthCheck', '0')
+      const storage = getAuthStorage()
+      storage?.setItem('authExpiry', '0')
+      storage?.setItem('lastAuthCheck', '0')
       // Trigger a custom event to notify other components
       window.dispatchEvent(new CustomEvent('logout'))
     }
@@ -282,18 +298,20 @@ export function AuthProvider({ children }: AuthProviderProps) {
           setIsLoading(false);
           explicitlyCleared.current = false; // Reset flag
           if (typeof window !== 'undefined') {
-            localStorage.setItem('authConfigured', 'true');
-            localStorage.setItem('authExpiry', '0');
-            localStorage.setItem('lastAuthCheck', '0');
+            const storage = getAuthStorage()
+            storage?.setItem('authConfigured', 'true');
+            storage?.setItem('authExpiry', '0');
+            storage?.setItem('lastAuthCheck', '0');
           }
         } else {
           // Normal transition - set up auth and check
           setAuthConfigured(true); // Ensure auth is required to show login form
-          // Clear localStorage auth state
+          // Clear storage auth state
           if (typeof window !== 'undefined') {
-            localStorage.setItem('authExpiry', '0');
-            localStorage.setItem('lastAuthCheck', '0');
-            localStorage.setItem('authConfigured', 'true'); // Force auth required state
+            const storage = getAuthStorage()
+            storage?.setItem('authExpiry', '0');
+            storage?.setItem('lastAuthCheck', '0');
+            storage?.setItem('authConfigured', 'true'); // Force auth required state
           }
           // Force fresh auth check
           if (configData) {
@@ -327,11 +345,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
         setAuthConfigured(false);
         setUiSecret(null);
         
-        // Clear all localStorage auth data
+        // Clear all storage auth data
         if (typeof window !== 'undefined') {
-          localStorage.setItem('authExpiry', '0');
-          localStorage.setItem('lastAuthCheck', '0');
-          localStorage.removeItem('authConfigured');
+          const storage = getAuthStorage()
+          storage?.setItem('authExpiry', '0');
+          storage?.setItem('lastAuthCheck', '0');
+          storage?.removeItem('authConfigured');
         }
       }
     }

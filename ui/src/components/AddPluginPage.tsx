@@ -33,6 +33,7 @@ import {
   AlertTriangle,
   CheckCircle,
 } from "lucide-react";
+import { OAuthConnection } from "@/components/OAuthConnection";
 
 interface Plugin {
   id: string;
@@ -43,6 +44,15 @@ interface Plugin {
   version: string;
   config_schema: string;
   requires_processing: boolean;
+  status: string; // "available", "unavailable", "error"
+  oauth_config?: {
+    provider: string;
+    auth_url: string;
+    token_url: string;
+    scopes: string[];
+    client_id_env: string;
+    client_secret_env: string;
+  };
 }
 
 interface RefreshRateOption {
@@ -113,9 +123,17 @@ export function AddPluginPage() {
   useEffect(() => {
     let filtered = plugins;
 
+    // Filter out unavailable plugins
+    filtered = filtered.filter(plugin => plugin.status !== 'unavailable');
+
     // Filter by type
     if (selectedType !== 'all') {
-      filtered = filtered.filter(plugin => plugin.type === selectedType);
+      if (selectedType === 'system') {
+        // Include both system and external plugins in "Native" category
+        filtered = filtered.filter(plugin => plugin.type === 'system' || plugin.type === 'external');
+      } else {
+        filtered = filtered.filter(plugin => plugin.type === selectedType);
+      }
     }
 
     // Filter by search query
@@ -244,18 +262,24 @@ export function AddPluginPage() {
     }
     
     const properties = schema.properties || {};
+    const required = schema.required || [];
+    
     return (
       <div className="space-y-4">
         {Object.keys(properties).map((key) => {
           const prop = properties[key];
           const value = settings[key] || prop.default || "";
+          const isRequired = required.includes(key);
           
           // Handle enum (select dropdown) FIRST - before string type
           if (prop.enum && Array.isArray(prop.enum)) {
             const enumNames = prop.enumNames && Array.isArray(prop.enumNames) ? prop.enumNames : prop.enum;
             return (
               <div key={key}>
-                <Label htmlFor={key}>{prop.title || key}</Label>
+                <Label htmlFor={key} className={isRequired ? "font-medium" : ""}>
+                  {prop.title || key}
+                  {isRequired && <span className="text-red-500 ml-1">*</span>}
+                </Label>
                 <Select value={value} onValueChange={(val) => onChange(key, val)}>
                   <SelectTrigger className="mt-2">
                     <SelectValue placeholder={prop.description || "Select an option"} />
@@ -287,7 +311,10 @@ export function AddPluginPage() {
                     onChange={(e) => onChange(key, e.target.checked)}
                     className="rounded border-gray-300"
                   />
-                  <Label htmlFor={key}>{prop.title || key}</Label>
+                  <Label htmlFor={key} className={isRequired ? "font-medium" : ""}>
+                    {prop.title || key}
+                    {isRequired && <span className="text-red-500 ml-1">*</span>}
+                  </Label>
                 </div>
                 {prop.description && (
                   <p className="text-xs text-muted-foreground mt-1">{prop.description}</p>
@@ -300,7 +327,10 @@ export function AddPluginPage() {
           if (prop.type === "number" || prop.type === "integer") {
             return (
               <div key={key}>
-                <Label htmlFor={key}>{prop.title || key}</Label>
+                <Label htmlFor={key} className={isRequired ? "font-medium" : ""}>
+                  {prop.title || key}
+                  {isRequired && <span className="text-red-500 ml-1">*</span>}
+                </Label>
                 <Input
                   id={key}
                   type="number"
@@ -310,6 +340,30 @@ export function AddPluginPage() {
                   className="mt-2"
                   min={prop.minimum}
                   max={prop.maximum}
+                  required={isRequired}
+                />
+                {prop.description && (
+                  <p className="text-xs text-muted-foreground mt-1">{prop.description}</p>
+                )}
+              </div>
+            );
+          }
+          
+          // Handle date type
+          if (prop.type === "string" && prop.format === "date") {
+            return (
+              <div key={key}>
+                <Label htmlFor={key} className={isRequired ? "font-medium" : ""}>
+                  {prop.title || key}
+                  {isRequired && <span className="text-red-500 ml-1">*</span>}
+                </Label>
+                <Input
+                  id={key}
+                  type="date"
+                  value={value}
+                  onChange={(e) => onChange(key, e.target.value)}
+                  className="mt-2"
+                  required={isRequired}
                 />
                 {prop.description && (
                   <p className="text-xs text-muted-foreground mt-1">{prop.description}</p>
@@ -321,13 +375,17 @@ export function AddPluginPage() {
           // Default to string type
           return (
             <div key={key}>
-              <Label htmlFor={key}>{prop.title || key}</Label>
+              <Label htmlFor={key} className={isRequired ? "font-medium" : ""}>
+                {prop.title || key}
+                {isRequired && <span className="text-red-500 ml-1">*</span>}
+              </Label>
               <Input
                 id={key}
                 value={value}
                 onChange={(e) => onChange(key, e.target.value)}
                 placeholder={prop.description}
                 className="mt-2"
+                required={isRequired}
               />
               {prop.description && (
                 <p className="text-xs text-muted-foreground mt-1">{prop.description}</p>
@@ -362,7 +420,7 @@ export function AddPluginPage() {
   }, [expandedPlugin]);
 
   const getPluginTypeBadge = (type: string) => {
-    if (type === 'system') {
+    if (type === 'system' || type === 'external') {
       return <Badge variant="outline">Native</Badge>;
     }
     return <Badge variant="outline">Private</Badge>;
@@ -537,6 +595,25 @@ export function AddPluginPage() {
                   }}
                 />
               </div>
+
+              {/* OAuth Connection */}
+              {expandedPlugin.oauth_config && (
+                <>
+                  <Separator />
+                  <div>
+                    <h3 className="text-base font-semibold mb-3">
+                      Authentication
+                    </h3>
+                    <OAuthConnection 
+                      oauthConfig={expandedPlugin.oauth_config}
+                      onConnectionChange={(connected) => {
+                        // You can add additional logic here if needed
+                        // For now, the component handles its own state
+                      }}
+                    />
+                  </div>
+                </>
+              )}
 
               {/* Instance Name */}
               <div>

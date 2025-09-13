@@ -145,9 +145,9 @@ func (s *MashupService) ValidateMashupChild(instanceID uuid.UUID) error {
 		return fmt.Errorf("plugin instance not found: %w", err)
 	}
 	
-	// Only private plugins can be mashup children (for now)
-	if instance.PluginDefinition.PluginType != "private" {
-		return fmt.Errorf("only private plugins can be used in mashups")
+	// Only private and external plugins can be mashup children
+	if instance.PluginDefinition.PluginType != "private" && instance.PluginDefinition.PluginType != "external" {
+		return fmt.Errorf("only private and external plugins can be used in mashups")
 	}
 	
 	// Don't allow mashups as children (no nesting)

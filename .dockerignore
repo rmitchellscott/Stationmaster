@@ -1,0 +1,62 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Documentation
+README.md
+*.md
+docs/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Development dependencies and caches
+node_modules/
+.npm
+.cache/
+.tmp/
+
+# Build artifacts (keep dist)
+target/
+build/
+
+# Test files
+*_test.go
+*Test.go
+test/
+tests/
+__tests__/
+coverage/
+.coverage
+
+# Development environment
+.env.local
+.env.development
+.env.test
+
+# Ruby development
+.bundle/vendor_ruby/
+.ruby-version
+.rvmrc
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/

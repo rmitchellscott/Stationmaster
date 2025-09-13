@@ -90,6 +90,7 @@ import {
   GripVertical,
   Moon,
   Layers,
+  CircleMinus,
 } from "lucide-react";
 import { Device, isDeviceCurrentlySleeping } from "@/utils/deviceHelpers";
 
@@ -109,6 +110,7 @@ interface PluginInstance {
     name: string;
     type: string;
     description: string;
+    status: string; // "available", "unavailable", "error"
   };
 }
 
@@ -126,6 +128,7 @@ interface PlaylistItem {
   schedules?: any[];
   is_sleep_mode?: boolean; // Virtual field for sleep mode items
   sleep_schedule_text?: string; // Schedule text for sleep mode items
+  skip_display?: boolean; // Skip display flag from TRMNL_SKIP_DISPLAY
 }
 
 interface PlaylistManagementProps {
@@ -412,7 +415,10 @@ function SortableTableRow({
     <TableRow 
       ref={setNodeRef} 
       style={style} 
-      className={`${animationClasses} ${item.plugin_instance?.needs_config_update ? 'opacity-60 bg-muted/30' : ''}`}
+      className={`${animationClasses} ${
+        item.plugin_instance?.plugin?.status === 'unavailable' ? 'opacity-70 bg-muted/30' : 
+        item.plugin_instance?.needs_config_update ? 'opacity-60 bg-muted/30' : ''
+      }`}
     >
       <TableCell>
         <div className="flex items-center gap-2">
@@ -460,7 +466,11 @@ function SortableTableRow({
         </div>
         <div className="text-xs md:hidden mt-1">
             <span className="flex items-center gap-1">
-              {item.plugin_instance?.needs_config_update ? (
+              {item.plugin_instance?.plugin?.status === 'unavailable' ? (
+                <Badge variant="secondary" className="text-xs !opacity-100 relative z-10">
+                  Unavailable
+                </Badge>
+              ) : item.plugin_instance?.needs_config_update ? (
                 <Badge 
                   variant="destructive" 
                   className="text-xs cursor-pointer hover:bg-destructive/80 !opacity-100 relative z-10"
@@ -471,17 +481,27 @@ function SortableTableRow({
                 >
                   Update Config
                 </Badge>
+              ) : !item.is_visible ? (
+                <Badge variant="secondary" className="text-xs !opacity-100 relative z-10">
+                  <EyeOff className="h-3 w-3 mr-1" />
+                  Hidden
+                </Badge>
+              ) : item.skip_display ? (
+                <Badge variant="secondary" className="text-xs !opacity-100 relative z-10">
+                  <CircleMinus className="h-3 w-3 mr-1" />
+                  Skipped
+                </Badge>
               ) : (
                 <>
                   {isCurrentlyShowing ? (
                     <PlayCircle className="h-3 w-3" />
-                  ) : isActive && item.is_visible ? (
+                  ) : isActive ? (
                     <Eye className="h-3 w-3" />
                   ) : (
                     <EyeOff className="h-3 w-3" />
                   )}
                   <span className="text-muted-foreground">
-                    {isCurrentlyShowing ? "Now Showing" : isActive ? "Active" : item.is_visible ? "Scheduled" : "Hidden"} • {item.importance ? "Important" : "Normal"}
+                    {isCurrentlyShowing ? "Now Showing" : isActive ? "Active" : "Scheduled"} • {item.importance ? "Important" : "Normal"}
                   </span>
                 </>
               )}
@@ -489,8 +509,13 @@ function SortableTableRow({
           </div>
       </TableCell>
       <TableCell className="hidden md:table-cell">
-        {item.plugin_instance?.needs_config_update ? (
-          // Config update takes priority over all other statuses
+        {item.plugin_instance?.plugin?.status === 'unavailable' ? (
+          // Unavailable takes highest priority
+          <Badge variant="secondary" className="!opacity-100 relative z-10">
+            Unavailable
+          </Badge>
+        ) : item.plugin_instance?.needs_config_update ? (
+          // Config update takes second priority
           <Badge 
             variant="destructive"
             className="cursor-pointer hover:bg-destructive/80 !opacity-100 relative z-10"
@@ -500,6 +525,18 @@ function SortableTableRow({
             }}
           >
             Update Config
+          </Badge>
+        ) : !item.is_visible ? (
+          // Hidden takes third priority
+          <Badge variant="secondary" className="!opacity-100 relative z-10">
+            <EyeOff className="h-3 w-3 mr-1" />
+            Hidden
+          </Badge>
+        ) : item.skip_display ? (
+          // Skip display takes fourth priority
+          <Badge variant="secondary" className="!opacity-100 relative z-10">
+            <CircleMinus className="h-3 w-3 mr-1" />
+            Skipped
           </Badge>
         ) : item.is_sleep_mode ? (
           // Special status logic for sleep mode items
@@ -554,20 +591,15 @@ function SortableTableRow({
               <PlayCircle className="h-3 w-3 mr-1" />
               Now Showing
             </Badge>
-          ) : isActive && item.is_visible ? (
+          ) : isActive ? (
             <Badge variant="outline">
               <Eye className="h-3 w-3 mr-1" />
               Active
             </Badge>
-          ) : item.is_visible ? (
-            <Badge variant="secondary">
-              <EyeOff className="h-3 w-3 mr-1" />
-              Scheduled
-            </Badge>
           ) : (
             <Badge variant="secondary">
               <EyeOff className="h-3 w-3 mr-1" />
-              Hidden
+              Scheduled
             </Badge>
           )
         )}
@@ -651,6 +683,8 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
   const navigate = useNavigate();
   const [playlistItems, setPlaylistItems] = useState<PlaylistItem[]>([]);
   const [playlistMashupLayoutCache, setPlaylistMashupLayoutCache] = useState<Record<string, string>>({});
+  const [selectorMashupLayoutCache, setSelectorMashupLayoutCache] = useState<Record<string, string>>({});
+  const [selectorLayoutsLoading, setSelectorLayoutsLoading] = useState(false);
   
   // Use SSE hook for real-time device events
   const deviceEvents = useDeviceEvents(selectedDeviceId);
@@ -1071,6 +1105,68 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
     }
   };
 
+  const loadSelectorMashupLayouts = async () => {
+    setSelectorLayoutsLoading(true);
+    
+    const availableInstances = getAvailablePluginInstances();
+    console.log('Available instances for selector:', availableInstances);
+    
+    // Debug: Compare data for instances that should be mashups
+    availableInstances.forEach(instance => {
+      if (instance.name.toLowerCase().includes('f1') || instance.name.toLowerCase().includes('formula')) {
+        console.group(`🔍 DEBUG: Analyzing ${instance.name}`);
+        
+        const selectorIsMashup = instance.plugin_definition?.is_mashup;
+        console.log('Selector data - is_mashup:', selectorIsMashup);
+        console.log('Selector data - full plugin_definition:', instance.plugin_definition);
+        
+        // Compare with playlist version if it exists
+        const playlistItem = playlistItems.find(pi => pi.plugin_instance_id === instance.id);
+        if (playlistItem) {
+          const playlistIsMashup = playlistItem.plugin_instance?.plugin_definition?.is_mashup;
+          console.log('Playlist data - is_mashup:', playlistIsMashup);
+          console.log('Playlist data - full plugin_definition:', playlistItem.plugin_instance?.plugin_definition);
+          
+          if (selectorIsMashup !== playlistIsMashup) {
+            console.error('❌ DATA MISMATCH FOUND!');
+            console.log('Selector has:', selectorIsMashup);
+            console.log('Playlist has:', playlistIsMashup);
+          }
+        }
+        
+        console.groupEnd();
+      }
+    });
+
+    const mashupInstances = availableInstances.filter(instance => {
+      return instance.plugin_definition?.is_mashup === true;
+    });
+    
+    console.log('Detected mashup instances:', mashupInstances);
+
+    for (const instance of mashupInstances) {
+      // Skip if already cached
+      if (selectorMashupLayoutCache[instance.id]) {
+        console.log(`Layout already cached for ${instance.name}`);
+        continue;
+      }
+
+      try {
+        console.log(`Loading layout for mashup instance: ${instance.name}`);
+        const mashupData = await mashupService.getChildren(instance.id);
+        const layout = mashupData.layout;
+        console.log(`Loaded layout for ${instance.name}:`, layout);
+        
+        // Cache the layout
+        setSelectorMashupLayoutCache(prev => ({ ...prev, [instance.id]: layout }));
+      } catch (error) {
+        console.error(`Failed to load mashup layout for selector ${instance.name}:`, error);
+      }
+    }
+    
+    setSelectorLayoutsLoading(false);
+  };
+
   const fetchPluginInstances = async () => {
     try {
       const response = await fetch("/api/plugin-instances", {
@@ -1377,6 +1473,11 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
     }
   }, [selectedDeviceId]);
 
+  // Debug log when selector mashup cache updates
+  useEffect(() => {
+    console.log('Selector mashup layout cache updated:', selectorMashupLayoutCache);
+  }, [selectorMashupLayoutCache]);
+
 
   useEffect(() => {
     if (error) {
@@ -1391,6 +1492,14 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
       handleTimeTravelChange();
     }
   }, [timeTravelDate, timeTravelTime, timeTravelMode]);
+
+  // Listen for skip display updates via SSE and refresh playlist items
+  useEffect(() => {
+    if (deviceEvents.lastEvent?.type === 'playlist_item_skip_updated') {
+      // Refresh playlist items when skip display status changes
+      fetchPlaylistItems();
+    }
+  }, [deviceEvents.lastEvent]);
 
 
   return (
@@ -1457,7 +1566,10 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
                 Time Travel
               </Button>
               <Button
-                onClick={() => setShowAddDialog(true)}
+                onClick={() => {
+                  setShowAddDialog(true);
+                  loadSelectorMashupLayouts();
+                }}
                 disabled={getAvailablePluginInstances().length === 0}
               >
                 {getAvailablePluginInstances().length === 0 ? "All Plugins Added" : "Add Item"}
@@ -1489,7 +1601,10 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
               Add plugin instances to this playlist to display content on your device.
             </p>
             <Button 
-              onClick={() => setShowAddDialog(true)}
+              onClick={() => {
+                setShowAddDialog(true);
+                loadSelectorMashupLayouts();
+              }}
               disabled={getAvailablePluginInstances().length === 0}
             >
               {getAvailablePluginInstances().length === 0 ? "All Plugins Added" : "Add Item"}
@@ -1586,11 +1701,32 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
                   <SelectValue placeholder="Choose a plugin instance..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {getAvailablePluginInstances().map((userPlugin) => (
-                    <SelectItem key={userPlugin.id} value={userPlugin.id}>
-                      {userPlugin.name}
-                    </SelectItem>
-                  ))}
+                  {selectorLayoutsLoading ? (
+                    <div className="py-2 px-3 text-sm text-muted-foreground">
+                      Loading layouts...
+                    </div>
+                  ) : (
+                    getAvailablePluginInstances().map((userPlugin) => {
+                      const isMashup = userPlugin.plugin_definition?.is_mashup === true;
+                      const hasLayout = !!selectorMashupLayoutCache[userPlugin.id];
+                      const layoutId = selectorMashupLayoutCache[userPlugin.id];
+                      
+                      console.log(`Rendering SelectItem for ${userPlugin.name}: isMashup=${isMashup}, hasLayout=${hasLayout}, layoutId=${layoutId}`);
+                      
+                      return (
+                        <SelectItem key={userPlugin.id} value={userPlugin.id}>
+                          <div className="flex items-center justify-between w-full">
+                            <span>{userPlugin.name}</span>
+                            {isMashup && hasLayout && (
+                              <div className="ml-2">
+                                {getMashupLayoutGrid(layoutId, 'tiny', 'subtle')}
+                              </div>
+                            )}
+                          </div>
+                        </SelectItem>
+                      );
+                    })
+                  )}
                 </SelectContent>
               </Select>
             </div>

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAuth } from "@/components/AuthProvider";
 import { LoginForm } from "@/components/LoginForm";
@@ -12,23 +12,39 @@ import { Button } from "@/components/ui/button";
 import { Device } from "@/utils/deviceHelpers";
 import { Puzzle, PlayCircle, Monitor } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { getTabManager, DeviceUpdate } from "@/utils/tabManager";
 
 const SELECTED_DEVICE_KEY = "stationmaster_selected_device";
+const SELECTED_DEVICE_SESSION_KEY = "stationmaster_selected_device_session";
 
 const getStoredDeviceId = (): string | null => {
   try {
+    // Check session storage first (tab-specific)
+    const sessionDeviceId = sessionStorage.getItem(SELECTED_DEVICE_SESSION_KEY)
+    if (sessionDeviceId) {
+      return sessionDeviceId
+    }
+    // Fall back to localStorage (global)
     return localStorage.getItem(SELECTED_DEVICE_KEY);
   } catch {
     return null;
   }
 };
 
-const storeDeviceId = (deviceId: string | null) => {
+const storeDeviceId = (deviceId: string | null, persistent: boolean = true) => {
   try {
     if (deviceId) {
-      localStorage.setItem(SELECTED_DEVICE_KEY, deviceId);
+      // Always store in session for current tab
+      sessionStorage.setItem(SELECTED_DEVICE_SESSION_KEY, deviceId)
+      // Also store in localStorage for persistence across sessions if requested
+      if (persistent) {
+        localStorage.setItem(SELECTED_DEVICE_KEY, deviceId);
+      }
     } else {
-      localStorage.removeItem(SELECTED_DEVICE_KEY);
+      sessionStorage.removeItem(SELECTED_DEVICE_SESSION_KEY)
+      if (persistent) {
+        localStorage.removeItem(SELECTED_DEVICE_KEY);
+      }
     }
   } catch (error) {
     console.warn("Failed to store device ID:", error);
@@ -49,6 +65,10 @@ export default function HomePage() {
   const [playlistItems, setPlaylistItems] = useState([]);
   const [playlistItemsLoading, setPlaylistItemsLoading] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(true);
+  
+  // Tab management
+  const tabManager = getTabManager()
+  const [isPrimaryTab, setIsPrimaryTab] = useState(tabManager.isPrimaryTab())
 
   // Get active tab from URL query parameters
   const activeTab = searchParams.get('tab') || 'plugins';
@@ -245,61 +265,63 @@ export default function HomePage() {
     }
   }, [isAuthenticated]);
 
-  // Real-time device updates
-  useEffect(() => {
-    if (!isAuthenticated || devices.length === 0) return;
-
-    const eventSources: EventSource[] = [];
-    
-    // Create SSE connections for each device
-    devices.forEach(device => {
-      try {
-        const eventSource = new EventSource(`/api/devices/${device.id}/events`, {
-          withCredentials: true,
-        });
-
-        eventSource.onmessage = (event) => {
-          try {
-            const parsedEvent = JSON.parse(event.data);
-            
-            if (parsedEvent.type === 'device_status_updated') {
-              const data = parsedEvent.data;
-              
-              // Update the specific device in the devices array
-              setDevices(prevDevices => 
-                prevDevices.map(d => 
-                  d.id === data.device_id 
-                    ? {
-                        ...d,
-                        battery_voltage: data.battery_voltage,
-                        rssi: data.rssi,
-                        firmware_version: data.firmware_version,
-                        last_seen: data.last_seen,
-                        is_active: data.is_active,
-                      }
-                    : d
-                )
-              );
+  // Handle device updates from tab manager
+  const handleDeviceUpdate = useCallback((data: DeviceUpdate) => {
+    setDevices(prevDevices => 
+      prevDevices.map(d => 
+        d.id === data.device_id 
+          ? {
+              ...d,
+              battery_voltage: data.battery_voltage ?? d.battery_voltage,
+              rssi: data.rssi ?? d.rssi,
+              firmware_version: data.firmware_version ?? d.firmware_version,
+              last_seen: data.last_seen ?? d.last_seen,
+              is_active: data.is_active ?? d.is_active,
             }
-          } catch (parseError) {
-          }
-        };
+          : d
+      )
+    );
+  }, [])
 
-        eventSource.onerror = (error) => {
-        };
+  // Setup tab management and SSE connections
+  useEffect(() => {
+    if (!isAuthenticated) return;
 
-        eventSources.push(eventSource);
-      } catch (error) {
-      }
-    });
+    // Listen for primary tab changes
+    const handlePrimaryChange = (isPrimary: boolean) => {
+      setIsPrimaryTab(isPrimary)
+    }
+
+    // Listen for device updates from other tabs
+    tabManager.addListener('device_update', handleDeviceUpdate)
+    tabManager.addListener('primary_changed', handlePrimaryChange)
+
+    return () => {
+      tabManager.removeListener('device_update', handleDeviceUpdate)
+      tabManager.removeListener('primary_changed', handlePrimaryChange)
+    }
+  }, [isAuthenticated, handleDeviceUpdate])
+
+  // Create SSE connections only for primary tab
+  useEffect(() => {
+    if (!isAuthenticated || devices.length === 0 || !isPrimaryTab) {
+      return;
+    }
+
+    console.log(`Primary tab creating SSE connections for ${devices.length} devices`)
+    
+    // Create SSE connections for each device via tab manager
+    devices.forEach(device => {
+      tabManager.createSSEConnection(device.id, `/api/devices/${device.id}/events`)
+    })
 
     // Cleanup function
     return () => {
-      eventSources.forEach(eventSource => {
-        eventSource.close();
-      });
+      devices.forEach(device => {
+        tabManager.closeSSEConnection(device.id)
+      })
     };
-  }, [isAuthenticated, devices.length]); // Only depend on devices.length to avoid infinite loops
+  }, [isAuthenticated, devices.length, isPrimaryTab]); // Include isPrimaryTab in dependencies
 
   useEffect(() => {
     if (selectedDeviceId) {
@@ -397,7 +419,7 @@ export default function HomePage() {
                   selectedDeviceId={selectedDeviceId}
                   onDeviceChange={(deviceId) => {
                     setSelectedDeviceId(deviceId);
-                    storeDeviceId(deviceId);
+                    storeDeviceId(deviceId, true);
                   }}
                   loading={loading}
                 />

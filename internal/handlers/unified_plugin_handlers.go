@@ -16,6 +16,7 @@ import (
 	"github.com/rmitchellscott/stationmaster/internal/database"
 	"github.com/rmitchellscott/stationmaster/internal/logging"
 	"github.com/rmitchellscott/stationmaster/internal/plugins"
+	"github.com/rmitchellscott/stationmaster/internal/plugins/external"
 	"github.com/rmitchellscott/stationmaster/internal/plugins/private"
 	"github.com/rmitchellscott/stationmaster/internal/utils"
 	"github.com/rmitchellscott/stationmaster/internal/validation"
@@ -23,11 +24,11 @@ import (
 	"github.com/rmitchellscott/stationmaster/internal/rendering"
 )
 
-// UnifiedPluginDefinition represents a plugin definition that can be system or private
+// UnifiedPluginDefinition represents a plugin definition that can be system, private, or external
 type UnifiedPluginDefinition struct {
 	ID                 string `json:"id"`
 	Name               string `json:"name"`
-	Type               string `json:"type"`               // "system" or "private"
+	Type               string `json:"type"`               // "system", "private", or "external"
 	PluginType         string `json:"plugin_type"`       // "image" or "data"
 	Description        string `json:"description"`
 	ConfigSchema       string `json:"config_schema"`
@@ -35,6 +36,8 @@ type UnifiedPluginDefinition struct {
 	Author             string `json:"author"`
 	IsActive           bool   `json:"is_active"`
 	RequiresProcessing bool   `json:"requires_processing"`
+	Status             string `json:"status"`             // "available", "unavailable", "error"
+	OAuthConfig        json.RawMessage `json:"oauth_config,omitempty"` // OAuth configuration for external plugins
 	
 	// Private plugin specific fields
 	InstanceCount      *int   `json:"instance_count,omitempty"` // Number of instances user has created
@@ -64,12 +67,42 @@ func GetAvailablePluginDefinitionsHandler(c *gin.Context) {
 			Author:             plugin.Author,
 			IsActive:           true,
 			RequiresProcessing: plugin.RequiresProcessing,
+			Status:             "available", // System plugins are always available
 		}
 		allPlugins = append(allPlugins, unifiedPlugin)
 	}
 
-	// Get user's private plugins from unified plugin_definitions table
+	// Get external plugins from database (available to all users like system plugins)
+	// Only include plugins with status = "available" so unavailable plugins don't show in "Add Plugin" UI
 	db := database.GetDB()
+	var externalPlugins []database.PluginDefinition
+	err := db.Where("plugin_type = ? AND is_active = ? AND status = ?", "external", true, "available").Find(&externalPlugins).Error
+	if err == nil {
+		for _, extPlugin := range externalPlugins {
+			// Create external plugin instance to get properly processed ConfigSchema
+			externalPluginInstance := external.NewExternalPlugin(&extPlugin, nil)
+			configSchema := externalPluginInstance.ConfigSchema()
+			
+			unifiedPlugin := UnifiedPluginDefinition{
+				ID:                 extPlugin.ID,
+				Name:               extPlugin.Name,
+				Type:               "external", // Keep true type, UI will handle display
+				PluginType:         extPlugin.PluginType,
+				Description:        extPlugin.Description,
+				ConfigSchema:       configSchema, // Use processed schema from plugin method
+				Version:            extPlugin.Version,
+				Author:             extPlugin.Author,
+				IsActive:           extPlugin.IsActive,
+				RequiresProcessing: extPlugin.RequiresProcessing,
+				Status:             extPlugin.Status, // Include availability status
+				OAuthConfig:        json.RawMessage(extPlugin.OAuthConfig), // Include OAuth configuration for external plugins
+				// No InstanceCount for external plugins (like system plugins)
+			}
+			allPlugins = append(allPlugins, unifiedPlugin)
+		}
+	}
+
+	// Get user's private plugins from unified plugin_definitions table
 	
 	// Filter by plugin_type query parameter if provided
 	pluginType := c.Query("plugin_type")
@@ -83,7 +116,7 @@ func GetAvailablePluginDefinitionsHandler(c *gin.Context) {
 		query = query.Where("plugin_type = ?", "private")
 	}
 	
-	err := query.Find(&privatePlugins).Error
+	err = query.Find(&privatePlugins).Error
 	if err == nil {
 		for _, privatePlugin := range privatePlugins {
 			// Count how many instances user has created of this private plugin
@@ -102,19 +135,16 @@ func GetAvailablePluginDefinitionsHandler(c *gin.Context) {
 				Author:             privatePlugin.Author,
 				IsActive:           privatePlugin.IsActive,
 				RequiresProcessing: privatePlugin.RequiresProcessing,
+				Status:             privatePlugin.Status, // Include availability status
 				InstanceCount:      &instances,
 			}
 			allPlugins = append(allPlugins, unifiedPlugin)
 		}
 	}
 
-	// Sort plugins by type (system first) then by name
+	// Sort plugins by name only
 	sort.Slice(allPlugins, func(i, j int) bool {
-		if allPlugins[i].Type == allPlugins[j].Type {
-			return allPlugins[i].Name < allPlugins[j].Name
-		}
-		// System plugins first
-		return allPlugins[i].Type == "system" && allPlugins[j].Type == "private"
+		return allPlugins[i].Name < allPlugins[j].Name
 	})
 
 	// If requesting only private plugins, transform to PrivatePluginList format
@@ -202,17 +232,36 @@ type UnifiedPluginInstance struct {
 	
 	// Plugin info
 	Plugin struct {
+		ID                 string          `json:"id"`
+		Name               string          `json:"name"`
+		Type               string          `json:"type"`
+		Description        string          `json:"description"`
+		Status             string          `json:"status"`
+		ConfigSchema       string          `json:"config_schema"`
+		Version            string          `json:"version"`
+		Author             string          `json:"author"`
+		IsActive           bool            `json:"is_active"`
+		RequiresProcessing bool            `json:"requires_processing"`
+		DataStrategy       string          `json:"data_strategy"`
+		IsMashup           bool            `json:"is_mashup"`
+		OAuthConfig        json.RawMessage `json:"oauth_config,omitempty"`
+	} `json:"plugin"`
+	
+	// Plugin definition info (for compatibility with frontend expecting plugin_definition)
+	PluginDefinition struct {
 		ID                 string `json:"id"`
 		Name               string `json:"name"`
-		Type               string `json:"type"`
+		PluginType         string `json:"plugin_type"`
 		Description        string `json:"description"`
+		Status             string `json:"status"`
 		ConfigSchema       string `json:"config_schema"`
 		Version            string `json:"version"`
 		Author             string `json:"author"`
 		IsActive           bool   `json:"is_active"`
 		RequiresProcessing bool   `json:"requires_processing"`
 		DataStrategy       string `json:"data_strategy"`
-	} `json:"plugin"`
+		IsMashup           bool   `json:"is_mashup"`
+	} `json:"plugin_definition"`
 }
 
 // GetPluginInstancesHandler returns all plugin instances for the user
@@ -277,11 +326,23 @@ func GetPluginInstancesHandler(c *gin.Context) {
 				instance.Plugin.Name = pluginInstance.PluginDefinition.Name
 				instance.Plugin.Type = pluginInstance.PluginDefinition.PluginType
 				instance.Plugin.Description = pluginInstance.PluginDefinition.Description
-				instance.Plugin.ConfigSchema = pluginInstance.PluginDefinition.ConfigSchema
+				instance.Plugin.Status = pluginInstance.PluginDefinition.Status
+				
+				// For external plugins, generate schema dynamically from YAML form fields
+				if pluginInstance.PluginDefinition.PluginType == "external" {
+					externalPlugin := external.NewExternalPlugin(&pluginInstance.PluginDefinition, &pluginInstance)
+					instance.Plugin.ConfigSchema = externalPlugin.ConfigSchema()
+				} else {
+					// For other plugins, use database field
+					instance.Plugin.ConfigSchema = pluginInstance.PluginDefinition.ConfigSchema
+				}
+				
 				instance.Plugin.Version = pluginInstance.PluginDefinition.Version
 				instance.Plugin.Author = pluginInstance.PluginDefinition.Author
 				instance.Plugin.IsActive = true
 				instance.Plugin.RequiresProcessing = pluginInstance.PluginDefinition.RequiresProcessing
+				instance.Plugin.IsMashup = pluginInstance.PluginDefinition.IsMashup
+				instance.Plugin.OAuthConfig = json.RawMessage(pluginInstance.PluginDefinition.OAuthConfig) // Include OAuth configuration
 				
 				// Set data strategy (no fallback - only set if explicitly defined)
 				if pluginInstance.PluginDefinition.DataStrategy != nil {
@@ -289,11 +350,35 @@ func GetPluginInstancesHandler(c *gin.Context) {
 				} else {
 					instance.Plugin.DataStrategy = ""
 				}
+				
+				// Populate plugin_definition for frontend compatibility
+				instance.PluginDefinition.ID = pluginInstance.PluginDefinition.ID
+				instance.PluginDefinition.Name = pluginInstance.PluginDefinition.Name
+				instance.PluginDefinition.PluginType = pluginInstance.PluginDefinition.PluginType
+				instance.PluginDefinition.Description = pluginInstance.PluginDefinition.Description
+				instance.PluginDefinition.Status = pluginInstance.PluginDefinition.Status
+				instance.PluginDefinition.ConfigSchema = instance.Plugin.ConfigSchema // Use the processed schema
+				instance.PluginDefinition.Version = pluginInstance.PluginDefinition.Version
+				instance.PluginDefinition.Author = pluginInstance.PluginDefinition.Author
+				instance.PluginDefinition.IsActive = true
+				instance.PluginDefinition.RequiresProcessing = pluginInstance.PluginDefinition.RequiresProcessing
+				instance.PluginDefinition.IsMashup = pluginInstance.PluginDefinition.IsMashup
+				
+				if pluginInstance.PluginDefinition.DataStrategy != nil {
+					instance.PluginDefinition.DataStrategy = *pluginInstance.PluginDefinition.DataStrategy
+				} else {
+					instance.PluginDefinition.DataStrategy = ""
+				}
 			}
 
 			allInstances = append(allInstances, instance)
 		}
 	}
+
+	// Sort instances alphabetically by name
+	sort.Slice(allInstances, func(i, j int) bool {
+		return allInstances[i].Name < allInstances[j].Name
+	})
 
 	c.JSON(http.StatusOK, gin.H{"plugin_instances": allInstances})
 }
@@ -716,7 +801,7 @@ func CreatePluginDefinitionHandler(c *gin.Context) {
 	}
 
 	// Validate and convert form fields to JSON schema
-	configSchema, err := ValidateFormFields(req.FormFields)
+	configSchema, err := validation.ValidateFormFields(req.FormFields)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Form fields validation failed", "details": err.Error()})
 		return
@@ -841,7 +926,7 @@ func UpdatePluginDefinitionHandler(c *gin.Context) {
 	}
 
 	// Validate and convert form fields to JSON schema
-	configSchema, err := ValidateFormFields(req.FormFields)
+	configSchema, err := validation.ValidateFormFields(req.FormFields)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Form fields validation failed", "details": err.Error()})
 		return
@@ -1327,8 +1412,12 @@ func TestPluginDefinitionHandler(c *gin.Context) {
 	logging.Info("[TestPlugin] Created TRMNL context data", "user_available", user != nil, "device_width", req.DeviceWidth, "device_height", req.DeviceHeight)
 
 	// Use the private plugin renderer service
-	htmlRenderer := private.NewPrivatePluginRenderer()
-	renderedHTML, err := htmlRenderer.RenderToClientSideHTML(private.RenderOptions{
+	htmlRenderer, err := private.NewPrivatePluginRenderer(".")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to initialize private plugin renderer: %v", err)})
+		return
+	}
+	renderedHTML, err := htmlRenderer.RenderToServerSideHTML(c.Request.Context(), private.RenderOptions{
 		SharedMarkup:   req.Plugin.SharedMarkup,
 		LayoutTemplate: layoutTemplate,
 		Data:           finalTemplateData,
@@ -1804,13 +1893,13 @@ func GetUserPrivatePluginInstancesHandler(c *gin.Context) {
 		return
 	}
 
-	// Filter for private plugins that can be used in mashups
+	// Filter for private and external plugins that can be used in mashups
 	var availableInstances []gin.H
 	mashupService := database.NewMashupService(db)
 
 	for _, instance := range instances {
-		// Skip if not private plugin
-		if instance.PluginDefinition.PluginType != "private" {
+		// Skip if not private or external plugin
+		if instance.PluginDefinition.PluginType != "private" && instance.PluginDefinition.PluginType != "external" {
 			continue
 		}
 
@@ -1834,4 +1923,90 @@ func GetUserPrivatePluginInstancesHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"instances": availableInstances})
+}
+
+// AdminGetExternalPluginsHandler returns all external plugin definitions for admin management
+func AdminGetExternalPluginsHandler(c *gin.Context) {
+	user, ok := auth.RequireUser(c)
+	if !ok {
+		return
+	}
+	
+	if !user.IsAdmin {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Admin access required"})
+		return
+	}
+
+	db := database.GetDB()
+	var externalPlugins []database.PluginDefinition
+	err := db.Where("plugin_type = ?", "external").Order("name").Find(&externalPlugins).Error
+	if err != nil {
+		logging.Error("Failed to fetch external plugins for admin", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch external plugins"})
+		return
+	}
+
+	// Count instances for each plugin
+	var result []gin.H
+	for _, plugin := range externalPlugins {
+		var instanceCount int64
+		db.Model(&database.PluginInstance{}).Where("plugin_definition_id = ?", plugin.ID).Count(&instanceCount)
+		
+		result = append(result, gin.H{
+			"id":                plugin.ID,
+			"identifier":        plugin.Identifier,
+			"name":              plugin.Name,
+			"description":       plugin.Description,
+			"version":           plugin.Version,
+			"author":            plugin.Author,
+			"status":            plugin.Status,
+			"is_active":         plugin.IsActive,
+			"instance_count":    instanceCount,
+			"created_at":        plugin.CreatedAt,
+			"updated_at":        plugin.UpdatedAt,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{"plugins": result})
+}
+
+// AdminDeleteExternalPluginHandler deletes an external plugin definition and all its instances
+func AdminDeleteExternalPluginHandler(c *gin.Context) {
+	user, ok := auth.RequireUser(c)
+	if !ok {
+		return
+	}
+	
+	if !user.IsAdmin {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Admin access required"})
+		return
+	}
+
+	pluginID := c.Param("id")
+	if pluginID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Plugin ID required"})
+		return
+	}
+
+	db := database.GetDB()
+	
+	// Verify this is an external plugin
+	var plugin database.PluginDefinition
+	err := db.Where("id = ? AND plugin_type = ?", pluginID, "external").First(&plugin).Error
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "External plugin not found"})
+		return
+	}
+
+	// Use the unified plugin service to delete (handles cascading deletes)
+	pluginService := database.NewUnifiedPluginService(db)
+	err = pluginService.DeletePluginDefinition(pluginID, nil)
+	if err != nil {
+		logging.Error("Failed to delete external plugin", "plugin_id", pluginID, "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete plugin"})
+		return
+	}
+
+	logging.Info("Admin deleted external plugin", "plugin_id", pluginID, "plugin_name", plugin.Name, "admin_user", user.Username)
+	c.JSON(http.StatusOK, gin.H{"message": "Plugin deleted successfully"})
 }

@@ -63,6 +63,7 @@ import {
   Settings as SettingsIcon,
   AlertTriangle,
   CheckCircle,
+  Loader2,
   RefreshCw,
   ChevronUp,
   ChevronDown,
@@ -78,6 +79,8 @@ import { AddPluginDropdown } from "./AddPluginDropdown";
 import { MashupSlotGrid } from "./MashupSlotGrid";
 import { getMashupLayoutGrid } from "./MashupLayoutGrid";
 import { MashupLayout, MashupSlotInfo, AvailablePluginInstance, mashupService } from "@/services/mashupService";
+import { OAuthConnection } from "./OAuthConnection";
+import { useOAuthStatus } from "@/hooks/useOAuthStatus";
 
 interface Plugin {
   id: string;
@@ -89,9 +92,18 @@ interface Plugin {
   author: string;
   is_active: boolean;
   requires_processing: boolean;
+  status: string; // "available", "unavailable", "error"
   data_strategy?: string;
   created_at: string;
   updated_at: string;
+  oauth_config?: {
+    provider: string;
+    auth_url: string;
+    token_url: string;
+    scopes: string[];
+    client_id_env: string;
+    client_secret_env: string;
+  };
 }
 
 interface PluginInstance {
@@ -737,15 +749,9 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
 
   // Helper function to load mashup layout info for editing
   const loadEditMashupLayout = async (instanceId: string) => {
-    console.log('🔄 loadEditMashupLayout called with instanceId:', instanceId);
     setEditMashupLayoutLoading(true);
     try {
-      console.log('📡 Fetching mashup children data...');
       const mashupData = await mashupService.getChildren(instanceId);
-      console.log('✅ Mashup data received:', mashupData);
-      console.log('🎯 Layout extracted:', mashupData.layout);
-      console.log('🔍 Slots extracted:', mashupData.slots);
-      console.log('📋 Assignments extracted:', mashupData.assignments);
       
       setEditMashupLayout(mashupData.layout);
       setEditMashupSlots(mashupData.slots || []);
@@ -753,23 +759,17 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
       // Convert assignments from MashupChild objects to plugin instance IDs
       const assignmentMap: Record<string, string> = {};
       if (mashupData.assignments) {
-        console.log('🔍 Processing assignments:', mashupData.assignments);
         for (const [slotPosition, child] of Object.entries(mashupData.assignments)) {
-          console.log(`  - Slot ${slotPosition}:`, child);
           if (child && child.instance_id) {
             assignmentMap[slotPosition] = child.instance_id;
-            console.log(`    ✅ Mapped to instance ID: ${child.instance_id}`);
           }
         }
       }
-      console.log('📊 Final assignment map:', assignmentMap);
       setEditMashupAssignments(assignmentMap);
       setEditOriginalMashupAssignments({...assignmentMap}); // Store original for change detection
       
       // Load available plugins to display names
-      console.log('📡 Loading available plugins for edit modal...');
       const availablePlugins = await mashupService.getAvailablePluginInstances();
-      console.log('✅ Available plugins loaded:', availablePlugins);
       setEditAvailablePlugins(availablePlugins);
     } catch (error) {
       console.error('❌ Error loading mashup layout:', error);
@@ -785,10 +785,6 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
 
   // Helper function to open edit dialog for an instance
   const openEditDialog = (instanceToEdit: PluginInstance) => {
-    console.log('🚀 openEditDialog called with instance:', instanceToEdit);
-    console.log('🔍 Instance plugin object:', instanceToEdit.plugin);
-    console.log('🏷️ Plugin type:', instanceToEdit.plugin?.type);
-    console.log('📋 Plugin name:', instanceToEdit.plugin?.name);
     
     setEditPluginInstance(instanceToEdit);
     setEditInstanceName(instanceToEdit.name);
@@ -815,12 +811,9 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
     
     // If it's a mashup, load the layout info
     const isMashup = instanceToEdit.plugin?.type === 'mashup';
-    console.log('🤔 Is mashup check:', isMashup);
     if (isMashup) {
-      console.log('✅ Detected mashup - loading layout info');
       loadEditMashupLayout(instanceToEdit.id);
     } else {
-      console.log('❌ Not a mashup - clearing layout');
       setEditMashupLayout(null);
       setEditMashupSlots([]);
       setEditMashupAssignments({});
@@ -928,19 +921,14 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
     }
   }, [searchParams, plugins, setSearchParams]);
 
-  // Debug: Log when editPluginInstance changes
+  // Log when editPluginInstance changes for debugging
   useEffect(() => {
-    console.log('🔄 editPluginInstance state changed:', editPluginInstance);
-    if (editPluginInstance) {
-      console.log('  - Instance ID:', editPluginInstance.id);
-      console.log('  - Instance name:', editPluginInstance.name);
-      console.log('  - Plugin type:', editPluginInstance.plugin?.type);
-    }
+    // Debug logging removed for production
   }, [editPluginInstance]);
 
-  // Debug: Log when editMashupLayout changes
+  // Log when editMashupLayout changes for debugging
   useEffect(() => {
-    console.log('🗂️ editMashupLayout state changed:', editMashupLayout);
+    // Debug logging removed for production
   }, [editMashupLayout]);
 
   // Sort function
@@ -967,9 +955,15 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
           bValue = b.plugin?.name?.toLowerCase() || '';
           break;
         case 'status':
-          // Priority system: Update Config (3) > Active (2) > Unused (1)
-          aValue = a.needs_config_update ? 3 : (a.is_used_in_playlists ? 2 : 1);
-          bValue = b.needs_config_update ? 3 : (b.is_used_in_playlists ? 2 : 1);
+          // Priority system: Unavailable (4) > Update Config (3) > Active (2) > Unused (1)
+          const getStatusPriority = (instance: PluginInstance) => {
+            if (instance.plugin?.status === 'unavailable') return 4;
+            if (instance.needs_config_update) return 3;
+            if (instance.is_used_in_playlists) return 2;
+            return 1;
+          };
+          aValue = getStatusPriority(a);
+          bValue = getStatusPriority(b);
           break;
         case 'created':
           aValue = new Date(a.created_at).getTime();
@@ -1016,6 +1010,65 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
     }
   };
 
+  // OAuth Status Badge Component for Plugin Cards
+  const OAuthStatusBadge: React.FC<{ plugin: Plugin }> = ({ plugin }) => {
+    const { connection, loading } = useOAuthStatus(plugin.oauth_config?.provider);
+
+    if (loading) {
+      return (
+        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-600">
+          <Loader2 className="h-3 w-3 animate-spin mr-1" />
+          Checking...
+        </span>
+      );
+    }
+
+    if (connection?.connected) {
+      return (
+        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-green-100 text-green-800">
+          <CheckCircle className="h-3 w-3 mr-1" />
+          Connected
+        </span>
+      );
+    }
+
+    return (
+      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-amber-100 text-amber-800">
+        <AlertTriangle className="h-3 w-3 mr-1" />
+        Needs Connection
+      </span>
+    );
+  };
+
+  // OAuth Connection Wrapper Component
+  const OAuthConnectionWrapper: React.FC<{
+    plugin: Plugin;
+    onConnectionChange: (connected: boolean) => void;
+  }> = ({ plugin, onConnectionChange }) => {
+    const { connection, loading } = useOAuthStatus(plugin.oauth_config?.provider);
+
+    if (!plugin.oauth_config) return null;
+
+    return (
+      <div className="mb-6">
+        <OAuthConnection
+          oauthConfig={plugin.oauth_config}
+          onConnectionChange={onConnectionChange}
+          className="mb-4"
+        />
+        {connection && !connection.connected && (
+          <Alert className="border-amber-200 bg-amber-50">
+            <AlertTriangle className="h-4 w-4 text-amber-600" />
+            <AlertDescription>
+              You must connect to {plugin.oauth_config.provider} to configure this plugin. 
+              The settings below will be available after connecting your account.
+            </AlertDescription>
+          </Alert>
+        )}
+      </div>
+    );
+  };
+
   const renderSettingsForm = (plugin: Plugin, settings: Record<string, any>, onChange: (key: string, value: any) => void) => {
     let schema;
     try {
@@ -1028,6 +1081,15 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
 
     return (
       <div className="space-y-4">
+        {/* OAuth Connection Section */}
+        {plugin.oauth_config && (
+          <OAuthConnectionWrapper 
+            plugin={plugin} 
+            onConnectionChange={(connected) => {
+              // Optionally trigger form validation or state updates
+            }}
+          />
+        )}
         {Object.keys(properties).map((key) => {
           const prop = properties[key];
           const value = settings[key] || prop.default || "";
@@ -1450,11 +1512,15 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                               </>
                             ) : (userPlugin.plugin?.name || "Unknown Plugin")}
                           </span>
-                          {userPlugin.needs_config_update ? (
+                          {userPlugin.plugin?.status === 'unavailable' ? (
+                            <Badge variant="secondary" className="text-xs">
+                              Unavailable
+                            </Badge>
+                          ) : userPlugin.needs_config_update ? (
                             <Badge 
                               variant="destructive" 
-                              className="text-xs cursor-pointer hover:bg-destructive/80"
-                              onClick={() => openEditDialog(userPlugin)}
+                              className={`text-xs ${userPlugin.plugin?.status !== 'unavailable' ? 'cursor-pointer hover:bg-destructive/80' : 'opacity-60 cursor-not-allowed'}`}
+                              onClick={userPlugin.plugin?.status !== 'unavailable' ? () => openEditDialog(userPlugin) : undefined}
                             >
                               Update Config
                             </Badge>
@@ -1480,11 +1546,13 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                     </TableCell>
                     <TableCell className="hidden md:table-cell">
                       <div className="flex gap-1 flex-wrap">
-                        {userPlugin.needs_config_update ? (
+                        {userPlugin.plugin?.status === 'unavailable' ? (
+                          <Badge variant="secondary">Unavailable</Badge>
+                        ) : userPlugin.needs_config_update ? (
                           <Badge 
                             variant="destructive" 
-                            className="cursor-pointer hover:bg-destructive/80"
-                            onClick={() => openEditDialog(userPlugin)}
+                            className={userPlugin.plugin?.status !== 'unavailable' ? 'cursor-pointer hover:bg-destructive/80' : 'opacity-60 cursor-not-allowed'}
+                            onClick={userPlugin.plugin?.status !== 'unavailable' ? () => openEditDialog(userPlugin) : undefined}
                           >
                             Update Config
                           </Badge>
@@ -1514,13 +1582,24 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                             <TooltipContent>Copy Webhook URL</TooltipContent>
                           </Tooltip>
                         )}
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => openEditDialog(userPlugin)}
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => openEditDialog(userPlugin)}
+                              disabled={userPlugin.plugin?.status === 'unavailable'}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {userPlugin.plugin?.status === 'unavailable' 
+                              ? "Plugin unavailable - cannot edit settings"
+                              : "Edit plugin instance"
+                            }
+                          </TooltipContent>
+                        </Tooltip>
                         <Button
                           size="sm"
                           variant="outline"
@@ -1655,6 +1734,9 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                                   }`}>
                                     {plugin.type === 'system' ? 'System' : 'Private'}
                                   </span>
+                                  {plugin.oauth_config && (
+                                    <OAuthStatusBadge plugin={plugin} />
+                                  )}
                                 </div>
                                 <div className="text-xs text-muted-foreground">
                                   v{plugin.version} by {plugin.author}
@@ -1830,14 +1912,6 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
               const hasLayout = !!layoutId;
               const isLoading = editMashupLayoutLoading;
               const showMashupHeader = isMashup && (hasLayout || isLoading);
-              
-              console.log('🎨 Edit dialog header render:');
-              console.log('  - Plugin type:', pluginType);
-              console.log('  - Layout ID:', layoutId);
-              console.log('  - Is mashup:', isMashup);
-              console.log('  - Has layout:', hasLayout);
-              console.log('  - Is loading:', isLoading);
-              console.log('  - Show mashup header:', showMashupHeader);
               
               return showMashupHeader ? (
                 <div className="flex items-start gap-4">

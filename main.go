@@ -546,6 +546,9 @@ func main() {
 	protected.GET("/plugin-instances", handlers.GetPluginInstancesHandler) // GET /api/plugin-instances - list user's plugin instances
 	protected.POST("/plugin-instances", handlers.CreatePluginInstanceFromDefinitionHandler) // POST /api/plugin-instances - create plugin instance from definition
 	
+	// Dynamic plugin options endpoint
+	protected.POST("/plugins/:plugin_identifier/options/:field_name", handlers.GetPluginDynamicOptionsHandler) // POST /api/plugins/:plugin_identifier/options/:field_name - get dynamic field options
+	
 	// Static routes must come before parameterized routes
 	protected.GET("/plugin-instances/private", handlers.GetUserPrivatePluginInstancesHandler) // GET /api/plugin-instances/private - get user's private plugin instances for mashup children
 	

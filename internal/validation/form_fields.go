@@ -12,16 +12,20 @@ import (
 
 // FormField represents a single form field configuration in YAML format
 type FormField struct {
-	Keyname      string                 `json:"keyname" yaml:"keyname" binding:"required"`
-	FieldType    string                 `json:"field_type" yaml:"field_type" binding:"required"`
-	Name         string                 `json:"name" yaml:"name" binding:"required"`
-	Description  string                 `json:"description" yaml:"description,omitempty"`
-	Optional     bool                   `json:"optional" yaml:"optional,omitempty"`
-	Default      interface{}            `json:"default" yaml:"default,omitempty"`
-	Placeholder  string                 `json:"placeholder" yaml:"placeholder,omitempty"`
-	HelpText     string                 `json:"help_text" yaml:"help_text,omitempty"`
-	Options      interface{}            `json:"options" yaml:"options,omitempty"` // TRMNL format: array of maps
-	Validation   map[string]interface{} `json:"validation" yaml:"validation,omitempty"`
+	Keyname       string                 `json:"keyname" yaml:"keyname" binding:"required"`
+	FieldType     string                 `json:"field_type" yaml:"field_type" binding:"required"`
+	Name          string                 `json:"name" yaml:"name" binding:"required"`
+	Description   string                 `json:"description" yaml:"description,omitempty"`
+	Optional      bool                   `json:"optional" yaml:"optional,omitempty"`
+	Default       interface{}            `json:"default" yaml:"default,omitempty"`
+	Placeholder   string                 `json:"placeholder" yaml:"placeholder,omitempty"`
+	HelpText      string                 `json:"help_text" yaml:"help_text,omitempty"`
+	Options       interface{}            `json:"options" yaml:"options,omitempty"` // TRMNL format: array of maps
+	Validation    map[string]interface{} `json:"validation" yaml:"validation,omitempty"`
+	Dynamic       bool                   `json:"dynamic" yaml:"dynamic,omitempty"`
+	DynamicSource string                 `json:"dynamic_source" yaml:"dynamic_source,omitempty"`
+	DependsOn     string                 `json:"depends_on" yaml:"depends_on,omitempty"`
+	Multiple      bool                   `json:"multiple" yaml:"multiple,omitempty"`
 }
 
 // FormFieldOption represents a parsed option for select fields
@@ -257,9 +261,12 @@ func generateFieldSchema(field FormField) map[string]interface{} {
 		if field.Placeholder != "" {
 			schema["placeholder"] = field.Placeholder
 		}
-	case "text", "code":
+	case "text", "code", "textarea":
 		schema["type"] = "string"
 		schema["format"] = "textarea"
+		if field.Placeholder != "" {
+			schema["placeholder"] = field.Placeholder
+		}
 	case "number":
 		schema["type"] = "number"
 	case "password":
@@ -276,17 +283,33 @@ func generateFieldSchema(field FormField) map[string]interface{} {
 		schema["format"] = "timezone"
 	case "select":
 		schema["type"] = "string"
-		// Parse TRMNL format options
-		parsedOptions := parseTRNMLOptions(field.Options)
-		if len(parsedOptions) > 0 {
-			enum := make([]string, len(parsedOptions))
-			enumNames := make([]string, len(parsedOptions))
-			for i, option := range parsedOptions {
-				enum[i] = option.Value
-				enumNames[i] = option.Label
+
+		// Handle dynamic fields
+		if field.Dynamic {
+			schema["dynamic"] = true
+			if field.DynamicSource != "" {
+				schema["dynamicSource"] = field.DynamicSource
 			}
-			schema["enum"] = enum
-			schema["enumNames"] = enumNames
+			if field.DependsOn != "" {
+				schema["dependsOn"] = field.DependsOn
+			}
+			if field.Multiple {
+				schema["type"] = "array"
+				schema["items"] = map[string]interface{}{"type": "string"}
+			}
+		} else {
+			// Handle static options
+			parsedOptions := parseTRNMLOptions(field.Options)
+			if len(parsedOptions) > 0 {
+				enum := make([]string, len(parsedOptions))
+				enumNames := make([]string, len(parsedOptions))
+				for i, option := range parsedOptions {
+					enum[i] = option.Value
+					enumNames[i] = option.Label
+				}
+				schema["enum"] = enum
+				schema["enumNames"] = enumNames
+			}
 		}
 	case "checkbox":
 		schema["type"] = "boolean"

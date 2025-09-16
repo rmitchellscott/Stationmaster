@@ -34,6 +34,7 @@ import {
   CheckCircle,
 } from "lucide-react";
 import { OAuthConnection } from "@/components/OAuthConnection";
+import { useOAuthStatus } from "@/hooks/useOAuthStatus";
 
 interface Plugin {
   id: string;
@@ -72,7 +73,13 @@ export function AddPluginPage() {
   const [selectedType, setSelectedType] = useState<PluginType>('all');
   const [expandedPlugin, setExpandedPlugin] = useState<Plugin | null>(null);
   const [refreshRateOptions, setRefreshRateOptions] = useState<RefreshRateOption[]>([]);
-  
+
+  // Get OAuth status for expanded plugin
+  const { connection: oauthConnection } = useOAuthStatus(expandedPlugin?.oauth_config?.provider);
+
+  // OAuth tokens state - stored separately from connection status
+  const [oauthTokens, setOauthTokens] = useState<Record<string, any> | null>(null);
+
   // Form state for instance creation
   const [instanceName, setInstanceName] = useState("");
   const [instanceRefreshRate, setInstanceRefreshRate] = useState<number>(86400);
@@ -80,6 +87,81 @@ export function AddPluginPage() {
   const [createLoading, setCreateLoading] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [createSuccess, setCreateSuccess] = useState<string | null>(null);
+
+  // Dynamic field state
+  const [dynamicFieldOptions, setDynamicFieldOptions] = useState<Record<string, any[]>>({});
+  const [dynamicFieldsLoading, setDynamicFieldsLoading] = useState<Record<string, boolean>>({});
+
+  // Fetch dynamic field options from the plugin service
+  const fetchDynamicFieldOptions = async (
+    pluginId: string,
+    fieldName: string,
+    oauthTokens: Record<string, any> = {}
+  ) => {
+    const fieldKey = `${pluginId}.${fieldName}`;
+    const apiUrl = `/api/plugins/${pluginId}/options/${fieldName}`;
+
+    console.log('[DEBUG] fetchDynamicFieldOptions called:', {
+      pluginId,
+      fieldName,
+      fieldKey,
+      apiUrl,
+      hasTokens: !!oauthTokens,
+      tokenKeys: Object.keys(oauthTokens || {}),
+      tokens: oauthTokens
+    });
+
+    try {
+      setDynamicFieldsLoading(prev => ({ ...prev, [fieldKey]: true }));
+
+      const requestBody = { oauth_tokens: oauthTokens };
+      console.log('[DEBUG] Sending API request:', {
+        url: apiUrl,
+        method: 'POST',
+        body: requestBody
+      });
+
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify(requestBody)
+      });
+
+      console.log('[DEBUG] API response:', {
+        ok: response.ok,
+        status: response.status,
+        statusText: response.statusText
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('[DEBUG] API response data:', data);
+        console.log('[DEBUG] Options received:', data.data?.options);
+
+        setDynamicFieldOptions(prev => {
+          const updated = { ...prev, [fieldKey]: data.data?.options || [] };
+          console.log('[DEBUG] Updated dynamicFieldOptions state:', updated);
+          return updated;
+        });
+      } else {
+        const errorText = await response.text();
+        console.error('[DEBUG] Failed to fetch dynamic field options:', {
+          status: response.status,
+          statusText: response.statusText,
+          errorBody: errorText
+        });
+        setDynamicFieldOptions(prev => ({ ...prev, [fieldKey]: [] }));
+      }
+    } catch (error) {
+      console.error('[DEBUG] Error fetching dynamic field options:', error);
+      setDynamicFieldOptions(prev => ({ ...prev, [fieldKey]: [] }));
+    } finally {
+      setDynamicFieldsLoading(prev => ({ ...prev, [fieldKey]: false }));
+    }
+  };
 
   // Fetch plugins
   const fetchPlugins = async () => {
@@ -118,6 +200,75 @@ export function AddPluginPage() {
     fetchPlugins();
     fetchRefreshRateOptions();
   }, []);
+
+  // Fetch dynamic fields when plugin is expanded and OAuth is connected
+  useEffect(() => {
+    console.log('[DEBUG] OAuth useEffect triggered:', {
+      hasExpandedPlugin: !!expandedPlugin,
+      pluginId: expandedPlugin?.id,
+      pluginType: expandedPlugin?.type,
+      pluginName: expandedPlugin?.name,
+      oauthConnected: oauthConnection?.connected,
+      hasStoredTokens: !!oauthTokens,
+      storedTokenKeys: Object.keys(oauthTokens || {}),
+      fullOauthConnection: oauthConnection,
+      oauthTokens: oauthTokens
+    });
+
+    // Try to fetch if OAuth is connected, even without tokens (backend might have them in session)
+    if (expandedPlugin && oauthConnection?.connected) {
+      try {
+        const schema = JSON.parse(expandedPlugin.config_schema);
+        const properties = schema.properties || {};
+
+        console.log('[DEBUG] Plugin schema parsed:', {
+          pluginId: expandedPlugin.id,
+          propertyKeys: Object.keys(properties),
+          fullProperties: properties
+        });
+
+        Object.keys(properties).forEach(key => {
+          const prop = properties[key];
+          const dynamicSourceField = prop.dynamicSource || prop.dynamic_source;
+
+          console.log(`[DEBUG] Checking property ${key}:`, {
+            isDynamic: prop.dynamic,
+            dynamicSource: prop.dynamicSource,
+            dynamic_source: prop.dynamic_source,
+            dynamicSourceField,
+            fullProp: prop
+          });
+
+          if (prop.dynamic && dynamicSourceField) {
+            // Check if we haven't already fetched this field
+            const fieldKey = `${expandedPlugin.id}.${dynamicSourceField}`;
+            const alreadyFetched = !!dynamicFieldOptions[fieldKey];
+            const currentlyLoading = !!dynamicFieldsLoading[fieldKey];
+
+            console.log(`[DEBUG] Dynamic field ${key} status:`, {
+              fieldKey,
+              alreadyFetched,
+              currentlyLoading,
+              willFetch: !alreadyFetched && !currentlyLoading
+            });
+
+            if (!alreadyFetched && !currentlyLoading) {
+              // For external plugins, the API might expect a different identifier
+              // Use the identifier field from plugin metadata
+              const pluginIdentifier = expandedPlugin.identifier || expandedPlugin.id;
+
+              console.log(`[DEBUG] Fetching dynamic options for ${key} (tokens: ${!!oauthTokens}, identifier: ${pluginIdentifier})`);
+              // Pass tokens if available, otherwise empty object - backend might have them in session
+              fetchDynamicFieldOptions(pluginIdentifier, dynamicSourceField, oauthTokens || {});
+            }
+          }
+        });
+      } catch (e) {
+        console.error('[DEBUG] Error parsing plugin schema for dynamic fields:', e);
+        console.error('[DEBUG] Plugin config_schema:', expandedPlugin.config_schema);
+      }
+    }
+  }, [expandedPlugin, oauthConnection?.connected, oauthTokens]);
 
   // Filter and search plugins
   useEffect(() => {
@@ -271,7 +422,84 @@ export function AddPluginPage() {
           const value = settings[key] || prop.default || "";
           const isRequired = required.includes(key);
           
-          // Handle enum (select dropdown) FIRST - before string type
+          // Handle dynamic select fields FIRST
+          if (prop.dynamic && (prop.dynamicSource || prop.dynamic_source)) {
+            const dynamicSourceField = prop.dynamicSource || prop.dynamic_source;
+            // Use the same identifier logic as during storage
+            const pluginIdentifier = expandedPlugin.identifier || expandedPlugin.id;
+            const fieldKey = `${pluginIdentifier}.${dynamicSourceField}`;
+            const options = dynamicFieldOptions[fieldKey] || [];
+            const isLoading = dynamicFieldsLoading[fieldKey] || false;
+
+            console.log(`[DEBUG] Rendering dynamic field ${key}:`, {
+              pluginIdentifier,
+              dynamicSourceField,
+              fieldKey,
+              optionsCount: options.length,
+              allKeys: Object.keys(dynamicFieldOptions),
+              isLoading
+            });
+
+            // Check if OAuth is required but not connected
+            if ((prop.dependsOn === 'oauth_connected' || prop.depends_on === 'oauth_connected')) {
+              // For now, show placeholder - OAuth status will be handled by connection listener
+              if (options.length === 0 && !isLoading) {
+                return (
+                  <div key={key}>
+                    <Label htmlFor={key} className={isRequired ? "font-medium" : ""}>
+                      {prop.title || key}
+                      {isRequired && <span className="text-red-500 ml-1">*</span>}
+                    </Label>
+                    <Select disabled>
+                      <SelectTrigger className="mt-2">
+                        <SelectValue placeholder="Connect to OAuth first to load options" />
+                      </SelectTrigger>
+                    </Select>
+                    {prop.description && (
+                      <p className="text-xs text-muted-foreground mt-1">{prop.description}</p>
+                    )}
+                  </div>
+                );
+              }
+            }
+
+            // Render dynamic select with fetched options
+            return (
+              <div key={key}>
+                <Label htmlFor={key} className={isRequired ? "font-medium" : ""}>
+                  {prop.title || key}
+                  {isRequired && <span className="text-red-500 ml-1">*</span>}
+                </Label>
+                <Select
+                  value={Array.isArray(value) ? value[0] : value}
+                  onValueChange={(val) => onChange(key, prop.multiple ? [val] : val)}
+                  disabled={isLoading}
+                >
+                  <SelectTrigger className="mt-2">
+                    <SelectValue placeholder={isLoading ? "Loading..." : (prop.placeholder || "Select option")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {options.map((option: any) => {
+                      // Handle different option formats
+                      const optionValue = typeof option === 'object' ? (option.value || Object.values(option)[0]) : option;
+                      const optionLabel = typeof option === 'object' ? (option.label || Object.keys(option)[0]) : option;
+
+                      return (
+                        <SelectItem key={optionValue} value={optionValue}>
+                          {optionLabel}
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
+                {prop.description && (
+                  <p className="text-xs text-muted-foreground mt-1">{prop.description}</p>
+                )}
+              </div>
+            );
+          }
+
+          // Handle enum (select dropdown) SECOND - after dynamic fields
           if (prop.enum && Array.isArray(prop.enum)) {
             const enumNames = prop.enumNames && Array.isArray(prop.enumNames) ? prop.enumNames : prop.enum;
             return (
@@ -349,6 +577,30 @@ export function AddPluginPage() {
             );
           }
           
+          // Handle textarea type
+          if (prop.format === "textarea") {
+            return (
+              <div key={key}>
+                <Label htmlFor={key} className={isRequired ? "font-medium" : ""}>
+                  {prop.title || key}
+                  {isRequired && <span className="text-red-500 ml-1">*</span>}
+                </Label>
+                <textarea
+                  id={key}
+                  value={value}
+                  onChange={(e) => onChange(key, e.target.value)}
+                  placeholder={prop.placeholder || prop.description}
+                  className="mt-2 min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  required={isRequired}
+                  rows={4}
+                />
+                {prop.description && (
+                  <p className="text-xs text-muted-foreground mt-1">{prop.description}</p>
+                )}
+              </div>
+            );
+          }
+
           // Handle date type
           if (prop.type === "string" && prop.format === "date") {
             return (
@@ -552,7 +804,7 @@ export function AddPluginPage() {
           />
           
           {/* Expanded Card */}
-          <Card className="relative z-10 w-full max-w-lg mx-auto animate-in fade-in-0 zoom-in-95 duration-300">
+          <Card className="relative z-10 w-full max-w-4xl max-h-[90vh] overflow-y-auto mx-auto animate-in fade-in-0 zoom-in-95 duration-300">
             <CardHeader className="pb-4">
               <div className="flex items-start justify-between gap-4">
                 <CardTitle className="text-xl font-semibold">
@@ -604,11 +856,39 @@ export function AddPluginPage() {
                     <h3 className="text-base font-semibold mb-3">
                       Authentication
                     </h3>
-                    <OAuthConnection 
+                    <OAuthConnection
                       oauthConfig={expandedPlugin.oauth_config}
-                      onConnectionChange={(connected) => {
-                        // You can add additional logic here if needed
-                        // For now, the component handles its own state
+                      onConnectionChange={(connected, tokens) => {
+                        console.log('[DEBUG] OAuthConnection onConnectionChange:', {
+                          connected,
+                          hasTokens: !!tokens,
+                          tokenKeys: Object.keys(tokens || {}),
+                          tokens
+                        });
+
+                        if (connected && tokens) {
+                          // Store tokens in state
+                          setOauthTokens(tokens);
+
+                          // Fetch dynamic field options when OAuth connects
+                          const schema = JSON.parse(expandedPlugin.config_schema);
+                          const properties = schema.properties || {};
+
+                          Object.keys(properties).forEach(key => {
+                            const prop = properties[key];
+                            const dynamicSourceField = prop.dynamicSource || prop.dynamic_source;
+                            if (prop.dynamic && dynamicSourceField) {
+                              // Use the identifier field from plugin metadata
+                              const pluginIdentifier = expandedPlugin.identifier || expandedPlugin.id;
+
+                              console.log(`[DEBUG] Fetching options for ${key} on OAuth connect (identifier: ${pluginIdentifier})`);
+                              fetchDynamicFieldOptions(pluginIdentifier, dynamicSourceField, tokens);
+                            }
+                          });
+                        } else if (!connected) {
+                          // Clear tokens when disconnected
+                          setOauthTokens(null);
+                        }
                       }}
                     />
                   </div>

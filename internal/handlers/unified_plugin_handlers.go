@@ -5,7 +5,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -27,6 +29,7 @@ import (
 // UnifiedPluginDefinition represents a plugin definition that can be system, private, or external
 type UnifiedPluginDefinition struct {
 	ID                 string `json:"id"`
+	Identifier         string `json:"identifier"`         // Ruby service identifier for external plugins
 	Name               string `json:"name"`
 	Type               string `json:"type"`               // "system", "private", or "external"
 	PluginType         string `json:"plugin_type"`       // "image" or "data"
@@ -38,7 +41,7 @@ type UnifiedPluginDefinition struct {
 	RequiresProcessing bool   `json:"requires_processing"`
 	Status             string `json:"status"`             // "available", "unavailable", "error"
 	OAuthConfig        json.RawMessage `json:"oauth_config,omitempty"` // OAuth configuration for external plugins
-	
+
 	// Private plugin specific fields
 	InstanceCount      *int   `json:"instance_count,omitempty"` // Number of instances user has created
 }
@@ -58,6 +61,7 @@ func GetAvailablePluginDefinitionsHandler(c *gin.Context) {
 	for _, plugin := range systemPlugins {
 		unifiedPlugin := UnifiedPluginDefinition{
 			ID:                 plugin.Type, // Use type as ID for system plugins
+			Identifier:         plugin.Type, // Same as ID for system plugins
 			Name:               plugin.Name,
 			Type:               "system",
 			PluginType:         string(plugin.PluginType),
@@ -85,6 +89,7 @@ func GetAvailablePluginDefinitionsHandler(c *gin.Context) {
 			
 			unifiedPlugin := UnifiedPluginDefinition{
 				ID:                 extPlugin.ID,
+				Identifier:         extPlugin.Identifier, // Ruby service identifier
 				Name:               extPlugin.Name,
 				Type:               "external", // Keep true type, UI will handle display
 				PluginType:         extPlugin.PluginType,
@@ -126,6 +131,7 @@ func GetAvailablePluginDefinitionsHandler(c *gin.Context) {
 			
 			unifiedPlugin := UnifiedPluginDefinition{
 				ID:                 privatePlugin.ID,
+				Identifier:         privatePlugin.Identifier, // UUID for private plugins
 				Name:               privatePlugin.Name,
 				Type:               "private",
 				PluginType:         privatePlugin.PluginType,
@@ -2009,4 +2015,93 @@ func AdminDeleteExternalPluginHandler(c *gin.Context) {
 
 	logging.Info("Admin deleted external plugin", "plugin_id", pluginID, "plugin_name", plugin.Name, "admin_user", user.Username)
 	c.JSON(http.StatusOK, gin.H{"message": "Plugin deleted successfully"})
+}
+
+// GetPluginDynamicOptionsHandler proxies requests to the external plugin service for dynamic field options
+func GetPluginDynamicOptionsHandler(c *gin.Context) {
+	user, ok := auth.RequireUser(c)
+	if !ok {
+		return
+	}
+	
+	pluginIdentifier := c.Param("plugin_identifier")
+	fieldName := c.Param("field_name")
+	
+	if pluginIdentifier == "" || fieldName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Plugin identifier and field name are required"})
+		return
+	}
+	
+	// Fetch the user's OAuth tokens from database instead of expecting them from frontend
+	db := database.GetDB()
+	var oauthTokens []database.UserOAuthToken
+	err := db.Where("user_id = ?", user.ID).Find(&oauthTokens).Error
+	if err != nil {
+		logging.Error("Failed to fetch user OAuth tokens", "user_id", user.ID, "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch OAuth tokens"})
+		return
+	}
+
+	// Convert OAuth tokens to the format expected by Ruby service
+	oauthTokensMap := make(map[string]interface{})
+	for _, token := range oauthTokens {
+		providerTokens := map[string]interface{}{
+			"refresh_token": token.RefreshToken,
+			"scopes":        token.Scopes,
+		}
+		oauthTokensMap[token.Provider] = providerTokens
+	}
+
+	// Prepare request body for Ruby service
+	var requestBody struct {
+		OAuthTokens map[string]interface{} `json:"oauth_tokens"`
+		User        map[string]interface{} `json:"user"`
+	}
+
+	// We can still accept any additional data from frontend, but OAuth tokens come from database
+	if err := c.ShouldBindJSON(&requestBody); err != nil {
+		logging.Warn("Failed to parse request body, using defaults", "error", err)
+	}
+
+	// Override OAuth tokens with database values (more secure)
+	requestBody.OAuthTokens = oauthTokensMap
+
+	// Add user ID to the request
+	if requestBody.User == nil {
+		requestBody.User = make(map[string]interface{})
+	}
+	requestBody.User["id"] = user.ID.String()
+	
+	// Get service URL from environment
+	serviceURL := os.Getenv("EXTERNAL_PLUGIN_SERVICES")
+	if serviceURL == "" {
+		serviceURL = "http://stationmaster-plugins:3000"
+	}
+	
+	// Prepare request to external service
+	requestBodyJSON, err := json.Marshal(requestBody)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to prepare request"})
+		return
+	}
+	
+	// Make request to external plugin service
+	url := fmt.Sprintf("%s/api/plugins/%s/options/%s", serviceURL, pluginIdentifier, fieldName)
+	resp, err := http.Post(url, "application/json", strings.NewReader(string(requestBodyJSON)))
+	if err != nil {
+		logging.Error("Failed to fetch plugin options", "plugin", pluginIdentifier, "field", fieldName, "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch plugin options"})
+		return
+	}
+	defer resp.Body.Close()
+	
+	// Read response
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read response"})
+		return
+	}
+	
+	// Forward the response with the same status code
+	c.Data(resp.StatusCode, "application/json", body)
 }

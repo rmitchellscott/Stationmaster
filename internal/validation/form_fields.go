@@ -296,6 +296,7 @@ func generateFieldSchema(field FormField) map[string]interface{} {
 			if field.Multiple {
 				schema["type"] = "array"
 				schema["items"] = map[string]interface{}{"type": "string"}
+				schema["multiple"] = true
 			}
 		} else {
 			// Handle static options
@@ -309,6 +310,12 @@ func generateFieldSchema(field FormField) map[string]interface{} {
 				}
 				schema["enum"] = enum
 				schema["enumNames"] = enumNames
+			}
+			// Add multiple property for non-dynamic select fields too
+			if field.Multiple {
+				schema["type"] = "array"
+				schema["items"] = map[string]interface{}{"type": "string"}
+				schema["multiple"] = true
 			}
 		}
 	case "checkbox":

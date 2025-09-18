@@ -240,23 +240,23 @@ export function AddPluginPage() {
           });
 
           if (prop.dynamic && dynamicSourceField) {
-            // Check if we haven't already fetched this field
-            const fieldKey = `${expandedPlugin.id}.${dynamicSourceField}`;
+            // Use the same identifier logic as during rendering to ensure key consistency
+            const pluginIdentifier = expandedPlugin.identifier || expandedPlugin.id;
+            const fieldKey = `${pluginIdentifier}.${dynamicSourceField}`;
             const alreadyFetched = !!dynamicFieldOptions[fieldKey];
             const currentlyLoading = !!dynamicFieldsLoading[fieldKey];
 
             console.log(`[DEBUG] Dynamic field ${key} status:`, {
               fieldKey,
+              pluginIdentifier,
+              expandedPluginId: expandedPlugin.id,
+              expandedPluginIdentifier: expandedPlugin.identifier,
               alreadyFetched,
               currentlyLoading,
               willFetch: !alreadyFetched && !currentlyLoading
             });
 
             if (!alreadyFetched && !currentlyLoading) {
-              // For external plugins, the API might expect a different identifier
-              // Use the identifier field from plugin metadata
-              const pluginIdentifier = expandedPlugin.identifier || expandedPlugin.id;
-
               console.log(`[DEBUG] Fetching dynamic options for ${key} (tokens: ${!!oauthTokens}, identifier: ${pluginIdentifier})`);
               // Pass tokens if available, otherwise empty object - backend might have them in session
               fetchDynamicFieldOptions(pluginIdentifier, dynamicSourceField, oauthTokens || {});
@@ -440,63 +440,167 @@ export function AddPluginPage() {
               isLoading
             });
 
-            // Check if OAuth is required but not connected
+            // Check if OAuth is required but not connected - handle multi-select vs single-select
             if ((prop.dependsOn === 'oauth_connected' || prop.depends_on === 'oauth_connected')) {
-              // For now, show placeholder - OAuth status will be handled by connection listener
-              if (options.length === 0 && !isLoading) {
-                return (
-                  <div key={key}>
-                    <Label htmlFor={key} className={isRequired ? "font-medium" : ""}>
-                      {prop.title || key}
-                      {isRequired && <span className="text-red-500 ml-1">*</span>}
-                    </Label>
-                    <Select disabled>
-                      <SelectTrigger className="mt-2">
-                        <SelectValue placeholder="Connect to OAuth first to load options" />
-                      </SelectTrigger>
-                    </Select>
-                    {prop.description && (
-                      <p className="text-xs text-muted-foreground mt-1">{prop.description}</p>
-                    )}
-                  </div>
-                );
+              // For multi-select fields, show checkbox interface even when loading/empty
+              if (prop.multiple) {
+                if (options.length === 0) {
+                  const selectedValues = Array.isArray(value) ? value : (value ? [value] : []);
+                  const placeholderText = isLoading ? "Loading calendars..." : "Connect to OAuth first to load options";
+
+                  return (
+                    <div key={key}>
+                      <Label htmlFor={key} className={isRequired ? "font-medium" : ""}>
+                        {prop.title || key}
+                        {isRequired && <span className="text-red-500 ml-1">*</span>}
+                      </Label>
+                      <div className="mt-2">
+                        <div className="border rounded-md p-3 space-y-2">
+                          <div className="text-sm text-muted-foreground">
+                            {placeholderText}
+                          </div>
+                        </div>
+                      </div>
+                      {prop.description && (
+                        <p className="text-xs text-muted-foreground mt-1">{prop.description}</p>
+                      )}
+                    </div>
+                  );
+                }
+              } else {
+                // Single select field - show disabled dropdown when no options
+                if (options.length === 0 && !isLoading) {
+                  return (
+                    <div key={key}>
+                      <Label htmlFor={key} className={isRequired ? "font-medium" : ""}>
+                        {prop.title || key}
+                        {isRequired && <span className="text-red-500 ml-1">*</span>}
+                      </Label>
+                      <Select disabled>
+                        <SelectTrigger className="mt-2">
+                          <SelectValue placeholder="Connect to OAuth first to load options" />
+                        </SelectTrigger>
+                      </Select>
+                      {prop.description && (
+                        <p className="text-xs text-muted-foreground mt-1">{prop.description}</p>
+                      )}
+                    </div>
+                  );
+                }
               }
             }
 
             // Render dynamic select with fetched options
-            return (
-              <div key={key}>
-                <Label htmlFor={key} className={isRequired ? "font-medium" : ""}>
-                  {prop.title || key}
-                  {isRequired && <span className="text-red-500 ml-1">*</span>}
-                </Label>
-                <Select
-                  value={Array.isArray(value) ? value[0] : value}
-                  onValueChange={(val) => onChange(key, prop.multiple ? [val] : val)}
-                  disabled={isLoading}
-                >
-                  <SelectTrigger className="mt-2">
-                    <SelectValue placeholder={isLoading ? "Loading..." : (prop.placeholder || "Select option")} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {options.map((option: any) => {
-                      // Handle different option formats
-                      const optionValue = typeof option === 'object' ? (option.value || Object.values(option)[0]) : option;
-                      const optionLabel = typeof option === 'object' ? (option.label || Object.keys(option)[0]) : option;
+            console.log(`[DEBUG] Rendering dynamic field ${key}:`, {
+              pluginIdentifier,
+              dynamicSourceField,
+              fieldKey,
+              optionsCount: options.length,
+              isMultiple: prop.multiple,
+              propKeys: Object.keys(prop),
+              fullProp: prop,
+              value: value,
+              isLoading
+            });
 
-                      return (
-                        <SelectItem key={optionValue} value={optionValue}>
-                          {optionLabel}
-                        </SelectItem>
-                      );
-                    })}
-                  </SelectContent>
-                </Select>
-                {prop.description && (
-                  <p className="text-xs text-muted-foreground mt-1">{prop.description}</p>
-                )}
-              </div>
-            );
+            if (prop.multiple) {
+              // Multi-select implementation using checkboxes in a dropdown-like container
+              const selectedValues = Array.isArray(value) ? value : (value ? [value] : []);
+
+              console.log(`[DEBUG] Rendering multi-select for ${key}:`, {
+                selectedValues,
+                optionsCount: options.length,
+                options: options.slice(0, 3) // Log first 3 options
+              });
+
+              return (
+                <div key={key}>
+                  <Label htmlFor={key} className={isRequired ? "font-medium" : ""}>
+                    {prop.title || key}
+                    {isRequired && <span className="text-red-500 ml-1">*</span>}
+                  </Label>
+                  <div className="mt-2">
+                    <div className="border rounded-md p-3 space-y-2">
+                      <div className="text-sm text-muted-foreground mb-2">
+                        {selectedValues.length > 0
+                          ? `${selectedValues.length} calendar${selectedValues.length === 1 ? '' : 's'} selected`
+                          : 'Select calendars to display events from'
+                        }
+                      </div>
+                      {options.map((option: any) => {
+                        const optionValue = typeof option === 'object' ? (option.value || Object.values(option)[0]) : option;
+                        const optionLabel = typeof option === 'object' ? (option.label || Object.keys(option)[0]) : option;
+                        const isSelected = selectedValues.includes(optionValue);
+
+                        return (
+                          <div key={optionValue} className="flex items-center space-x-2">
+                            <input
+                              type="checkbox"
+                              id={`${key}-${optionValue}`}
+                              checked={isSelected}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  // Add to selection
+                                  onChange(key, [...selectedValues, optionValue]);
+                                } else {
+                                  // Remove from selection
+                                  onChange(key, selectedValues.filter(v => v !== optionValue));
+                                }
+                              }}
+                              className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
+                            />
+                            <label
+                              htmlFor={`${key}-${optionValue}`}
+                              className="text-sm font-medium text-gray-700 cursor-pointer"
+                            >
+                              {optionLabel}
+                            </label>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  {prop.description && (
+                    <p className="text-xs text-muted-foreground mt-1">{prop.description}</p>
+                  )}
+                </div>
+              );
+            } else {
+              // Single-select implementation
+              return (
+                <div key={key}>
+                  <Label htmlFor={key} className={isRequired ? "font-medium" : ""}>
+                    {prop.title || key}
+                    {isRequired && <span className="text-red-500 ml-1">*</span>}
+                  </Label>
+                  <Select
+                    value={Array.isArray(value) ? value[0] : value}
+                    onValueChange={(val) => onChange(key, val)}
+                    disabled={isLoading}
+                  >
+                    <SelectTrigger className="mt-2">
+                      <SelectValue placeholder={isLoading ? "Loading..." : (prop.placeholder || "Select option")} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {options.map((option: any) => {
+                        // Handle different option formats
+                        const optionValue = typeof option === 'object' ? (option.value || Object.values(option)[0]) : option;
+                        const optionLabel = typeof option === 'object' ? (option.label || Object.keys(option)[0]) : option;
+
+                        return (
+                          <SelectItem key={optionValue} value={optionValue}>
+                            {optionLabel}
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                  {prop.description && (
+                    <p className="text-xs text-muted-foreground mt-1">{prop.description}</p>
+                  )}
+                </div>
+              );
+            }
           }
 
           // Handle enum (select dropdown) SECOND - after dynamic fields

@@ -1146,7 +1146,11 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
     }
 
     const properties = schema.properties || {};
-    const pluginIdentifier = plugin.id;
+    console.log(`[DEBUG] Plugin object in edit context:`, plugin);
+    console.log(`[DEBUG] plugin.identifier:`, plugin.identifier);
+    console.log(`[DEBUG] plugin.id:`, plugin.id);
+    const pluginIdentifier = plugin.identifier || plugin.id;
+    console.log(`[DEBUG] Final pluginIdentifier:`, pluginIdentifier);
 
     console.log(`[DEBUG] Properties found:`, Object.keys(properties));
     console.log(`[DEBUG] Full properties object:`, properties);
@@ -2380,7 +2384,15 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                       </CardHeader>
                       <CardContent className="pt-0">
                         <PluginSettingsForm
-                          plugin={editPluginInstance.plugin}
+                          plugin={(() => {
+                            // Find the plugin definition that matches this plugin instance
+                            // The plugin instance has a plugin.id that should match a plugin definition's id
+                            const pluginDefinition = plugins.find(p => p.id === editPluginInstance.plugin.id);
+                            console.log(`[DEBUG] Looking for plugin definition with id: ${editPluginInstance.plugin.id}`);
+                            console.log(`[DEBUG] Found plugin definition:`, pluginDefinition);
+                            console.log(`[DEBUG] Plugin definition identifier:`, pluginDefinition?.identifier);
+                            return pluginDefinition || editPluginInstance.plugin;
+                          })()}
                           settings={editInstanceSettings}
                           onChange={(key: string, value: any) => {
                             setEditInstanceSettings(prev => ({ ...prev, [key]: value }));

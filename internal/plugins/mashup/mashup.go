@@ -14,6 +14,7 @@ import (
 	"github.com/rmitchellscott/stationmaster/internal/database"
 	"github.com/rmitchellscott/stationmaster/internal/logging"
 	"github.com/rmitchellscott/stationmaster/internal/plugins"
+	"github.com/rmitchellscott/stationmaster/internal/plugins/private"
 	"github.com/rmitchellscott/stationmaster/internal/rendering"
 )
 
@@ -145,18 +146,83 @@ func (p *MashupPlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespons
 			
 		switch dataStrategy := child.ChildInstance.PluginDefinition.DataStrategy; {
 		case dataStrategy != nil && *dataStrategy == "polling":
-			// Use stored polling data
-			logging.Debug("[MASHUP] Querying stored polling data", "instance_id", childInstanceID)
-			if storedData, err := pollingService.GetPollingDataTemplate(childInstanceID); err == nil {
-				logging.Debug("[MASHUP] Retrieved polling data", 
-					"instance_id", childInstanceID,
-					"data_keys", getMapKeys(storedData),
-					"full_data", storedData)
-				for key, value := range storedData {
-					templateData[key] = value
+			// Check if stored data is fresh, otherwise actively poll
+			maxAge := 5 * time.Minute // Allow some staleness to avoid duplicate polls
+			if isFresh, err := pollingService.IsPollingDataFresh(childInstanceID, maxAge); err == nil && isFresh {
+				// Use stored polling data
+				logging.Debug("[MASHUP] Using fresh stored polling data", "instance_id", childInstanceID, "slot", child.SlotPosition)
+				if storedData, err := pollingService.GetPollingDataTemplate(childInstanceID); err == nil {
+					for key, value := range storedData {
+						templateData[key] = value
+					}
 				}
 			} else {
-				logging.Warn("[MASHUP] Failed to get polling data for child", "slot", child.SlotPosition, "instance_id", childInstanceID, "error", err)
+				// Data is stale or doesn't exist - actively poll fresh data
+				logging.Debug("[MASHUP] Stored polling data stale, actively polling", "instance_id", childInstanceID, "slot", child.SlotPosition)
+				poller := private.NewEnhancedDataPoller()
+				pollingCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer cancel()
+
+				pollStartTime := time.Now()
+				polledResult, pollErr := poller.PollData(pollingCtx, &child.ChildInstance.PluginDefinition, formFieldValues)
+				pollDuration := time.Since(pollStartTime)
+
+				if pollErr == nil && polledResult.Success {
+					// Merge polling data into template data
+					for key, value := range polledResult.Data {
+						templateData[key] = value
+					}
+
+					// Store the polling data for future use
+					rawDataJSON, _ := json.Marshal(polledResult.Data)
+					mergedDataJSON, _ := json.Marshal(polledResult.Data)
+					errorsJSON, _ := json.Marshal(polledResult.Errors)
+
+					pollingData := &database.PrivatePluginPollingData{
+						ID:               childInstanceID + "_polling_data",
+						PluginInstanceID: childInstanceID,
+						MergedData:       mergedDataJSON,
+						RawData:          rawDataJSON,
+						PolledAt:         time.Now(),
+						PollDuration:     pollDuration,
+						Success:          true,
+						Errors:           errorsJSON,
+						URLCount:         len(polledResult.Data),
+					}
+
+					if storeErr := pollingService.StorePollingData(pollingData); storeErr != nil {
+						logging.Warn("[MASHUP] Failed to store polling data for child", "slot", child.SlotPosition, "instance_id", childInstanceID, "error", storeErr)
+					} else {
+						logging.Debug("[MASHUP] Stored fresh polling data for child", "slot", child.SlotPosition, "instance_id", childInstanceID, "duration", pollDuration)
+					}
+				} else {
+					// Store failed polling attempt
+					errorsJSON, _ := json.Marshal(polledResult.Errors)
+					if pollErr != nil {
+						errorsJSON, _ = json.Marshal([]string{pollErr.Error()})
+					}
+
+					pollingData := &database.PrivatePluginPollingData{
+						ID:               childInstanceID + "_polling_data",
+						PluginInstanceID: childInstanceID,
+						MergedData:       []byte("{}"),
+						RawData:          []byte("{}"),
+						PolledAt:         time.Now(),
+						PollDuration:     pollDuration,
+						Success:          false,
+						Errors:           errorsJSON,
+						URLCount:         0,
+					}
+
+					pollingService.StorePollingData(pollingData)
+
+					// Log error but don't fail mashup render
+					if pollErr != nil {
+						logging.Warn("[MASHUP] Failed to poll data for child", "slot", child.SlotPosition, "instance_id", childInstanceID, "error", pollErr)
+					} else if len(polledResult.Errors) > 0 {
+						logging.Warn("[MASHUP] Polling errors for child", "slot", child.SlotPosition, "instance_id", childInstanceID, "errors", polledResult.Errors)
+					}
+				}
 			}
 		case dataStrategy != nil && *dataStrategy == "webhook":
 			// Use stored webhook data

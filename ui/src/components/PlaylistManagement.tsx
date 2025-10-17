@@ -171,9 +171,19 @@ const isItemCurrentlyActive = (item: PlaylistItem, userTimezone: string): boolea
   if (!item.schedules || item.schedules.length === 0) return true; // No schedules means always active
 
   const now = new Date();
-  const currentDay = now.getDay(); // 0 = Sunday, 1 = Monday, etc.
-  const currentTime = now.toLocaleTimeString('en-US', { 
-    hour12: false, 
+
+  // Get current day in user's timezone (not browser timezone)
+  const currentDayInTz = new Intl.DateTimeFormat('en-US', {
+    timeZone: userTimezone,
+    weekday: 'short'
+  }).format(now);
+  const dayMap: Record<string, number> = {
+    'Sun': 0, 'Mon': 1, 'Tue': 2, 'Wed': 3, 'Thu': 4, 'Fri': 5, 'Sat': 6
+  };
+  const currentDay = dayMap[currentDayInTz] ?? 0;
+
+  const currentTime = now.toLocaleTimeString('en-US', {
+    hour12: false,
     timeZone: userTimezone,
     hour: '2-digit',
     minute: '2-digit',
@@ -225,24 +235,33 @@ const formatScheduleSummary = (schedules: any[], userTimezone?: string): string 
                  selectedDays.length === 2 && selectedDays.includes("Sat") && selectedDays.includes("Sun") ? "Weekends" :
                  selectedDays.join(", ");
 
-  // Convert UTC times from database to local times for display
-  const convertUTCTimeToLocal = (utcTime: string): string => {
+  // Convert schedule times to user's timezone for display
+  // Handles both old UTC schedules and new timezone-aware schedules
+  const convertScheduleTimeToLocal = (timeStr: string, scheduleTimezone: string): string => {
+    // If schedule is already in user's timezone, no conversion needed
+    if (scheduleTimezone && scheduleTimezone === userTimezone) {
+      return timeStr.substring(0, 5); // Just return HH:MM
+    }
+
+    // Convert from schedule's timezone to user's timezone
     const today = new Date().toISOString().split('T')[0];
-    const utcDateTime = `${today}T${utcTime}Z`;
-    const utcDate = new Date(utcDateTime);
-    
-    const localTime = utcDate.toLocaleTimeString('en-GB', { 
+    const scheduleDateTime = scheduleTimezone === "UTC"
+      ? `${today}T${timeStr}Z`
+      : `${today}T${timeStr}`;
+    const scheduleDate = new Date(scheduleDateTime);
+
+    const localTime = scheduleDate.toLocaleTimeString('en-GB', {
       timeZone: userTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone,
-      hour12: false, 
-      hour: '2-digit', 
+      hour12: false,
+      hour: '2-digit',
       minute: '2-digit'
     });
-    
+
     return localTime;
   };
 
-  const startTimeLocal = schedule.start_time ? convertUTCTimeToLocal(schedule.start_time) : "09:00";
-  const endTimeLocal = schedule.end_time ? convertUTCTimeToLocal(schedule.end_time) : "17:00";
+  const startTimeLocal = schedule.start_time ? convertScheduleTimeToLocal(schedule.start_time, schedule.timezone) : "09:00";
+  const endTimeLocal = schedule.end_time ? convertScheduleTimeToLocal(schedule.end_time, schedule.timezone) : "17:00";
   
   // Convert to 12-hour format for display
   const formatTime12 = (time24: string) => {
@@ -844,41 +863,30 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
     return [sleepModeItem, ...sortedItems];
   };
 
-  // Convert local time (HH:MM) to UTC time for database storage
-  const convertLocalTimeToUTC = (localTime: string): string => {
-    const timezone = getUserTimezone();
-    const today = new Date().toISOString().split('T')[0]; // Today in YYYY-MM-DD
-    
-    // Parse the time input as if it's in the user's timezone
-    const [hours, minutes] = localTime.split(':').map(Number);
-    
-    // Create a date in user's timezone (using a reference date to handle DST correctly)
-    const localDate = new Date();
-    localDate.setFullYear(parseInt(today.split('-')[0]));
-    localDate.setMonth(parseInt(today.split('-')[1]) - 1); // Month is 0-indexed
-    localDate.setDate(parseInt(today.split('-')[2]));
-    localDate.setHours(hours, minutes, 0, 0);
-    
-    // Convert to UTC
-    const utcTime = localDate.toISOString().substring(11, 19); // Extract HH:MM:SS
-    return utcTime;
-  };
-
-  // Convert UTC time (HH:MM:SS) from database to local time for display
-  const convertUTCTimeToLocal = (utcTime: string): string => {
-    const today = new Date().toISOString().split('T')[0]; // Today in YYYY-MM-DD
-    const utcDateTime = `${today}T${utcTime}Z`;
-    const utcDate = new Date(utcDateTime);
-    
-    // Convert to user's configured timezone (or browser timezone as fallback)
+  // Convert schedule time from its stored timezone to user's timezone for display
+  // Handles both old UTC schedules and new timezone-aware schedules
+  const convertScheduleTimeToLocal = (timeStr: string, scheduleTimezone: string): string => {
     const userTimezone = getUserTimezone();
-    const localTime = utcDate.toLocaleTimeString('en-GB', { 
+
+    // If schedule is already in user's timezone, no conversion needed
+    if (scheduleTimezone && scheduleTimezone === userTimezone) {
+      return timeStr.substring(0, 5); // Just return HH:MM
+    }
+
+    // Convert from schedule's timezone to user's timezone
+    const today = new Date().toISOString().split('T')[0];
+    const scheduleDateTime = scheduleTimezone === "UTC"
+      ? `${today}T${timeStr}Z`
+      : `${today}T${timeStr}`;
+    const scheduleDate = new Date(scheduleDateTime);
+
+    const localTime = scheduleDate.toLocaleTimeString('en-GB', {
       timeZone: userTimezone,
-      hour12: false, 
-      hour: '2-digit', 
+      hour12: false,
+      hour: '2-digit',
       minute: '2-digit'
     });
-    
+
     return localTime; // Returns HH:MM
   };
   const [pluginInstances, setPluginInstances] = useState<PluginInstance[]>([]);
@@ -1300,11 +1308,11 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
   const openScheduleDialog = async (item: PlaylistItem) => {
     setScheduleItem(item);
     
-    // Convert UTC times from database to local times for display
+    // Convert schedule times to user's timezone for display
     const schedulesWithLocalTimes = (item.schedules || []).map(schedule => ({
       ...schedule,
-      start_time: convertUTCTimeToLocal(schedule.start_time) + ":00", // Add seconds for UI
-      end_time: convertUTCTimeToLocal(schedule.end_time) + ":00", // Add seconds for UI
+      start_time: convertScheduleTimeToLocal(schedule.start_time, schedule.timezone) + ":00", // Add seconds for UI
+      end_time: convertScheduleTimeToLocal(schedule.end_time, schedule.timezone) + ":00", // Add seconds for UI
       is_active: schedule.is_active !== undefined ? schedule.is_active : true, // Ensure is_active is set
     }));
     
@@ -1376,9 +1384,9 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
         const scheduleData = {
           name: schedule.name || "Unnamed Schedule",
           day_mask: schedule.day_mask,
-          start_time: convertLocalTimeToUTC(schedule.start_time.substring(0, 5)), // Convert to UTC
-          end_time: convertLocalTimeToUTC(schedule.end_time.substring(0, 5)), // Convert to UTC
-          timezone: "UTC",
+          start_time: schedule.start_time.substring(0, 8), // Keep as local time HH:MM:SS
+          end_time: schedule.end_time.substring(0, 8), // Keep as local time HH:MM:SS
+          timezone: getUserTimezone(), // Use user's actual timezone
           is_active: schedule.is_active,
         };
 

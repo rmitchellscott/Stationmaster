@@ -441,7 +441,7 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
         sleep_show_screen: editSleepShowScreen,
         firmware_update_start_time: editFirmwareUpdateStartTime,
         firmware_update_end_time: editFirmwareUpdateEndTime,
-        target_firmware_version: editTargetFirmwareVersion === "latest" ? null : editTargetFirmwareVersion,
+        target_firmware_version: editTargetFirmwareVersion,
       };
 
 

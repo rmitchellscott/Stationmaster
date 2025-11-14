@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -105,6 +106,89 @@ func GetDeviceHandler(c *gin.Context) {
 }
 
 // UpdateDeviceHandler updates a device
+type UpdateDeviceRequest struct {
+	Name                    string  `json:"name"`
+	RefreshRate             int     `json:"refresh_rate"`
+	IsActive                *bool   `json:"is_active"`
+	AllowFirmwareUpdates    *bool   `json:"allow_firmware_updates"`
+	DeviceModelID           *uint   `json:"device_model_id"`
+	ClearModelOverride      *bool   `json:"clear_model_override"`
+	IsShareable             *bool   `json:"is_shareable"`
+	SleepEnabled            *bool   `json:"sleep_enabled"`
+	SleepStartTime          string  `json:"sleep_start_time"`
+	SleepEndTime            string  `json:"sleep_end_time"`
+	SleepShowScreen         *bool   `json:"sleep_show_screen"`
+	FirmwareUpdateStartTime string  `json:"firmware_update_start_time"`
+	FirmwareUpdateEndTime   string  `json:"firmware_update_end_time"`
+	TargetFirmwareVersion   *string `json:"target_firmware_version"`
+}
+
+func (req *UpdateDeviceRequest) ApplyTo(device *database.Device) error {
+	if req.Name != "" {
+		device.Name = req.Name
+	}
+	if req.RefreshRate > 0 {
+		device.RefreshRate = req.RefreshRate
+	}
+	if req.IsActive != nil {
+		device.IsActive = *req.IsActive
+	}
+	if req.AllowFirmwareUpdates != nil {
+		device.AllowFirmwareUpdates = *req.AllowFirmwareUpdates
+	}
+	if req.IsShareable != nil {
+		device.IsShareable = *req.IsShareable
+	}
+	if req.SleepEnabled != nil {
+		device.SleepEnabled = *req.SleepEnabled
+	}
+	if req.SleepShowScreen != nil {
+		device.SleepShowScreen = *req.SleepShowScreen
+	}
+
+	if req.SleepStartTime != "" {
+		if err := validateTimeFormat(req.SleepStartTime); err != nil {
+			return fmt.Errorf("invalid sleep start time format: %w", err)
+		}
+		device.SleepStartTime = req.SleepStartTime
+	} else {
+		device.SleepStartTime = ""
+	}
+
+	if req.SleepEndTime != "" {
+		if err := validateTimeFormat(req.SleepEndTime); err != nil {
+			return fmt.Errorf("invalid sleep end time format: %w", err)
+		}
+		device.SleepEndTime = req.SleepEndTime
+	} else {
+		device.SleepEndTime = ""
+	}
+
+	if req.FirmwareUpdateStartTime != "" {
+		if err := validateTimeFormat(req.FirmwareUpdateStartTime); err != nil {
+			return fmt.Errorf("invalid firmware start time format: %w", err)
+		}
+		device.FirmwareUpdateStartTime = req.FirmwareUpdateStartTime
+	} else {
+		device.FirmwareUpdateStartTime = "00:00"
+	}
+
+	if req.FirmwareUpdateEndTime != "" {
+		if err := validateTimeFormat(req.FirmwareUpdateEndTime); err != nil {
+			return fmt.Errorf("invalid firmware end time format: %w", err)
+		}
+		device.FirmwareUpdateEndTime = req.FirmwareUpdateEndTime
+	} else {
+		device.FirmwareUpdateEndTime = "23:59"
+	}
+
+	if req.TargetFirmwareVersion != nil {
+		device.TargetFirmwareVersion = *req.TargetFirmwareVersion
+	}
+
+	return nil
+}
+
 func UpdateDeviceHandler(c *gin.Context) {
 	user, ok := auth.RequireUser(c)
 	if !ok {
@@ -119,22 +203,7 @@ func UpdateDeviceHandler(c *gin.Context) {
 		return
 	}
 
-	var req struct {
-		Name                    string  `json:"name"`
-		RefreshRate             int     `json:"refresh_rate"`
-		IsActive                *bool   `json:"is_active"`
-		AllowFirmwareUpdates    *bool   `json:"allow_firmware_updates"`
-		DeviceModelID           *uint   `json:"device_model_id"`
-		ClearModelOverride      *bool   `json:"clear_model_override"`
-		IsShareable             *bool   `json:"is_shareable"`
-		SleepEnabled            *bool   `json:"sleep_enabled"`
-		SleepStartTime          string  `json:"sleep_start_time"`
-		SleepEndTime            string  `json:"sleep_end_time"`
-		SleepShowScreen         *bool   `json:"sleep_show_screen"`
-		FirmwareUpdateStartTime string  `json:"firmware_update_start_time"`
-		FirmwareUpdateEndTime   string  `json:"firmware_update_end_time"`
-		TargetFirmwareVersion   *string `json:"target_firmware_version"`
-	}
+	var req UpdateDeviceRequest
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -150,46 +219,23 @@ func UpdateDeviceHandler(c *gin.Context) {
 		return
 	}
 
-	// Verify ownership
 	if device.UserID == nil || *device.UserID != userUUID {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
 		return
 	}
 
-	// Update fields
-	if req.Name != "" {
-		device.Name = req.Name
-	}
-	if req.RefreshRate > 0 {
-		device.RefreshRate = req.RefreshRate
-	}
-	if req.IsActive != nil {
-		device.IsActive = *req.IsActive
-	}
-	if req.AllowFirmwareUpdates != nil {
-		device.AllowFirmwareUpdates = *req.AllowFirmwareUpdates
-	}
-	if req.IsShareable != nil {
-		// If device is being set to not shareable, clear any mirrored devices
-		if !*req.IsShareable && device.IsShareable {
-			playlistService := database.NewPlaylistService(db)
-			err := playlistService.ClearMirroredPlaylistsForSourceDevice(device.ID)
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to clear mirrored devices"})
-				return
-			}
+	if req.IsShareable != nil && !*req.IsShareable && device.IsShareable {
+		playlistService := database.NewPlaylistService(db)
+		if err := playlistService.ClearMirroredPlaylistsForSourceDevice(device.ID); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to clear mirrored devices"})
+			return
 		}
-		device.IsShareable = *req.IsShareable
 	}
 
-	// Handle model updates
 	if req.ClearModelOverride != nil && *req.ClearModelOverride {
-		// Clear manual override - reset to device-reported model or empty
 		device.ManualModelOverride = false
 		device.DeviceModelID = nil
-		// TODO: In future, set DeviceModelID based on ReportedModelName
 	} else if req.DeviceModelID != nil {
-		// Validate the model exists if not zero
 		if *req.DeviceModelID != 0 {
 			if _, err := deviceService.ValidateDeviceModelByID(*req.DeviceModelID); err != nil {
 				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -198,91 +244,14 @@ func UpdateDeviceHandler(c *gin.Context) {
 			device.DeviceModelID = req.DeviceModelID
 			device.ManualModelOverride = true
 		} else {
-			// Zero means clear the model
 			device.DeviceModelID = nil
 			device.ManualModelOverride = false
 		}
 	}
 
-	// Handle sleep mode configuration
-	logging.Debug("[DEVICE UPDATE] Sleep mode request", "enabled", req.SleepEnabled, "start", req.SleepStartTime, "end", req.SleepEndTime, "show_screen", req.SleepShowScreen)
-	
-	if req.SleepEnabled != nil {
-		device.SleepEnabled = *req.SleepEnabled
-		logging.Debug("[DEVICE UPDATE] Set sleep enabled", "enabled", device.SleepEnabled)
-	}
-	// Always update sleep times if provided (frontend always sends these values)
-	if req.SleepStartTime != "" {
-		// Validate time format (HH:MM)
-		if err := validateTimeFormat(req.SleepStartTime); err != nil {
-			logging.Warn("[DEVICE UPDATE] Invalid sleep start time format", "time", req.SleepStartTime, "error", err)
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid sleep start time format. Use HH:MM"})
-			return
-		}
-		device.SleepStartTime = req.SleepStartTime
-		logging.Debug("[DEVICE UPDATE] Set sleep start time", "time", device.SleepStartTime)
-	} else {
-		// If empty string is sent, clear the field
-		device.SleepStartTime = ""
-		logging.Debug("[DEVICE UPDATE] Cleared sleep start time")
-	}
-	
-	if req.SleepEndTime != "" {
-		// Validate time format (HH:MM)
-		if err := validateTimeFormat(req.SleepEndTime); err != nil {
-			logging.Warn("[DEVICE UPDATE] Invalid sleep end time format", "time", req.SleepEndTime, "error", err)
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid sleep end time format. Use HH:MM"})
-			return
-		}
-		device.SleepEndTime = req.SleepEndTime
-		logging.Debug("[DEVICE UPDATE] Set sleep end time", "time", device.SleepEndTime)
-	} else {
-		// If empty string is sent, clear the field
-		device.SleepEndTime = ""
-		logging.Debug("[DEVICE UPDATE] Cleared sleep end time")
-	}
-	if req.SleepShowScreen != nil {
-		device.SleepShowScreen = *req.SleepShowScreen
-		logging.Debug("[DEVICE UPDATE] Set sleep show screen", "show_screen", device.SleepShowScreen)
-	}
-
-	// Handle firmware update schedule configuration
-	logging.Debug("[DEVICE UPDATE] Firmware schedule request", "start", req.FirmwareUpdateStartTime, "end", req.FirmwareUpdateEndTime)
-	
-	// Always update firmware update times if provided (frontend always sends these values)
-	if req.FirmwareUpdateStartTime != "" {
-		// Validate time format (HH:MM)
-		if err := validateTimeFormat(req.FirmwareUpdateStartTime); err != nil {
-			logging.Warn("[DEVICE UPDATE] Invalid firmware start time format", "time", req.FirmwareUpdateStartTime, "error", err)
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid firmware start time format. Use HH:MM"})
-			return
-		}
-		device.FirmwareUpdateStartTime = req.FirmwareUpdateStartTime
-		logging.Debug("[DEVICE UPDATE] Set firmware start time", "time", device.FirmwareUpdateStartTime)
-	} else {
-		// If empty string is sent, set to default
-		device.FirmwareUpdateStartTime = "00:00"
-		logging.Debug("[DEVICE UPDATE] Set firmware start time to default", "time", "00:00")
-	}
-	
-	if req.FirmwareUpdateEndTime != "" {
-		// Validate time format (HH:MM)
-		if err := validateTimeFormat(req.FirmwareUpdateEndTime); err != nil {
-			logging.Warn("[DEVICE UPDATE] Invalid firmware end time format", "time", req.FirmwareUpdateEndTime, "error", err)
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid firmware end time format. Use HH:MM"})
-			return
-		}
-		device.FirmwareUpdateEndTime = req.FirmwareUpdateEndTime
-		logging.Debug("[DEVICE UPDATE] Set firmware end time", "time", device.FirmwareUpdateEndTime)
-	} else {
-		// If empty string is sent, set to default
-		device.FirmwareUpdateEndTime = "23:59"
-		logging.Debug("[DEVICE UPDATE] Set firmware end time to default", "time", "23:59")
-	}
-
-	if req.TargetFirmwareVersion != nil {
-		device.TargetFirmwareVersion = *req.TargetFirmwareVersion
-		logging.Debug("[DEVICE UPDATE] Set target firmware version", "version", device.TargetFirmwareVersion)
+	if err := req.ApplyTo(device); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
 
 	err = deviceService.UpdateDevice(device)

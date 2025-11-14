@@ -221,38 +221,12 @@ func (ds *DeviceService) GetDeviceByAPIKey(apiKey string) (*Device, error) {
 
 // UpdateDevice updates a device
 func (ds *DeviceService) UpdateDevice(device *Device) error {
-	// Use Updates to avoid modifying associations
-	updates := map[string]interface{}{
-		"name":                      device.Name,
-		"refresh_rate":              device.RefreshRate,
-		"is_active":                 device.IsActive,
-		"allow_firmware_updates":    device.AllowFirmwareUpdates,
-		"device_model_id":           device.DeviceModelID,
-		"manual_model_override":     device.ManualModelOverride,
-		"is_shareable":              device.IsShareable,
-		"mirror_source_id":          device.MirrorSourceID,
-		"mirror_synced_at":          device.MirrorSyncedAt,
-		"sleep_enabled":             device.SleepEnabled,
-		"sleep_start_time":          device.SleepStartTime,
-		"sleep_end_time":            device.SleepEndTime,
-		"sleep_show_screen":         device.SleepShowScreen,
-		"firmware_update_start_time": device.FirmwareUpdateStartTime,
-		"firmware_update_end_time":   device.FirmwareUpdateEndTime,
-		"target_firmware_version":    device.TargetFirmwareVersion,
-	}
+	logging.Debug("[DEVICE UPDATE] Updating device", "device_id", device.ID)
 
-	logging.Debug("[DEVICE UPDATE] Updating device sleep settings", "device_id", device.ID, "enabled", device.SleepEnabled, "start_time", device.SleepStartTime, "end_time", device.SleepEndTime, "show_screen", device.SleepShowScreen)
+	err := ds.db.Model(device).
+		Omit("User", "DeviceModel", "ID", "CreatedAt", "UpdatedAt", "MacAddress", "FriendlyID", "APIKey", "IsClaimed").
+		Updates(device).Error
 
-	// Use Select to only update specified fields, preventing GORM from trying to save associations
-	err := ds.db.Model(device).Select(
-		"name", "refresh_rate", "is_active", "allow_firmware_updates",
-		"device_model_id", "manual_model_override", "is_shareable",
-		"mirror_source_id", "mirror_synced_at", "sleep_enabled",
-		"sleep_start_time", "sleep_end_time", "sleep_show_screen",
-		"firmware_update_start_time", "firmware_update_end_time",
-		"target_firmware_version",
-	).Updates(updates).Error
-	
 	if err != nil {
 		logging.Error("[DEVICE UPDATE] Database update failed", "error", err)
 	} else {

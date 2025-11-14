@@ -2,8 +2,6 @@ package private
 
 import (
 	"context"
-	"fmt"
-	"time"
 
 	"github.com/rmitchellscott/stationmaster/internal/rendering"
 )
@@ -30,17 +28,9 @@ type PrivatePluginRenderer struct {
 	unifiedRenderer *rendering.UnifiedRenderer
 }
 
-// NewPrivatePluginRenderer creates a new private plugin renderer
 func NewPrivatePluginRenderer(appDir string) (*PrivatePluginRenderer, error) {
-	// Check if external Ruby service is available
 	unifiedRenderer := rendering.NewUnifiedRenderer()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	
-	if !unifiedRenderer.IsServiceAvailable(ctx) {
-		return nil, fmt.Errorf("external Ruby service is not available - required for private plugins")
-	}
-	
+
 	return &PrivatePluginRenderer{
 		unifiedRenderer: unifiedRenderer,
 	}, nil

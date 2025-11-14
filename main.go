@@ -400,6 +400,19 @@ func main() {
 	protected := router.Group("/api")
 	protected.Use(auth.MultiUserAuthMiddleware())
 
+	// Add route debugging middleware for plugin routes
+	protected.Use(func(c *gin.Context) {
+		if strings.HasPrefix(c.Request.URL.Path, "/api/plugins/") {
+			logging.Info("[ROUTE_DEBUG] Request for plugin route",
+				"method", c.Request.Method,
+				"path", c.Request.URL.Path,
+				"full_url", c.Request.URL.String(),
+				"route_params", c.Params,
+				"handler_name", c.HandlerName())
+		}
+		c.Next()
+	})
+
 	// User management endpoints (admin only)
 	users := protected.Group("/users")
 	{
@@ -547,6 +560,7 @@ func main() {
 	protected.POST("/plugin-instances", handlers.CreatePluginInstanceFromDefinitionHandler) // POST /api/plugin-instances - create plugin instance from definition
 	
 	// Dynamic plugin options endpoint
+	logging.Info("[ROUTE_SETUP] Registering dynamic options route", "path", "/api/plugins/:plugin_identifier/options/:field_name", "method", "POST")
 	protected.POST("/plugins/:plugin_identifier/options/:field_name", handlers.GetPluginDynamicOptionsHandler) // POST /api/plugins/:plugin_identifier/options/:field_name - get dynamic field options
 	
 	// Static routes must come before parameterized routes

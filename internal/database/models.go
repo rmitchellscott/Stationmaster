@@ -98,6 +98,7 @@ type UserOAuthToken struct {
 	UserID       uuid.UUID `gorm:"type:uuid;not null;index" json:"user_id"`
 	Provider     string    `gorm:"size:50;not null" json:"provider"`         // "google", "todoist", etc.
 	ServiceName  string    `gorm:"size:50;not null" json:"service_name"`     // "google_analytics", "youtube_analytics"
+	AccessToken  string    `gorm:"type:text" json:"-"`                       // Access token for providers that use long-lived tokens, never expose in JSON
 	RefreshToken string    `gorm:"type:text;not null" json:"-"`              // Encrypted refresh token, never expose in JSON
 	Scopes       string    `gorm:"type:text" json:"scopes,omitempty"`        // JSON array of granted scopes
 	CreatedAt    time.Time `json:"created_at"`

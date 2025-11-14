@@ -104,7 +104,6 @@ func (p *ExternalPlugin) ConfigSchema() string {
 		return `{"type": "object", "properties": {}}`
 	}
 	
-	logging.Debug("[EXTERNAL_PLUGIN] JSON schema generated successfully", "plugin", p.definition.Identifier, "schema", jsonSchema)
 	return jsonSchema
 }
 
@@ -281,25 +280,42 @@ func (p *ExternalPlugin) GetInstance() *database.PluginInstance {
 func (p *ExternalPlugin) getOAuthTokensForUser(userID string) (map[string]map[string]string, error) {
 	// Import auth package to access OAuth token functions
 	// We need to get OAuth tokens that might be relevant to this plugin
-	
+
+	logging.Debug("[EXTERNAL_PLUGIN] Getting OAuth tokens for user", "user_id", userID)
 	tokens := make(map[string]map[string]string)
-	
+
 	// Try to get Google OAuth token (for Google Analytics, YouTube Analytics)
 	if googleToken, err := getOAuthTokenFromAuth(userID, "google"); err == nil && googleToken != nil {
+		logging.Debug("[EXTERNAL_PLUGIN] Found Google token", "access_len", len(googleToken.AccessToken), "refresh_len", len(googleToken.RefreshToken))
 		tokens["google"] = map[string]string{
+			"access_token":  googleToken.AccessToken,
 			"refresh_token": googleToken.RefreshToken,
 		}
+	} else {
+		logging.Debug("[EXTERNAL_PLUGIN] No Google token found", "error", err)
 	}
-	
+
 	// Try to get Todoist OAuth token
 	if todoistToken, err := getOAuthTokenFromAuth(userID, "todoist"); err == nil && todoistToken != nil {
+		logging.Debug("[EXTERNAL_PLUGIN] Found Todoist token", "access_len", len(todoistToken.AccessToken), "refresh_len", len(todoistToken.RefreshToken))
 		tokens["todoist"] = map[string]string{
+			"access_token":  todoistToken.AccessToken,
 			"refresh_token": todoistToken.RefreshToken,
 		}
+	} else {
+		logging.Debug("[EXTERNAL_PLUGIN] No Todoist token found", "error", err)
 	}
-	
+
 	// Add other providers as needed
-	
+
+	logging.Debug("[EXTERNAL_PLUGIN] Returning tokens", "token_count", len(tokens), "providers", func() []string {
+		keys := make([]string, 0, len(tokens))
+		for k := range tokens {
+			keys = append(keys, k)
+		}
+		return keys
+	}())
+
 	return tokens, nil
 }
 

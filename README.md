@@ -4,39 +4,31 @@ A Bring Your Own Server (BYOS) solution for TRMNL with a Go backend and static R
 
 ## Features
 
-- 🔐 **Multiple Authentication Methods**
-  - Username/Password authentication
-  - API Key authentication
-  - OIDC/SSO integration
-  - Proxy authentication support
-  
-- 👥 **User Management**
+- **Authentication**
+  - Username/password, API key, OIDC/SSO, and proxy auth support
+
+- **User Management**
   - Multi-user support with admin roles
-  - User registration (public or admin-only)
-  - Password reset functionality
-  - User profile management
-  
-- 📱 **Device Management**
+  - Configurable registration (public or admin-only)
+  - Password reset and profile management
+
+- **Device Management**
   - TRMNL device integration
   - Firmware management and updates
   - Device scheduling and configuration
-  
-- 🔌 **Private Plugin System**
-  - Custom liquid templates with multi-layout support
-  - Webhook, polling, and merge data strategies
-  - Built-in Monaco editor with syntax highlighting
-  - Live preview with layout selection
-  - Secure template validation and sandboxing
-  
-- 🎨 **Modern UI**
-  - React + TypeScript frontend
-  - Tailwind CSS styling
-  - Dark/Light theme support
-  - Responsive design
-  
-- 🗄️ **Database Support**
-  - SQLite (default)
-  - PostgreSQL (production)
+
+- **Private Plugin System**
+  - TRMNL-compatible Liquid templates with embedded renderer
+  - Mashup support with webhook and polling strategies
+  - Monaco editor with syntax highlighting
+  - Live preview
+
+- **Frontend**
+  - React + TypeScript
+  - Tailwind CSS with dark/light themes
+
+- **Database**
+  - SQLite (default) or PostgreSQL
 
 ## Quick Start
 
@@ -59,6 +51,8 @@ cp .env.example .env
 ```bash
 docker-compose up -d
 ```
+
+   Note: The `stationmaster-plugins` service is optional and only required for [TRMNL Open Source plugin](https://github.com/usertrmnl/plugins) integration. Core functionality including private plugins works without it.
 
 5. Access the application at http://localhost:8000
 
@@ -93,6 +87,8 @@ npm run dev
 | `PORT` | `8000` | Port for the web server |
 | `GIN_MODE` | `release` | Gin framework mode (`debug`, `release`, `test`) |
 | `DATA_DIR` | `/data` | Directory for data storage |
+| `STATIC_DIR` | `./static` | Directory for static files |
+| `BASE_URL` | `http://localhost:8000` | Base URL for the application |
 
 ### Database Configuration
 
@@ -105,7 +101,6 @@ npm run dev
 | `DB_PASSWORD` | - | Database password (PostgreSQL only) |
 | `DB_NAME` | `stationmaster` | Database name (PostgreSQL only) |
 | `DB_SSLMODE` | `disable` | SSL mode for PostgreSQL |
-| `DATABASE_URL` | `/data/stationmaster.db` | Complete database connection string |
 
 ### Authentication & Security
 
@@ -134,7 +129,6 @@ npm run dev
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `OIDC_ENABLED` | `false` | Enable OIDC authentication |
 | `OIDC_ISSUER` | - | OIDC provider issuer URL |
 | `OIDC_CLIENT_ID` | - | OIDC client ID |
 | `OIDC_CLIENT_SECRET` | - | OIDC client secret |
@@ -159,7 +153,6 @@ npm run dev
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SMTP_ENABLED` | `false` | Enable SMTP for email functionality |
 | `SMTP_HOST` | - | SMTP server hostname |
 | `SMTP_PORT` | `587` | SMTP server port |
 | `SMTP_USERNAME` | - | SMTP authentication username |
@@ -180,17 +173,23 @@ npm run dev
 | `FIRMWARE_POLLER_INTERVAL` | `1h` | Interval for firmware polling |
 | `FIRMWARE_STORAGE_DIR` | `/data/firmware` | Directory for firmware storage |
 | `FIRMWARE_AUTO_DOWNLOAD` | `true` | Automatically download new firmware |
+| `FIRMWARE_MODE` | `proxy` | Firmware distribution mode (`proxy` or `download`) |
 
-### Private Plugin Configuration
+### Rendering Configuration
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PRIVATE_PLUGINS_ENABLED` | `true` | Enable private plugin system |
-| `PLUGIN_WEBHOOK_TIMEOUT` | `30s` | Timeout for webhook data submissions |
-| `PLUGIN_POLLING_INTERVAL` | `5m` | Default polling interval for external APIs |
-| `PLUGIN_MAX_DATA_SIZE` | `2048` | Maximum data size in bytes for webhooks |
-| `PLUGIN_TEMPLATE_TIMEOUT` | `10s` | Template rendering timeout |
-| `PLUGIN_SANDBOX_ENABLED` | `true` | Enable template security sandboxing |
+| `BROWSERLESS_URL` | `http://localhost:3000` | Browserless screenshot service URL |
+| `ASSET_BASE_URL` | `http://stationmaster:8000` | Base URL for assets in HTML rendering |
+| `RENDERED_IMAGES_PATH` | - | Override path for rendered images storage |
+| `RENDERED_IMAGES_URL` | - | Override URL for rendered images |
+| `ALLOW_EXTERNAL_SCRIPTS` | `false` | Allow external scripts in plugin templates |
+
+### External Plugins
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `EXTERNAL_PLUGIN_SERVICES` | - | URL for TRMNL open source plugin service |
 
 ### Logging & Debugging
 
@@ -198,27 +197,24 @@ npm run dev
 |----------|---------|-------------|
 | `LOG_LEVEL` | `INFO` | Logging level (`DEBUG`, `INFO`, `WARN`, `ERROR`) |
 | `LOG_FORMAT` | `text` | Log output format (`text`, `json`) |
-| `DRY_RUN` | `false` | Enable dry-run mode (no actual changes) |
-
-### File-based Secrets
-
-All environment variables support file-based configuration by appending `_FILE` to the variable name. For example:
-- `JWT_SECRET_FILE=/run/secrets/jwt_secret`
-- `DB_PASSWORD_FILE=/run/secrets/db_password`
-
-This is useful for Docker secrets or other secret management systems.
 
 ## Database Configuration
 
 ### SQLite (Default)
 ```env
-DATABASE_URL=/data/stationmaster.db
+DB_TYPE=sqlite
+DATA_DIR=/data
 ```
 
 ### PostgreSQL (Production)
 ```env
 DB_TYPE=postgres
-DATABASE_URL=postgres://user:password@host/dbname?sslmode=disable
+DB_HOST=localhost
+DB_PORT=5432
+DB_USER=stationmaster
+DB_PASSWORD=your_password
+DB_NAME=stationmaster
+DB_SSLMODE=disable
 ```
 
 ## API Documentation
@@ -290,4 +286,4 @@ docker build -t stationmaster .
 
 ## License
 
-MIT License - See LICENSE file for details
+MIT

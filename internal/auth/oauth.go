@@ -227,7 +227,15 @@ func OAuthCallbackHandler(c *gin.Context) {
 		c.Redirect(http.StatusFound, redirectURL)
 		return
 	}
-	
+
+	logging.Info("[OAUTH] Token exchange successful",
+		"provider", provider,
+		"has_access_token", token.AccessToken != "",
+		"has_refresh_token", token.RefreshToken != "",
+		"token_type", token.TokenType,
+		"expiry", token.Expiry,
+	)
+
 	// Store refresh token in database
 	err = storeUserOAuthToken(userID, provider, token, providerConfig.Scopes)
 	if err != nil {
@@ -309,13 +317,15 @@ func storeUserOAuthToken(userID, provider string, token *oauth2.Token, scopes []
 		UserID:       userUUID,
 		Provider:     provider,
 		ServiceName:  provider, // For now, use provider as service name
+		AccessToken:  token.AccessToken,
 		RefreshToken: token.RefreshToken,
 		Scopes:       string(scopesJSON),
 	}
-	
+
 	// Upsert the token (create or update if exists)
 	result := database.DB.Where("user_id = ? AND provider = ?", userID, provider).
 		Assign(map[string]interface{}{
+			"access_token":  token.AccessToken,
 			"refresh_token": token.RefreshToken,
 			"scopes":        string(scopesJSON),
 			"updated_at":    time.Now(),

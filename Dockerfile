@@ -45,21 +45,63 @@ RUN --mount=type=cache,target=/root/.cache \
     -trimpath
 
 
+# Ruby setup stage - use Alpine's Ruby and install gems
+FROM alpine:3.22 AS ruby-setup
+
+# Install Ruby and build dependencies for gems
+RUN apk add --no-cache \
+    ruby \
+    ruby-dev \
+    build-base
+
+# Install required Ruby gems
+RUN gem install \
+    liquid \
+    trmnl-liquid \
+    trmnl-i18n \
+    --no-document
+
 # Final image
 FROM alpine:3.22
 
-# Install minimal runtime dependencies
+ARG S6_OVERLAY_VERSION=3.2.0.2
+ARG TARGETARCH
+
+# Install minimal runtime dependencies including Ruby
 RUN apk add --no-cache \
       ca-certificates \
       postgresql-client \
       tzdata \
-    && update-ca-certificates
+      ruby \
+      curl \
+      xz \
+    && update-ca-certificates \
+    && case ${TARGETARCH} in \
+         "amd64")  S6_ARCH=x86_64  ;; \
+         "arm64")  S6_ARCH=aarch64 ;; \
+         *)        S6_ARCH=x86_64  ;; \
+       esac \
+    && curl -sSL https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-noarch.tar.xz | tar -C / -Jxpf - \
+    && curl -sSL https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-${S6_ARCH}.tar.xz | tar -C / -Jxpf - \
+    && apk del curl xz
 
 WORKDIR /app
 
-# Copy pre-built binaries and assets
+# Copy pre-built Go binary and assets
 COPY --from=stationmaster-builder /app/stationmaster .
 COPY --from=stationmaster-builder /app/images ./images
 
+# Copy installed gems from ruby-setup stage
+COPY --from=ruby-setup /usr/lib/ruby/gems /usr/lib/ruby/gems
+
+# Copy Ruby scripts
+COPY embedded_ruby/scripts/ ./scripts/
+RUN chmod +x ./scripts/start.sh ./scripts/liquid_server.rb
+
+# Copy s6-overlay service definitions
+COPY embedded_ruby/s6-rc.d/ /etc/s6-overlay/s6-rc.d/
+RUN chmod +x /etc/s6-overlay/s6-rc.d/liquid-renderer/run \
+             /etc/s6-overlay/s6-rc.d/stationmaster/run
+
 EXPOSE 8000
-CMD ["./stationmaster"]
+ENTRYPOINT ["/init"]

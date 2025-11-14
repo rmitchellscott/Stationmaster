@@ -46,6 +46,25 @@ type UnifiedPluginDefinition struct {
 	InstanceCount      *int   `json:"instance_count,omitempty"` // Number of instances user has created
 }
 
+// stripOAuthSecrets removes sensitive fields (client_id, client_secret) from OAuth config before sending to UI
+func stripOAuthSecrets(oauthConfig []byte) json.RawMessage {
+	if len(oauthConfig) == 0 {
+		return json.RawMessage(oauthConfig)
+	}
+
+	var config map[string]interface{}
+	if err := json.Unmarshal(oauthConfig, &config); err != nil {
+		return json.RawMessage(oauthConfig)
+	}
+
+	// Remove sensitive fields
+	delete(config, "client_id")
+	delete(config, "client_secret")
+
+	cleaned, _ := json.Marshal(config)
+	return json.RawMessage(cleaned)
+}
+
 // GetAvailablePluginDefinitionsHandler returns both system and private plugins available to the user
 func GetAvailablePluginDefinitionsHandler(c *gin.Context) {
 	user, ok := auth.RequireUser(c)
@@ -100,7 +119,7 @@ func GetAvailablePluginDefinitionsHandler(c *gin.Context) {
 				IsActive:           extPlugin.IsActive,
 				RequiresProcessing: extPlugin.RequiresProcessing,
 				Status:             extPlugin.Status, // Include availability status
-				OAuthConfig:        json.RawMessage(extPlugin.OAuthConfig), // Include OAuth configuration for external plugins
+				OAuthConfig:        stripOAuthSecrets(extPlugin.OAuthConfig), // Strip secrets before sending to UI
 				// No InstanceCount for external plugins (like system plugins)
 			}
 			allPlugins = append(allPlugins, unifiedPlugin)
@@ -2019,38 +2038,80 @@ func AdminDeleteExternalPluginHandler(c *gin.Context) {
 
 // GetPluginDynamicOptionsHandler proxies requests to the external plugin service for dynamic field options
 func GetPluginDynamicOptionsHandler(c *gin.Context) {
+	// ALWAYS log entry - this should appear if the handler is called
+	logging.Info("[DYNAMIC_OPTIONS] ===== HANDLER ENTRY =====",
+		"method", c.Request.Method,
+		"path", c.Request.URL.Path,
+		"full_url", c.Request.URL.String(),
+		"headers", c.Request.Header,
+		"remote_addr", c.Request.RemoteAddr,
+		"user_agent", c.Request.UserAgent())
+
 	user, ok := auth.RequireUser(c)
 	if !ok {
+		logging.Info("[DYNAMIC_OPTIONS] Auth failed - RequireUser returned false")
 		return
 	}
-	
+
 	pluginIdentifier := c.Param("plugin_identifier")
 	fieldName := c.Param("field_name")
-	
+
+	logging.Info("[DYNAMIC_OPTIONS] Handler parameters extracted",
+		"plugin", pluginIdentifier,
+		"field", fieldName,
+		"user_id", user.ID,
+		"params", c.Params)
+
 	if pluginIdentifier == "" || fieldName == "" {
+		logging.Info("[DYNAMIC_OPTIONS] Missing required parameters", "plugin", pluginIdentifier, "field", fieldName)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Plugin identifier and field name are required"})
 		return
 	}
-	
+
+	logging.Info("[DYNAMIC_OPTIONS] Parameters validated, fetching OAuth tokens from database")
+
 	// Fetch the user's OAuth tokens from database instead of expecting them from frontend
 	db := database.GetDB()
 	var oauthTokens []database.UserOAuthToken
 	err := db.Where("user_id = ?", user.ID).Find(&oauthTokens).Error
 	if err != nil {
-		logging.Error("Failed to fetch user OAuth tokens", "user_id", user.ID, "error", err)
+		logging.Error("[DYNAMIC_OPTIONS] Failed to fetch user OAuth tokens", "user_id", user.ID, "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch OAuth tokens"})
 		return
 	}
 
+	logging.Info("[DYNAMIC_OPTIONS] Found OAuth tokens in database", "count", len(oauthTokens), "user_id", user.ID)
+
 	// Convert OAuth tokens to the format expected by Ruby service
 	oauthTokensMap := make(map[string]interface{})
 	for _, token := range oauthTokens {
+		logging.Info("[DYNAMIC_OPTIONS] Processing token", "provider", token.Provider, "access_len", len(token.AccessToken), "refresh_len", len(token.RefreshToken), "scopes", token.Scopes)
+
 		providerTokens := map[string]interface{}{
+			"access_token":  token.AccessToken,
 			"refresh_token": token.RefreshToken,
 			"scopes":        token.Scopes,
 		}
 		oauthTokensMap[token.Provider] = providerTokens
+
+		logging.Info("[DYNAMIC_OPTIONS] Added provider tokens", "provider", token.Provider, "tokens_keys", func() []string {
+			keys := make([]string, 0, len(providerTokens))
+			for k := range providerTokens {
+				keys = append(keys, k)
+			}
+			return keys
+		}())
 	}
+
+	logging.Info("[DYNAMIC_OPTIONS] Final OAuth tokens map", "providers", func() []string {
+		keys := make([]string, 0, len(oauthTokensMap))
+		for k := range oauthTokensMap {
+			keys = append(keys, k)
+		}
+		return keys
+	}(), "total_providers", len(oauthTokensMap))
+
+	logging.Info("[DYNAMIC_OPTIONS] Preparing request body for Ruby service")
 
 	// Prepare request body for Ruby service
 	var requestBody struct {
@@ -2060,7 +2121,7 @@ func GetPluginDynamicOptionsHandler(c *gin.Context) {
 
 	// We can still accept any additional data from frontend, but OAuth tokens come from database
 	if err := c.ShouldBindJSON(&requestBody); err != nil {
-		logging.Warn("Failed to parse request body, using defaults", "error", err)
+		logging.Info("[DYNAMIC_OPTIONS] Failed to parse request body, using defaults", "error", err)
 	}
 
 	// Override OAuth tokens with database values (more secure)
@@ -2071,37 +2132,53 @@ func GetPluginDynamicOptionsHandler(c *gin.Context) {
 		requestBody.User = make(map[string]interface{})
 	}
 	requestBody.User["id"] = user.ID.String()
-	
+
+	logging.Info("[DYNAMIC_OPTIONS] Request body prepared", "oauth_tokens_count", len(requestBody.OAuthTokens), "user_id", requestBody.User["id"])
+
 	// Get service URL from environment
 	serviceURL := os.Getenv("EXTERNAL_PLUGIN_SERVICES")
 	if serviceURL == "" {
 		serviceURL = "http://stationmaster-plugins:3000"
 	}
-	
+
+	logging.Info("[DYNAMIC_OPTIONS] Service URL determined", "service_url", serviceURL)
+
 	// Prepare request to external service
 	requestBodyJSON, err := json.Marshal(requestBody)
 	if err != nil {
+		logging.Error("[DYNAMIC_OPTIONS] Failed to marshal request body", "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to prepare request"})
 		return
 	}
-	
+
+	logging.Info("[DYNAMIC_OPTIONS] Sending request to Rails", "url", fmt.Sprintf("%s/api/plugins/%s/options/%s", serviceURL, pluginIdentifier, fieldName), "body_length", len(requestBodyJSON))
+
 	// Make request to external plugin service
 	url := fmt.Sprintf("%s/api/plugins/%s/options/%s", serviceURL, pluginIdentifier, fieldName)
+
+	logging.Info("[DYNAMIC_OPTIONS] Making HTTP POST request", "url", url, "content_type", "application/json")
+
 	resp, err := http.Post(url, "application/json", strings.NewReader(string(requestBodyJSON)))
 	if err != nil {
-		logging.Error("Failed to fetch plugin options", "plugin", pluginIdentifier, "field", fieldName, "error", err)
+		logging.Error("[DYNAMIC_OPTIONS] Failed to fetch plugin options", "plugin", pluginIdentifier, "field", fieldName, "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch plugin options"})
 		return
 	}
 	defer resp.Body.Close()
-	
+
+	logging.Info("[DYNAMIC_OPTIONS] Received response from Rails", "status_code", resp.StatusCode, "headers", resp.Header)
+
 	// Read response
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
+		logging.Error("[DYNAMIC_OPTIONS] Failed to read response", "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read response"})
 		return
 	}
-	
+
+	logging.Info("[DYNAMIC_OPTIONS] Response body read", "body_length", len(body), "body_preview", string(body[:min(len(body), 200)]))
+
 	// Forward the response with the same status code
+	logging.Info("[DYNAMIC_OPTIONS] Forwarding response to client", "status_code", resp.StatusCode)
 	c.Data(resp.StatusCode, "application/json", body)
 }

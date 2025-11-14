@@ -95,6 +95,15 @@ func setupLogger() {
 				Level:      level,
 				TimeFormat: "15:04:05",
 				NoColor:    false,
+				ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+					if a.Key == slog.LevelKey {
+						level := a.Value.Any().(slog.Level)
+						if level == LevelBrowserless {
+							return slog.Attr{Key: a.Key, Value: slog.StringValue("BROWSERLESS")}
+						}
+					}
+					return a
+				},
 			}),
 		}
 	}

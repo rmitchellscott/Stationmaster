@@ -25,15 +25,15 @@ type PluginRenderOptions struct {
 	LayoutHeight      int    // Layout-specific height for positioning
 }
 
-// UnifiedRenderer handles template rendering using external Ruby service with TRMNL asset wrapping
+// UnifiedRenderer handles template rendering using embedded Ruby renderer with TRMNL asset wrapping
 type UnifiedRenderer struct {
-	externalRubyService *ExternalRubyService
+	embeddedRenderer *EmbeddedLiquidRenderer
 }
 
 // NewUnifiedRenderer creates a new unified renderer
 func NewUnifiedRenderer() *UnifiedRenderer {
 	return &UnifiedRenderer{
-		externalRubyService: NewExternalRubyService(),
+		embeddedRenderer: NewEmbeddedLiquidRenderer(),
 	}
 }
 
@@ -80,10 +80,10 @@ func (r *UnifiedRenderer) ProcessTemplate(ctx context.Context, opts PluginRender
 		return "", fmt.Errorf("no template content provided")
 	}
 
-	// Process template with external Ruby service
-	renderedContent, err := r.externalRubyService.RenderTemplate(ctx, combinedTemplate, opts.Data)
+	// Process template with embedded Ruby renderer
+	renderedContent, err := r.embeddedRenderer.RenderTemplate(ctx, combinedTemplate, opts.Data)
 	if err != nil {
-		return "", fmt.Errorf("external Ruby service rendering failed: %w", err)
+		return "", fmt.Errorf("embedded Ruby renderer failed: %w", err)
 	}
 
 	// Post-process the rendered content
@@ -143,12 +143,14 @@ func (r *UnifiedRenderer) generateHTMLStructure(content string, opts PluginRende
 	return wrappedContent
 }
 
-// ValidateTemplate validates a liquid template using external service
+// ValidateTemplate validates a liquid template using embedded renderer
 func (r *UnifiedRenderer) ValidateTemplate(ctx context.Context, template string) error {
-	return r.externalRubyService.ValidateTemplate(ctx, template)
+	// Try to render with empty data to validate syntax
+	_, err := r.embeddedRenderer.RenderTemplate(ctx, template, map[string]interface{}{})
+	return err
 }
 
-// IsServiceAvailable checks if the external Ruby service is available
+// IsServiceAvailable checks if the embedded Ruby renderer is available
 func (r *UnifiedRenderer) IsServiceAvailable(ctx context.Context) bool {
-	return r.externalRubyService.IsServiceAvailable(ctx)
+	return r.embeddedRenderer.IsAvailable()
 }

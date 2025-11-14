@@ -446,7 +446,14 @@ export function AddPluginPage() {
               if (prop.multiple) {
                 if (options.length === 0) {
                   const selectedValues = Array.isArray(value) ? value : (value ? [value] : []);
-                  const placeholderText = isLoading ? "Loading calendars..." : "Connect to OAuth first to load options";
+                  // Check if we have fetched options before (even if empty) - indicates OAuth is working
+                  const fieldKey = `${expandedPlugin?.identifier || expandedPlugin?.id}.${prop.dynamicSource || prop.dynamic_source}`;
+                  const hasAttemptedFetch = dynamicFieldOptions.hasOwnProperty(fieldKey);
+                  const placeholderText = isLoading
+                    ? "Loading options..."
+                    : !hasAttemptedFetch
+                      ? "Connect to OAuth first to load options"
+                      : `No ${prop.title?.toLowerCase() || key} available`;
 
                   return (
                     <div key={key}>
@@ -470,6 +477,13 @@ export function AddPluginPage() {
               } else {
                 // Single select field - show disabled dropdown when no options
                 if (options.length === 0 && !isLoading) {
+                  // Check if we have fetched options before (even if empty) - indicates OAuth is working
+                  const fieldKey = `${expandedPlugin?.identifier || expandedPlugin?.id}.${prop.dynamicSource || prop.dynamic_source}`;
+                  const hasAttemptedFetch = dynamicFieldOptions.hasOwnProperty(fieldKey);
+                  const placeholderText = !hasAttemptedFetch
+                    ? "Connect to OAuth first to load options"
+                    : `No ${prop.title?.toLowerCase() || key} available`;
+
                   return (
                     <div key={key}>
                       <Label htmlFor={key} className={isRequired ? "font-medium" : ""}>
@@ -478,7 +492,7 @@ export function AddPluginPage() {
                       </Label>
                       <Select disabled>
                         <SelectTrigger className="mt-2">
-                          <SelectValue placeholder="Connect to OAuth first to load options" />
+                          <SelectValue placeholder={placeholderText} />
                         </SelectTrigger>
                       </Select>
                       {prop.description && (

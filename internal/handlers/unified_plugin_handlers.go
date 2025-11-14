@@ -5,7 +5,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -16,6 +18,7 @@ import (
 	"github.com/rmitchellscott/stationmaster/internal/database"
 	"github.com/rmitchellscott/stationmaster/internal/logging"
 	"github.com/rmitchellscott/stationmaster/internal/plugins"
+	"github.com/rmitchellscott/stationmaster/internal/plugins/external"
 	"github.com/rmitchellscott/stationmaster/internal/plugins/private"
 	"github.com/rmitchellscott/stationmaster/internal/utils"
 	"github.com/rmitchellscott/stationmaster/internal/validation"
@@ -23,11 +26,12 @@ import (
 	"github.com/rmitchellscott/stationmaster/internal/rendering"
 )
 
-// UnifiedPluginDefinition represents a plugin definition that can be system or private
+// UnifiedPluginDefinition represents a plugin definition that can be system, private, or external
 type UnifiedPluginDefinition struct {
 	ID                 string `json:"id"`
+	Identifier         string `json:"identifier"`         // Ruby service identifier for external plugins
 	Name               string `json:"name"`
-	Type               string `json:"type"`               // "system" or "private"
+	Type               string `json:"type"`               // "system", "private", or "external"
 	PluginType         string `json:"plugin_type"`       // "image" or "data"
 	Description        string `json:"description"`
 	ConfigSchema       string `json:"config_schema"`
@@ -35,9 +39,30 @@ type UnifiedPluginDefinition struct {
 	Author             string `json:"author"`
 	IsActive           bool   `json:"is_active"`
 	RequiresProcessing bool   `json:"requires_processing"`
-	
+	Status             string `json:"status"`             // "available", "unavailable", "error"
+	OAuthConfig        json.RawMessage `json:"oauth_config,omitempty"` // OAuth configuration for external plugins
+
 	// Private plugin specific fields
 	InstanceCount      *int   `json:"instance_count,omitempty"` // Number of instances user has created
+}
+
+// stripOAuthSecrets removes sensitive fields (client_id, client_secret) from OAuth config before sending to UI
+func stripOAuthSecrets(oauthConfig []byte) json.RawMessage {
+	if len(oauthConfig) == 0 {
+		return json.RawMessage(oauthConfig)
+	}
+
+	var config map[string]interface{}
+	if err := json.Unmarshal(oauthConfig, &config); err != nil {
+		return json.RawMessage(oauthConfig)
+	}
+
+	// Remove sensitive fields
+	delete(config, "client_id")
+	delete(config, "client_secret")
+
+	cleaned, _ := json.Marshal(config)
+	return json.RawMessage(cleaned)
 }
 
 // GetAvailablePluginDefinitionsHandler returns both system and private plugins available to the user
@@ -55,6 +80,7 @@ func GetAvailablePluginDefinitionsHandler(c *gin.Context) {
 	for _, plugin := range systemPlugins {
 		unifiedPlugin := UnifiedPluginDefinition{
 			ID:                 plugin.Type, // Use type as ID for system plugins
+			Identifier:         plugin.Type, // Same as ID for system plugins
 			Name:               plugin.Name,
 			Type:               "system",
 			PluginType:         string(plugin.PluginType),
@@ -64,12 +90,43 @@ func GetAvailablePluginDefinitionsHandler(c *gin.Context) {
 			Author:             plugin.Author,
 			IsActive:           true,
 			RequiresProcessing: plugin.RequiresProcessing,
+			Status:             "available", // System plugins are always available
 		}
 		allPlugins = append(allPlugins, unifiedPlugin)
 	}
 
-	// Get user's private plugins from unified plugin_definitions table
+	// Get external plugins from database (available to all users like system plugins)
+	// Only include plugins with status = "available" so unavailable plugins don't show in "Add Plugin" UI
 	db := database.GetDB()
+	var externalPlugins []database.PluginDefinition
+	err := db.Where("plugin_type = ? AND is_active = ? AND status = ?", "external", true, "available").Find(&externalPlugins).Error
+	if err == nil {
+		for _, extPlugin := range externalPlugins {
+			// Create external plugin instance to get properly processed ConfigSchema
+			externalPluginInstance := external.NewExternalPlugin(&extPlugin, nil)
+			configSchema := externalPluginInstance.ConfigSchema()
+			
+			unifiedPlugin := UnifiedPluginDefinition{
+				ID:                 extPlugin.ID,
+				Identifier:         extPlugin.Identifier, // Ruby service identifier
+				Name:               extPlugin.Name,
+				Type:               "external", // Keep true type, UI will handle display
+				PluginType:         extPlugin.PluginType,
+				Description:        extPlugin.Description,
+				ConfigSchema:       configSchema, // Use processed schema from plugin method
+				Version:            extPlugin.Version,
+				Author:             extPlugin.Author,
+				IsActive:           extPlugin.IsActive,
+				RequiresProcessing: extPlugin.RequiresProcessing,
+				Status:             extPlugin.Status, // Include availability status
+				OAuthConfig:        stripOAuthSecrets(extPlugin.OAuthConfig), // Strip secrets before sending to UI
+				// No InstanceCount for external plugins (like system plugins)
+			}
+			allPlugins = append(allPlugins, unifiedPlugin)
+		}
+	}
+
+	// Get user's private plugins from unified plugin_definitions table
 	
 	// Filter by plugin_type query parameter if provided
 	pluginType := c.Query("plugin_type")
@@ -83,7 +140,7 @@ func GetAvailablePluginDefinitionsHandler(c *gin.Context) {
 		query = query.Where("plugin_type = ?", "private")
 	}
 	
-	err := query.Find(&privatePlugins).Error
+	err = query.Find(&privatePlugins).Error
 	if err == nil {
 		for _, privatePlugin := range privatePlugins {
 			// Count how many instances user has created of this private plugin
@@ -93,6 +150,7 @@ func GetAvailablePluginDefinitionsHandler(c *gin.Context) {
 			
 			unifiedPlugin := UnifiedPluginDefinition{
 				ID:                 privatePlugin.ID,
+				Identifier:         privatePlugin.Identifier, // UUID for private plugins
 				Name:               privatePlugin.Name,
 				Type:               "private",
 				PluginType:         privatePlugin.PluginType,
@@ -102,19 +160,16 @@ func GetAvailablePluginDefinitionsHandler(c *gin.Context) {
 				Author:             privatePlugin.Author,
 				IsActive:           privatePlugin.IsActive,
 				RequiresProcessing: privatePlugin.RequiresProcessing,
+				Status:             privatePlugin.Status, // Include availability status
 				InstanceCount:      &instances,
 			}
 			allPlugins = append(allPlugins, unifiedPlugin)
 		}
 	}
 
-	// Sort plugins by type (system first) then by name
+	// Sort plugins by name only
 	sort.Slice(allPlugins, func(i, j int) bool {
-		if allPlugins[i].Type == allPlugins[j].Type {
-			return allPlugins[i].Name < allPlugins[j].Name
-		}
-		// System plugins first
-		return allPlugins[i].Type == "system" && allPlugins[j].Type == "private"
+		return allPlugins[i].Name < allPlugins[j].Name
 	})
 
 	// If requesting only private plugins, transform to PrivatePluginList format
@@ -202,17 +257,36 @@ type UnifiedPluginInstance struct {
 	
 	// Plugin info
 	Plugin struct {
+		ID                 string          `json:"id"`
+		Name               string          `json:"name"`
+		Type               string          `json:"type"`
+		Description        string          `json:"description"`
+		Status             string          `json:"status"`
+		ConfigSchema       string          `json:"config_schema"`
+		Version            string          `json:"version"`
+		Author             string          `json:"author"`
+		IsActive           bool            `json:"is_active"`
+		RequiresProcessing bool            `json:"requires_processing"`
+		DataStrategy       string          `json:"data_strategy"`
+		IsMashup           bool            `json:"is_mashup"`
+		OAuthConfig        json.RawMessage `json:"oauth_config,omitempty"`
+	} `json:"plugin"`
+	
+	// Plugin definition info (for compatibility with frontend expecting plugin_definition)
+	PluginDefinition struct {
 		ID                 string `json:"id"`
 		Name               string `json:"name"`
-		Type               string `json:"type"`
+		PluginType         string `json:"plugin_type"`
 		Description        string `json:"description"`
+		Status             string `json:"status"`
 		ConfigSchema       string `json:"config_schema"`
 		Version            string `json:"version"`
 		Author             string `json:"author"`
 		IsActive           bool   `json:"is_active"`
 		RequiresProcessing bool   `json:"requires_processing"`
 		DataStrategy       string `json:"data_strategy"`
-	} `json:"plugin"`
+		IsMashup           bool   `json:"is_mashup"`
+	} `json:"plugin_definition"`
 }
 
 // GetPluginInstancesHandler returns all plugin instances for the user
@@ -277,11 +351,23 @@ func GetPluginInstancesHandler(c *gin.Context) {
 				instance.Plugin.Name = pluginInstance.PluginDefinition.Name
 				instance.Plugin.Type = pluginInstance.PluginDefinition.PluginType
 				instance.Plugin.Description = pluginInstance.PluginDefinition.Description
-				instance.Plugin.ConfigSchema = pluginInstance.PluginDefinition.ConfigSchema
+				instance.Plugin.Status = pluginInstance.PluginDefinition.Status
+				
+				// For external plugins, generate schema dynamically from YAML form fields
+				if pluginInstance.PluginDefinition.PluginType == "external" {
+					externalPlugin := external.NewExternalPlugin(&pluginInstance.PluginDefinition, &pluginInstance)
+					instance.Plugin.ConfigSchema = externalPlugin.ConfigSchema()
+				} else {
+					// For other plugins, use database field
+					instance.Plugin.ConfigSchema = pluginInstance.PluginDefinition.ConfigSchema
+				}
+				
 				instance.Plugin.Version = pluginInstance.PluginDefinition.Version
 				instance.Plugin.Author = pluginInstance.PluginDefinition.Author
 				instance.Plugin.IsActive = true
 				instance.Plugin.RequiresProcessing = pluginInstance.PluginDefinition.RequiresProcessing
+				instance.Plugin.IsMashup = pluginInstance.PluginDefinition.IsMashup
+				instance.Plugin.OAuthConfig = json.RawMessage(pluginInstance.PluginDefinition.OAuthConfig) // Include OAuth configuration
 				
 				// Set data strategy (no fallback - only set if explicitly defined)
 				if pluginInstance.PluginDefinition.DataStrategy != nil {
@@ -289,11 +375,35 @@ func GetPluginInstancesHandler(c *gin.Context) {
 				} else {
 					instance.Plugin.DataStrategy = ""
 				}
+				
+				// Populate plugin_definition for frontend compatibility
+				instance.PluginDefinition.ID = pluginInstance.PluginDefinition.ID
+				instance.PluginDefinition.Name = pluginInstance.PluginDefinition.Name
+				instance.PluginDefinition.PluginType = pluginInstance.PluginDefinition.PluginType
+				instance.PluginDefinition.Description = pluginInstance.PluginDefinition.Description
+				instance.PluginDefinition.Status = pluginInstance.PluginDefinition.Status
+				instance.PluginDefinition.ConfigSchema = instance.Plugin.ConfigSchema // Use the processed schema
+				instance.PluginDefinition.Version = pluginInstance.PluginDefinition.Version
+				instance.PluginDefinition.Author = pluginInstance.PluginDefinition.Author
+				instance.PluginDefinition.IsActive = true
+				instance.PluginDefinition.RequiresProcessing = pluginInstance.PluginDefinition.RequiresProcessing
+				instance.PluginDefinition.IsMashup = pluginInstance.PluginDefinition.IsMashup
+				
+				if pluginInstance.PluginDefinition.DataStrategy != nil {
+					instance.PluginDefinition.DataStrategy = *pluginInstance.PluginDefinition.DataStrategy
+				} else {
+					instance.PluginDefinition.DataStrategy = ""
+				}
 			}
 
 			allInstances = append(allInstances, instance)
 		}
 	}
+
+	// Sort instances alphabetically by name
+	sort.Slice(allInstances, func(i, j int) bool {
+		return allInstances[i].Name < allInstances[j].Name
+	})
 
 	c.JSON(http.StatusOK, gin.H{"plugin_instances": allInstances})
 }
@@ -716,7 +826,7 @@ func CreatePluginDefinitionHandler(c *gin.Context) {
 	}
 
 	// Validate and convert form fields to JSON schema
-	configSchema, err := ValidateFormFields(req.FormFields)
+	configSchema, err := validation.ValidateFormFields(req.FormFields)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Form fields validation failed", "details": err.Error()})
 		return
@@ -841,7 +951,7 @@ func UpdatePluginDefinitionHandler(c *gin.Context) {
 	}
 
 	// Validate and convert form fields to JSON schema
-	configSchema, err := ValidateFormFields(req.FormFields)
+	configSchema, err := validation.ValidateFormFields(req.FormFields)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Form fields validation failed", "details": err.Error()})
 		return
@@ -1327,8 +1437,12 @@ func TestPluginDefinitionHandler(c *gin.Context) {
 	logging.Info("[TestPlugin] Created TRMNL context data", "user_available", user != nil, "device_width", req.DeviceWidth, "device_height", req.DeviceHeight)
 
 	// Use the private plugin renderer service
-	htmlRenderer := private.NewPrivatePluginRenderer()
-	renderedHTML, err := htmlRenderer.RenderToClientSideHTML(private.RenderOptions{
+	htmlRenderer, err := private.NewPrivatePluginRenderer(".")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to initialize private plugin renderer: %v", err)})
+		return
+	}
+	renderedHTML, err := htmlRenderer.RenderToServerSideHTML(c.Request.Context(), private.RenderOptions{
 		SharedMarkup:   req.Plugin.SharedMarkup,
 		LayoutTemplate: layoutTemplate,
 		Data:           finalTemplateData,
@@ -1804,13 +1918,13 @@ func GetUserPrivatePluginInstancesHandler(c *gin.Context) {
 		return
 	}
 
-	// Filter for private plugins that can be used in mashups
+	// Filter for private and external plugins that can be used in mashups
 	var availableInstances []gin.H
 	mashupService := database.NewMashupService(db)
 
 	for _, instance := range instances {
-		// Skip if not private plugin
-		if instance.PluginDefinition.PluginType != "private" {
+		// Skip if not private or external plugin
+		if instance.PluginDefinition.PluginType != "private" && instance.PluginDefinition.PluginType != "external" {
 			continue
 		}
 
@@ -1834,4 +1948,237 @@ func GetUserPrivatePluginInstancesHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"instances": availableInstances})
+}
+
+// AdminGetExternalPluginsHandler returns all external plugin definitions for admin management
+func AdminGetExternalPluginsHandler(c *gin.Context) {
+	user, ok := auth.RequireUser(c)
+	if !ok {
+		return
+	}
+	
+	if !user.IsAdmin {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Admin access required"})
+		return
+	}
+
+	db := database.GetDB()
+	var externalPlugins []database.PluginDefinition
+	err := db.Where("plugin_type = ?", "external").Order("name").Find(&externalPlugins).Error
+	if err != nil {
+		logging.Error("Failed to fetch external plugins for admin", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch external plugins"})
+		return
+	}
+
+	// Count instances for each plugin
+	var result []gin.H
+	for _, plugin := range externalPlugins {
+		var instanceCount int64
+		db.Model(&database.PluginInstance{}).Where("plugin_definition_id = ?", plugin.ID).Count(&instanceCount)
+		
+		result = append(result, gin.H{
+			"id":                plugin.ID,
+			"identifier":        plugin.Identifier,
+			"name":              plugin.Name,
+			"description":       plugin.Description,
+			"version":           plugin.Version,
+			"author":            plugin.Author,
+			"status":            plugin.Status,
+			"is_active":         plugin.IsActive,
+			"instance_count":    instanceCount,
+			"created_at":        plugin.CreatedAt,
+			"updated_at":        plugin.UpdatedAt,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{"plugins": result})
+}
+
+// AdminDeleteExternalPluginHandler deletes an external plugin definition and all its instances
+func AdminDeleteExternalPluginHandler(c *gin.Context) {
+	user, ok := auth.RequireUser(c)
+	if !ok {
+		return
+	}
+	
+	if !user.IsAdmin {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Admin access required"})
+		return
+	}
+
+	pluginID := c.Param("id")
+	if pluginID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Plugin ID required"})
+		return
+	}
+
+	db := database.GetDB()
+	
+	// Verify this is an external plugin
+	var plugin database.PluginDefinition
+	err := db.Where("id = ? AND plugin_type = ?", pluginID, "external").First(&plugin).Error
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "External plugin not found"})
+		return
+	}
+
+	// Use the unified plugin service to delete (handles cascading deletes)
+	pluginService := database.NewUnifiedPluginService(db)
+	err = pluginService.DeletePluginDefinition(pluginID, nil)
+	if err != nil {
+		logging.Error("Failed to delete external plugin", "plugin_id", pluginID, "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete plugin"})
+		return
+	}
+
+	logging.Info("Admin deleted external plugin", "plugin_id", pluginID, "plugin_name", plugin.Name, "admin_user", user.Username)
+	c.JSON(http.StatusOK, gin.H{"message": "Plugin deleted successfully"})
+}
+
+// GetPluginDynamicOptionsHandler proxies requests to the external plugin service for dynamic field options
+func GetPluginDynamicOptionsHandler(c *gin.Context) {
+	// ALWAYS log entry - this should appear if the handler is called
+	logging.Info("[DYNAMIC_OPTIONS] ===== HANDLER ENTRY =====",
+		"method", c.Request.Method,
+		"path", c.Request.URL.Path,
+		"full_url", c.Request.URL.String(),
+		"headers", c.Request.Header,
+		"remote_addr", c.Request.RemoteAddr,
+		"user_agent", c.Request.UserAgent())
+
+	user, ok := auth.RequireUser(c)
+	if !ok {
+		logging.Info("[DYNAMIC_OPTIONS] Auth failed - RequireUser returned false")
+		return
+	}
+
+	pluginIdentifier := c.Param("plugin_identifier")
+	fieldName := c.Param("field_name")
+
+	logging.Info("[DYNAMIC_OPTIONS] Handler parameters extracted",
+		"plugin", pluginIdentifier,
+		"field", fieldName,
+		"user_id", user.ID,
+		"params", c.Params)
+
+	if pluginIdentifier == "" || fieldName == "" {
+		logging.Info("[DYNAMIC_OPTIONS] Missing required parameters", "plugin", pluginIdentifier, "field", fieldName)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Plugin identifier and field name are required"})
+		return
+	}
+
+	logging.Info("[DYNAMIC_OPTIONS] Parameters validated, fetching OAuth tokens from database")
+
+	// Fetch the user's OAuth tokens from database instead of expecting them from frontend
+	db := database.GetDB()
+	var oauthTokens []database.UserOAuthToken
+	err := db.Where("user_id = ?", user.ID).Find(&oauthTokens).Error
+	if err != nil {
+		logging.Error("[DYNAMIC_OPTIONS] Failed to fetch user OAuth tokens", "user_id", user.ID, "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch OAuth tokens"})
+		return
+	}
+
+	logging.Info("[DYNAMIC_OPTIONS] Found OAuth tokens in database", "count", len(oauthTokens), "user_id", user.ID)
+
+	// Convert OAuth tokens to the format expected by Ruby service
+	oauthTokensMap := make(map[string]interface{})
+	for _, token := range oauthTokens {
+		logging.Info("[DYNAMIC_OPTIONS] Processing token", "provider", token.Provider, "access_len", len(token.AccessToken), "refresh_len", len(token.RefreshToken), "scopes", token.Scopes)
+
+		providerTokens := map[string]interface{}{
+			"access_token":  token.AccessToken,
+			"refresh_token": token.RefreshToken,
+			"scopes":        token.Scopes,
+		}
+		oauthTokensMap[token.Provider] = providerTokens
+
+		logging.Info("[DYNAMIC_OPTIONS] Added provider tokens", "provider", token.Provider, "tokens_keys", func() []string {
+			keys := make([]string, 0, len(providerTokens))
+			for k := range providerTokens {
+				keys = append(keys, k)
+			}
+			return keys
+		}())
+	}
+
+	logging.Info("[DYNAMIC_OPTIONS] Final OAuth tokens map", "providers", func() []string {
+		keys := make([]string, 0, len(oauthTokensMap))
+		for k := range oauthTokensMap {
+			keys = append(keys, k)
+		}
+		return keys
+	}(), "total_providers", len(oauthTokensMap))
+
+	logging.Info("[DYNAMIC_OPTIONS] Preparing request body for Ruby service")
+
+	// Prepare request body for Ruby service
+	var requestBody struct {
+		OAuthTokens map[string]interface{} `json:"oauth_tokens"`
+		User        map[string]interface{} `json:"user"`
+	}
+
+	// We can still accept any additional data from frontend, but OAuth tokens come from database
+	if err := c.ShouldBindJSON(&requestBody); err != nil {
+		logging.Info("[DYNAMIC_OPTIONS] Failed to parse request body, using defaults", "error", err)
+	}
+
+	// Override OAuth tokens with database values (more secure)
+	requestBody.OAuthTokens = oauthTokensMap
+
+	// Add user ID to the request
+	if requestBody.User == nil {
+		requestBody.User = make(map[string]interface{})
+	}
+	requestBody.User["id"] = user.ID.String()
+
+	logging.Info("[DYNAMIC_OPTIONS] Request body prepared", "oauth_tokens_count", len(requestBody.OAuthTokens), "user_id", requestBody.User["id"])
+
+	// Get service URL from environment
+	serviceURL := os.Getenv("EXTERNAL_PLUGIN_SERVICES")
+	if serviceURL == "" {
+		serviceURL = "http://stationmaster-plugins:3000"
+	}
+
+	logging.Info("[DYNAMIC_OPTIONS] Service URL determined", "service_url", serviceURL)
+
+	// Prepare request to external service
+	requestBodyJSON, err := json.Marshal(requestBody)
+	if err != nil {
+		logging.Error("[DYNAMIC_OPTIONS] Failed to marshal request body", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to prepare request"})
+		return
+	}
+
+	logging.Info("[DYNAMIC_OPTIONS] Sending request to Rails", "url", fmt.Sprintf("%s/api/plugins/%s/options/%s", serviceURL, pluginIdentifier, fieldName), "body_length", len(requestBodyJSON))
+
+	// Make request to external plugin service
+	url := fmt.Sprintf("%s/api/plugins/%s/options/%s", serviceURL, pluginIdentifier, fieldName)
+
+	logging.Info("[DYNAMIC_OPTIONS] Making HTTP POST request", "url", url, "content_type", "application/json")
+
+	resp, err := http.Post(url, "application/json", strings.NewReader(string(requestBodyJSON)))
+	if err != nil {
+		logging.Error("[DYNAMIC_OPTIONS] Failed to fetch plugin options", "plugin", pluginIdentifier, "field", fieldName, "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch plugin options"})
+		return
+	}
+	defer resp.Body.Close()
+
+	logging.Info("[DYNAMIC_OPTIONS] Received response from Rails", "status_code", resp.StatusCode, "headers", resp.Header)
+
+	// Read response
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		logging.Error("[DYNAMIC_OPTIONS] Failed to read response", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read response"})
+		return
+	}
+
+	logging.Info("[DYNAMIC_OPTIONS] Response body read", "body_length", len(body), "body_preview", string(body[:min(len(body), 200)]))
+
+	// Forward the response with the same status code
+	logging.Info("[DYNAMIC_OPTIONS] Forwarding response to client", "status_code", resp.StatusCode)
+	c.Data(resp.StatusCode, "application/json", body)
 }

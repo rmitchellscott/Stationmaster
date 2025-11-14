@@ -33,6 +33,8 @@ import {
   AlertTriangle,
   CheckCircle,
 } from "lucide-react";
+import { OAuthConnection } from "@/components/OAuthConnection";
+import { useOAuthStatus } from "@/hooks/useOAuthStatus";
 
 interface Plugin {
   id: string;
@@ -43,6 +45,15 @@ interface Plugin {
   version: string;
   config_schema: string;
   requires_processing: boolean;
+  status: string; // "available", "unavailable", "error"
+  oauth_config?: {
+    provider: string;
+    auth_url: string;
+    token_url: string;
+    scopes: string[];
+    client_id_env: string;
+    client_secret_env: string;
+  };
 }
 
 interface RefreshRateOption {
@@ -62,7 +73,13 @@ export function AddPluginPage() {
   const [selectedType, setSelectedType] = useState<PluginType>('all');
   const [expandedPlugin, setExpandedPlugin] = useState<Plugin | null>(null);
   const [refreshRateOptions, setRefreshRateOptions] = useState<RefreshRateOption[]>([]);
-  
+
+  // Get OAuth status for expanded plugin
+  const { connection: oauthConnection } = useOAuthStatus(expandedPlugin?.oauth_config?.provider);
+
+  // OAuth tokens state - stored separately from connection status
+  const [oauthTokens, setOauthTokens] = useState<Record<string, any> | null>(null);
+
   // Form state for instance creation
   const [instanceName, setInstanceName] = useState("");
   const [instanceRefreshRate, setInstanceRefreshRate] = useState<number>(86400);
@@ -70,6 +87,81 @@ export function AddPluginPage() {
   const [createLoading, setCreateLoading] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [createSuccess, setCreateSuccess] = useState<string | null>(null);
+
+  // Dynamic field state
+  const [dynamicFieldOptions, setDynamicFieldOptions] = useState<Record<string, any[]>>({});
+  const [dynamicFieldsLoading, setDynamicFieldsLoading] = useState<Record<string, boolean>>({});
+
+  // Fetch dynamic field options from the plugin service
+  const fetchDynamicFieldOptions = async (
+    pluginId: string,
+    fieldName: string,
+    oauthTokens: Record<string, any> = {}
+  ) => {
+    const fieldKey = `${pluginId}.${fieldName}`;
+    const apiUrl = `/api/plugins/${pluginId}/options/${fieldName}`;
+
+    console.log('[DEBUG] fetchDynamicFieldOptions called:', {
+      pluginId,
+      fieldName,
+      fieldKey,
+      apiUrl,
+      hasTokens: !!oauthTokens,
+      tokenKeys: Object.keys(oauthTokens || {}),
+      tokens: oauthTokens
+    });
+
+    try {
+      setDynamicFieldsLoading(prev => ({ ...prev, [fieldKey]: true }));
+
+      const requestBody = { oauth_tokens: oauthTokens };
+      console.log('[DEBUG] Sending API request:', {
+        url: apiUrl,
+        method: 'POST',
+        body: requestBody
+      });
+
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify(requestBody)
+      });
+
+      console.log('[DEBUG] API response:', {
+        ok: response.ok,
+        status: response.status,
+        statusText: response.statusText
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('[DEBUG] API response data:', data);
+        console.log('[DEBUG] Options received:', data.data?.options);
+
+        setDynamicFieldOptions(prev => {
+          const updated = { ...prev, [fieldKey]: data.data?.options || [] };
+          console.log('[DEBUG] Updated dynamicFieldOptions state:', updated);
+          return updated;
+        });
+      } else {
+        const errorText = await response.text();
+        console.error('[DEBUG] Failed to fetch dynamic field options:', {
+          status: response.status,
+          statusText: response.statusText,
+          errorBody: errorText
+        });
+        setDynamicFieldOptions(prev => ({ ...prev, [fieldKey]: [] }));
+      }
+    } catch (error) {
+      console.error('[DEBUG] Error fetching dynamic field options:', error);
+      setDynamicFieldOptions(prev => ({ ...prev, [fieldKey]: [] }));
+    } finally {
+      setDynamicFieldsLoading(prev => ({ ...prev, [fieldKey]: false }));
+    }
+  };
 
   // Fetch plugins
   const fetchPlugins = async () => {
@@ -109,13 +201,90 @@ export function AddPluginPage() {
     fetchRefreshRateOptions();
   }, []);
 
+  // Fetch dynamic fields when plugin is expanded and OAuth is connected
+  useEffect(() => {
+    console.log('[DEBUG] OAuth useEffect triggered:', {
+      hasExpandedPlugin: !!expandedPlugin,
+      pluginId: expandedPlugin?.id,
+      pluginType: expandedPlugin?.type,
+      pluginName: expandedPlugin?.name,
+      oauthConnected: oauthConnection?.connected,
+      hasStoredTokens: !!oauthTokens,
+      storedTokenKeys: Object.keys(oauthTokens || {}),
+      fullOauthConnection: oauthConnection,
+      oauthTokens: oauthTokens
+    });
+
+    // Try to fetch if OAuth is connected, even without tokens (backend might have them in session)
+    if (expandedPlugin && oauthConnection?.connected) {
+      try {
+        const schema = JSON.parse(expandedPlugin.config_schema);
+        const properties = schema.properties || {};
+
+        console.log('[DEBUG] Plugin schema parsed:', {
+          pluginId: expandedPlugin.id,
+          propertyKeys: Object.keys(properties),
+          fullProperties: properties
+        });
+
+        Object.keys(properties).forEach(key => {
+          const prop = properties[key];
+          const dynamicSourceField = prop.dynamicSource || prop.dynamic_source;
+
+          console.log(`[DEBUG] Checking property ${key}:`, {
+            isDynamic: prop.dynamic,
+            dynamicSource: prop.dynamicSource,
+            dynamic_source: prop.dynamic_source,
+            dynamicSourceField,
+            fullProp: prop
+          });
+
+          if (prop.dynamic && dynamicSourceField) {
+            // Use the same identifier logic as during rendering to ensure key consistency
+            const pluginIdentifier = expandedPlugin.identifier || expandedPlugin.id;
+            const fieldKey = `${pluginIdentifier}.${dynamicSourceField}`;
+            const alreadyFetched = !!dynamicFieldOptions[fieldKey];
+            const currentlyLoading = !!dynamicFieldsLoading[fieldKey];
+
+            console.log(`[DEBUG] Dynamic field ${key} status:`, {
+              fieldKey,
+              pluginIdentifier,
+              expandedPluginId: expandedPlugin.id,
+              expandedPluginIdentifier: expandedPlugin.identifier,
+              alreadyFetched,
+              currentlyLoading,
+              willFetch: !alreadyFetched && !currentlyLoading
+            });
+
+            if (!alreadyFetched && !currentlyLoading) {
+              console.log(`[DEBUG] Fetching dynamic options for ${key} (tokens: ${!!oauthTokens}, identifier: ${pluginIdentifier})`);
+              // Pass tokens if available, otherwise empty object - backend might have them in session
+              fetchDynamicFieldOptions(pluginIdentifier, dynamicSourceField, oauthTokens || {});
+            }
+          }
+        });
+      } catch (e) {
+        console.error('[DEBUG] Error parsing plugin schema for dynamic fields:', e);
+        console.error('[DEBUG] Plugin config_schema:', expandedPlugin.config_schema);
+      }
+    }
+  }, [expandedPlugin, oauthConnection?.connected, oauthTokens]);
+
   // Filter and search plugins
   useEffect(() => {
     let filtered = plugins;
 
+    // Filter out unavailable plugins
+    filtered = filtered.filter(plugin => plugin.status !== 'unavailable');
+
     // Filter by type
     if (selectedType !== 'all') {
-      filtered = filtered.filter(plugin => plugin.type === selectedType);
+      if (selectedType === 'system') {
+        // Include both system and external plugins in "Native" category
+        filtered = filtered.filter(plugin => plugin.type === 'system' || plugin.type === 'external');
+      } else {
+        filtered = filtered.filter(plugin => plugin.type === selectedType);
+      }
     }
 
     // Filter by search query
@@ -244,18 +413,219 @@ export function AddPluginPage() {
     }
     
     const properties = schema.properties || {};
+    const required = schema.required || [];
+    
     return (
       <div className="space-y-4">
         {Object.keys(properties).map((key) => {
           const prop = properties[key];
           const value = settings[key] || prop.default || "";
+          const isRequired = required.includes(key);
           
-          // Handle enum (select dropdown) FIRST - before string type
+          // Handle dynamic select fields FIRST
+          if (prop.dynamic && (prop.dynamicSource || prop.dynamic_source)) {
+            const dynamicSourceField = prop.dynamicSource || prop.dynamic_source;
+            // Use the same identifier logic as during storage
+            const pluginIdentifier = expandedPlugin.identifier || expandedPlugin.id;
+            const fieldKey = `${pluginIdentifier}.${dynamicSourceField}`;
+            const options = dynamicFieldOptions[fieldKey] || [];
+            const isLoading = dynamicFieldsLoading[fieldKey] || false;
+
+            console.log(`[DEBUG] Rendering dynamic field ${key}:`, {
+              pluginIdentifier,
+              dynamicSourceField,
+              fieldKey,
+              optionsCount: options.length,
+              allKeys: Object.keys(dynamicFieldOptions),
+              isLoading
+            });
+
+            // Check if OAuth is required but not connected - handle multi-select vs single-select
+            if ((prop.dependsOn === 'oauth_connected' || prop.depends_on === 'oauth_connected')) {
+              // For multi-select fields, show checkbox interface even when loading/empty
+              if (prop.multiple) {
+                if (options.length === 0) {
+                  const selectedValues = Array.isArray(value) ? value : (value ? [value] : []);
+                  // Check if we have fetched options before (even if empty) - indicates OAuth is working
+                  const fieldKey = `${expandedPlugin?.identifier || expandedPlugin?.id}.${prop.dynamicSource || prop.dynamic_source}`;
+                  const hasAttemptedFetch = dynamicFieldOptions.hasOwnProperty(fieldKey);
+                  const placeholderText = isLoading
+                    ? "Loading options..."
+                    : !hasAttemptedFetch
+                      ? "Connect to OAuth first to load options"
+                      : `No ${prop.title?.toLowerCase() || key} available`;
+
+                  return (
+                    <div key={key}>
+                      <Label htmlFor={key} className={isRequired ? "font-medium" : ""}>
+                        {prop.title || key}
+                        {isRequired && <span className="text-red-500 ml-1">*</span>}
+                      </Label>
+                      <div className="mt-2">
+                        <div className="border rounded-md p-3 space-y-2">
+                          <div className="text-sm text-muted-foreground">
+                            {placeholderText}
+                          </div>
+                        </div>
+                      </div>
+                      {prop.description && (
+                        <p className="text-xs text-muted-foreground mt-1">{prop.description}</p>
+                      )}
+                    </div>
+                  );
+                }
+              } else {
+                // Single select field - show disabled dropdown when no options
+                if (options.length === 0 && !isLoading) {
+                  // Check if we have fetched options before (even if empty) - indicates OAuth is working
+                  const fieldKey = `${expandedPlugin?.identifier || expandedPlugin?.id}.${prop.dynamicSource || prop.dynamic_source}`;
+                  const hasAttemptedFetch = dynamicFieldOptions.hasOwnProperty(fieldKey);
+                  const placeholderText = !hasAttemptedFetch
+                    ? "Connect to OAuth first to load options"
+                    : `No ${prop.title?.toLowerCase() || key} available`;
+
+                  return (
+                    <div key={key}>
+                      <Label htmlFor={key} className={isRequired ? "font-medium" : ""}>
+                        {prop.title || key}
+                        {isRequired && <span className="text-red-500 ml-1">*</span>}
+                      </Label>
+                      <Select disabled>
+                        <SelectTrigger className="mt-2">
+                          <SelectValue placeholder={placeholderText} />
+                        </SelectTrigger>
+                      </Select>
+                      {prop.description && (
+                        <p className="text-xs text-muted-foreground mt-1">{prop.description}</p>
+                      )}
+                    </div>
+                  );
+                }
+              }
+            }
+
+            // Render dynamic select with fetched options
+            console.log(`[DEBUG] Rendering dynamic field ${key}:`, {
+              pluginIdentifier,
+              dynamicSourceField,
+              fieldKey,
+              optionsCount: options.length,
+              isMultiple: prop.multiple,
+              propKeys: Object.keys(prop),
+              fullProp: prop,
+              value: value,
+              isLoading
+            });
+
+            if (prop.multiple) {
+              // Multi-select implementation using checkboxes in a dropdown-like container
+              const selectedValues = Array.isArray(value) ? value : (value ? [value] : []);
+
+              console.log(`[DEBUG] Rendering multi-select for ${key}:`, {
+                selectedValues,
+                optionsCount: options.length,
+                options: options.slice(0, 3) // Log first 3 options
+              });
+
+              return (
+                <div key={key}>
+                  <Label htmlFor={key} className={isRequired ? "font-medium" : ""}>
+                    {prop.title || key}
+                    {isRequired && <span className="text-red-500 ml-1">*</span>}
+                  </Label>
+                  <div className="mt-2">
+                    <div className="border rounded-md p-3 space-y-2">
+                      <div className="text-sm text-muted-foreground mb-2">
+                        {selectedValues.length > 0
+                          ? `${selectedValues.length} calendar${selectedValues.length === 1 ? '' : 's'} selected`
+                          : 'Select calendars to display events from'
+                        }
+                      </div>
+                      {options.map((option: any) => {
+                        const optionValue = typeof option === 'object' ? (option.value || Object.values(option)[0]) : option;
+                        const optionLabel = typeof option === 'object' ? (option.label || Object.keys(option)[0]) : option;
+                        const isSelected = selectedValues.includes(optionValue);
+
+                        return (
+                          <div key={optionValue} className="flex items-center space-x-2">
+                            <input
+                              type="checkbox"
+                              id={`${key}-${optionValue}`}
+                              checked={isSelected}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  // Add to selection
+                                  onChange(key, [...selectedValues, optionValue]);
+                                } else {
+                                  // Remove from selection
+                                  onChange(key, selectedValues.filter(v => v !== optionValue));
+                                }
+                              }}
+                              className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
+                            />
+                            <label
+                              htmlFor={`${key}-${optionValue}`}
+                              className="text-sm font-medium text-gray-700 cursor-pointer"
+                            >
+                              {optionLabel}
+                            </label>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  {prop.description && (
+                    <p className="text-xs text-muted-foreground mt-1">{prop.description}</p>
+                  )}
+                </div>
+              );
+            } else {
+              // Single-select implementation
+              return (
+                <div key={key}>
+                  <Label htmlFor={key} className={isRequired ? "font-medium" : ""}>
+                    {prop.title || key}
+                    {isRequired && <span className="text-red-500 ml-1">*</span>}
+                  </Label>
+                  <Select
+                    value={Array.isArray(value) ? value[0] : value}
+                    onValueChange={(val) => onChange(key, val)}
+                    disabled={isLoading}
+                  >
+                    <SelectTrigger className="mt-2">
+                      <SelectValue placeholder={isLoading ? "Loading..." : (prop.placeholder || "Select option")} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {options.map((option: any) => {
+                        // Handle different option formats
+                        const optionValue = typeof option === 'object' ? (option.value || Object.values(option)[0]) : option;
+                        const optionLabel = typeof option === 'object' ? (option.label || Object.keys(option)[0]) : option;
+
+                        return (
+                          <SelectItem key={optionValue} value={optionValue}>
+                            {optionLabel}
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                  {prop.description && (
+                    <p className="text-xs text-muted-foreground mt-1">{prop.description}</p>
+                  )}
+                </div>
+              );
+            }
+          }
+
+          // Handle enum (select dropdown) SECOND - after dynamic fields
           if (prop.enum && Array.isArray(prop.enum)) {
             const enumNames = prop.enumNames && Array.isArray(prop.enumNames) ? prop.enumNames : prop.enum;
             return (
               <div key={key}>
-                <Label htmlFor={key}>{prop.title || key}</Label>
+                <Label htmlFor={key} className={isRequired ? "font-medium" : ""}>
+                  {prop.title || key}
+                  {isRequired && <span className="text-red-500 ml-1">*</span>}
+                </Label>
                 <Select value={value} onValueChange={(val) => onChange(key, val)}>
                   <SelectTrigger className="mt-2">
                     <SelectValue placeholder={prop.description || "Select an option"} />
@@ -287,7 +657,10 @@ export function AddPluginPage() {
                     onChange={(e) => onChange(key, e.target.checked)}
                     className="rounded border-gray-300"
                   />
-                  <Label htmlFor={key}>{prop.title || key}</Label>
+                  <Label htmlFor={key} className={isRequired ? "font-medium" : ""}>
+                    {prop.title || key}
+                    {isRequired && <span className="text-red-500 ml-1">*</span>}
+                  </Label>
                 </div>
                 {prop.description && (
                   <p className="text-xs text-muted-foreground mt-1">{prop.description}</p>
@@ -300,7 +673,10 @@ export function AddPluginPage() {
           if (prop.type === "number" || prop.type === "integer") {
             return (
               <div key={key}>
-                <Label htmlFor={key}>{prop.title || key}</Label>
+                <Label htmlFor={key} className={isRequired ? "font-medium" : ""}>
+                  {prop.title || key}
+                  {isRequired && <span className="text-red-500 ml-1">*</span>}
+                </Label>
                 <Input
                   id={key}
                   type="number"
@@ -310,6 +686,54 @@ export function AddPluginPage() {
                   className="mt-2"
                   min={prop.minimum}
                   max={prop.maximum}
+                  required={isRequired}
+                />
+                {prop.description && (
+                  <p className="text-xs text-muted-foreground mt-1">{prop.description}</p>
+                )}
+              </div>
+            );
+          }
+          
+          // Handle textarea type
+          if (prop.format === "textarea") {
+            return (
+              <div key={key}>
+                <Label htmlFor={key} className={isRequired ? "font-medium" : ""}>
+                  {prop.title || key}
+                  {isRequired && <span className="text-red-500 ml-1">*</span>}
+                </Label>
+                <textarea
+                  id={key}
+                  value={value}
+                  onChange={(e) => onChange(key, e.target.value)}
+                  placeholder={prop.placeholder || prop.description}
+                  className="mt-2 min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  required={isRequired}
+                  rows={4}
+                />
+                {prop.description && (
+                  <p className="text-xs text-muted-foreground mt-1">{prop.description}</p>
+                )}
+              </div>
+            );
+          }
+
+          // Handle date type
+          if (prop.type === "string" && prop.format === "date") {
+            return (
+              <div key={key}>
+                <Label htmlFor={key} className={isRequired ? "font-medium" : ""}>
+                  {prop.title || key}
+                  {isRequired && <span className="text-red-500 ml-1">*</span>}
+                </Label>
+                <Input
+                  id={key}
+                  type="date"
+                  value={value}
+                  onChange={(e) => onChange(key, e.target.value)}
+                  className="mt-2"
+                  required={isRequired}
                 />
                 {prop.description && (
                   <p className="text-xs text-muted-foreground mt-1">{prop.description}</p>
@@ -321,13 +745,17 @@ export function AddPluginPage() {
           // Default to string type
           return (
             <div key={key}>
-              <Label htmlFor={key}>{prop.title || key}</Label>
+              <Label htmlFor={key} className={isRequired ? "font-medium" : ""}>
+                {prop.title || key}
+                {isRequired && <span className="text-red-500 ml-1">*</span>}
+              </Label>
               <Input
                 id={key}
                 value={value}
                 onChange={(e) => onChange(key, e.target.value)}
                 placeholder={prop.description}
                 className="mt-2"
+                required={isRequired}
               />
               {prop.description && (
                 <p className="text-xs text-muted-foreground mt-1">{prop.description}</p>
@@ -362,7 +790,7 @@ export function AddPluginPage() {
   }, [expandedPlugin]);
 
   const getPluginTypeBadge = (type: string) => {
-    if (type === 'system') {
+    if (type === 'system' || type === 'external') {
       return <Badge variant="outline">Native</Badge>;
     }
     return <Badge variant="outline">Private</Badge>;
@@ -494,7 +922,7 @@ export function AddPluginPage() {
           />
           
           {/* Expanded Card */}
-          <Card className="relative z-10 w-full max-w-lg mx-auto animate-in fade-in-0 zoom-in-95 duration-300">
+          <Card className="relative z-10 w-full max-w-4xl max-h-[90vh] overflow-y-auto mx-auto animate-in fade-in-0 zoom-in-95 duration-300">
             <CardHeader className="pb-4">
               <div className="flex items-start justify-between gap-4">
                 <CardTitle className="text-xl font-semibold">
@@ -537,6 +965,53 @@ export function AddPluginPage() {
                   }}
                 />
               </div>
+
+              {/* OAuth Connection */}
+              {expandedPlugin.oauth_config && (
+                <>
+                  <Separator />
+                  <div>
+                    <h3 className="text-base font-semibold mb-3">
+                      Authentication
+                    </h3>
+                    <OAuthConnection
+                      oauthConfig={expandedPlugin.oauth_config}
+                      onConnectionChange={(connected, tokens) => {
+                        console.log('[DEBUG] OAuthConnection onConnectionChange:', {
+                          connected,
+                          hasTokens: !!tokens,
+                          tokenKeys: Object.keys(tokens || {}),
+                          tokens
+                        });
+
+                        if (connected && tokens) {
+                          // Store tokens in state
+                          setOauthTokens(tokens);
+
+                          // Fetch dynamic field options when OAuth connects
+                          const schema = JSON.parse(expandedPlugin.config_schema);
+                          const properties = schema.properties || {};
+
+                          Object.keys(properties).forEach(key => {
+                            const prop = properties[key];
+                            const dynamicSourceField = prop.dynamicSource || prop.dynamic_source;
+                            if (prop.dynamic && dynamicSourceField) {
+                              // Use the identifier field from plugin metadata
+                              const pluginIdentifier = expandedPlugin.identifier || expandedPlugin.id;
+
+                              console.log(`[DEBUG] Fetching options for ${key} on OAuth connect (identifier: ${pluginIdentifier})`);
+                              fetchDynamicFieldOptions(pluginIdentifier, dynamicSourceField, tokens);
+                            }
+                          });
+                        } else if (!connected) {
+                          // Clear tokens when disconnected
+                          setOauthTokens(null);
+                        }
+                      }}
+                    />
+                  </div>
+                </>
+              )}
 
               {/* Instance Name */}
               <div>

@@ -90,6 +90,7 @@ import {
   GripVertical,
   Moon,
   Layers,
+  CircleMinus,
 } from "lucide-react";
 import { Device, isDeviceCurrentlySleeping } from "@/utils/deviceHelpers";
 
@@ -109,6 +110,7 @@ interface PluginInstance {
     name: string;
     type: string;
     description: string;
+    status: string; // "available", "unavailable", "error"
   };
 }
 
@@ -126,6 +128,7 @@ interface PlaylistItem {
   schedules?: any[];
   is_sleep_mode?: boolean; // Virtual field for sleep mode items
   sleep_schedule_text?: string; // Schedule text for sleep mode items
+  skip_display?: boolean; // Skip display flag from TRMNL_SKIP_DISPLAY
 }
 
 interface PlaylistManagementProps {
@@ -168,9 +171,19 @@ const isItemCurrentlyActive = (item: PlaylistItem, userTimezone: string): boolea
   if (!item.schedules || item.schedules.length === 0) return true; // No schedules means always active
 
   const now = new Date();
-  const currentDay = now.getDay(); // 0 = Sunday, 1 = Monday, etc.
-  const currentTime = now.toLocaleTimeString('en-US', { 
-    hour12: false, 
+
+  // Get current day in user's timezone (not browser timezone)
+  const currentDayInTz = new Intl.DateTimeFormat('en-US', {
+    timeZone: userTimezone,
+    weekday: 'short'
+  }).format(now);
+  const dayMap: Record<string, number> = {
+    'Sun': 0, 'Mon': 1, 'Tue': 2, 'Wed': 3, 'Thu': 4, 'Fri': 5, 'Sat': 6
+  };
+  const currentDay = dayMap[currentDayInTz] ?? 0;
+
+  const currentTime = now.toLocaleTimeString('en-US', {
+    hour12: false,
     timeZone: userTimezone,
     hour: '2-digit',
     minute: '2-digit',
@@ -222,24 +235,33 @@ const formatScheduleSummary = (schedules: any[], userTimezone?: string): string 
                  selectedDays.length === 2 && selectedDays.includes("Sat") && selectedDays.includes("Sun") ? "Weekends" :
                  selectedDays.join(", ");
 
-  // Convert UTC times from database to local times for display
-  const convertUTCTimeToLocal = (utcTime: string): string => {
+  // Convert schedule times to user's timezone for display
+  // Handles both old UTC schedules and new timezone-aware schedules
+  const convertScheduleTimeToLocal = (timeStr: string, scheduleTimezone: string): string => {
+    // If schedule is already in user's timezone, no conversion needed
+    if (scheduleTimezone && scheduleTimezone === userTimezone) {
+      return timeStr.substring(0, 5); // Just return HH:MM
+    }
+
+    // Convert from schedule's timezone to user's timezone
     const today = new Date().toISOString().split('T')[0];
-    const utcDateTime = `${today}T${utcTime}Z`;
-    const utcDate = new Date(utcDateTime);
-    
-    const localTime = utcDate.toLocaleTimeString('en-GB', { 
+    const scheduleDateTime = scheduleTimezone === "UTC"
+      ? `${today}T${timeStr}Z`
+      : `${today}T${timeStr}`;
+    const scheduleDate = new Date(scheduleDateTime);
+
+    const localTime = scheduleDate.toLocaleTimeString('en-GB', {
       timeZone: userTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone,
-      hour12: false, 
-      hour: '2-digit', 
+      hour12: false,
+      hour: '2-digit',
       minute: '2-digit'
     });
-    
+
     return localTime;
   };
 
-  const startTimeLocal = schedule.start_time ? convertUTCTimeToLocal(schedule.start_time) : "09:00";
-  const endTimeLocal = schedule.end_time ? convertUTCTimeToLocal(schedule.end_time) : "17:00";
+  const startTimeLocal = schedule.start_time ? convertScheduleTimeToLocal(schedule.start_time, schedule.timezone) : "09:00";
+  const endTimeLocal = schedule.end_time ? convertScheduleTimeToLocal(schedule.end_time, schedule.timezone) : "17:00";
   
   // Convert to 12-hour format for display
   const formatTime12 = (time24: string) => {
@@ -412,7 +434,10 @@ function SortableTableRow({
     <TableRow 
       ref={setNodeRef} 
       style={style} 
-      className={`${animationClasses} ${item.plugin_instance?.needs_config_update ? 'opacity-60 bg-muted/30' : ''}`}
+      className={`${animationClasses} ${
+        item.plugin_instance?.plugin?.status === 'unavailable' ? 'opacity-70 bg-muted/30' : 
+        item.plugin_instance?.needs_config_update ? 'opacity-60 bg-muted/30' : ''
+      }`}
     >
       <TableCell>
         <div className="flex items-center gap-2">
@@ -460,7 +485,11 @@ function SortableTableRow({
         </div>
         <div className="text-xs md:hidden mt-1">
             <span className="flex items-center gap-1">
-              {item.plugin_instance?.needs_config_update ? (
+              {item.plugin_instance?.plugin?.status === 'unavailable' ? (
+                <Badge variant="secondary" className="text-xs !opacity-100 relative z-10">
+                  Unavailable
+                </Badge>
+              ) : item.plugin_instance?.needs_config_update ? (
                 <Badge 
                   variant="destructive" 
                   className="text-xs cursor-pointer hover:bg-destructive/80 !opacity-100 relative z-10"
@@ -471,17 +500,27 @@ function SortableTableRow({
                 >
                   Update Config
                 </Badge>
+              ) : !item.is_visible ? (
+                <Badge variant="secondary" className="text-xs !opacity-100 relative z-10">
+                  <EyeOff className="h-3 w-3 mr-1" />
+                  Hidden
+                </Badge>
+              ) : item.skip_display ? (
+                <Badge variant="secondary" className="text-xs !opacity-100 relative z-10">
+                  <CircleMinus className="h-3 w-3 mr-1" />
+                  Skipped
+                </Badge>
               ) : (
                 <>
                   {isCurrentlyShowing ? (
                     <PlayCircle className="h-3 w-3" />
-                  ) : isActive && item.is_visible ? (
+                  ) : isActive ? (
                     <Eye className="h-3 w-3" />
                   ) : (
                     <EyeOff className="h-3 w-3" />
                   )}
                   <span className="text-muted-foreground">
-                    {isCurrentlyShowing ? "Now Showing" : isActive ? "Active" : item.is_visible ? "Scheduled" : "Hidden"} • {item.importance ? "Important" : "Normal"}
+                    {isCurrentlyShowing ? "Now Showing" : isActive ? "Active" : "Scheduled"} • {item.importance ? "Important" : "Normal"}
                   </span>
                 </>
               )}
@@ -489,8 +528,13 @@ function SortableTableRow({
           </div>
       </TableCell>
       <TableCell className="hidden md:table-cell">
-        {item.plugin_instance?.needs_config_update ? (
-          // Config update takes priority over all other statuses
+        {item.plugin_instance?.plugin?.status === 'unavailable' ? (
+          // Unavailable takes highest priority
+          <Badge variant="secondary" className="!opacity-100 relative z-10">
+            Unavailable
+          </Badge>
+        ) : item.plugin_instance?.needs_config_update ? (
+          // Config update takes second priority
           <Badge 
             variant="destructive"
             className="cursor-pointer hover:bg-destructive/80 !opacity-100 relative z-10"
@@ -500,6 +544,18 @@ function SortableTableRow({
             }}
           >
             Update Config
+          </Badge>
+        ) : !item.is_visible ? (
+          // Hidden takes third priority
+          <Badge variant="secondary" className="!opacity-100 relative z-10">
+            <EyeOff className="h-3 w-3 mr-1" />
+            Hidden
+          </Badge>
+        ) : item.skip_display ? (
+          // Skip display takes fourth priority
+          <Badge variant="secondary" className="!opacity-100 relative z-10">
+            <CircleMinus className="h-3 w-3 mr-1" />
+            Skipped
           </Badge>
         ) : item.is_sleep_mode ? (
           // Special status logic for sleep mode items
@@ -554,20 +610,15 @@ function SortableTableRow({
               <PlayCircle className="h-3 w-3 mr-1" />
               Now Showing
             </Badge>
-          ) : isActive && item.is_visible ? (
+          ) : isActive ? (
             <Badge variant="outline">
               <Eye className="h-3 w-3 mr-1" />
               Active
             </Badge>
-          ) : item.is_visible ? (
-            <Badge variant="secondary">
-              <EyeOff className="h-3 w-3 mr-1" />
-              Scheduled
-            </Badge>
           ) : (
             <Badge variant="secondary">
               <EyeOff className="h-3 w-3 mr-1" />
-              Hidden
+              Scheduled
             </Badge>
           )
         )}
@@ -651,6 +702,8 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
   const navigate = useNavigate();
   const [playlistItems, setPlaylistItems] = useState<PlaylistItem[]>([]);
   const [playlistMashupLayoutCache, setPlaylistMashupLayoutCache] = useState<Record<string, string>>({});
+  const [selectorMashupLayoutCache, setSelectorMashupLayoutCache] = useState<Record<string, string>>({});
+  const [selectorLayoutsLoading, setSelectorLayoutsLoading] = useState(false);
   
   // Use SSE hook for real-time device events
   const deviceEvents = useDeviceEvents(selectedDeviceId);
@@ -810,41 +863,30 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
     return [sleepModeItem, ...sortedItems];
   };
 
-  // Convert local time (HH:MM) to UTC time for database storage
-  const convertLocalTimeToUTC = (localTime: string): string => {
-    const timezone = getUserTimezone();
-    const today = new Date().toISOString().split('T')[0]; // Today in YYYY-MM-DD
-    
-    // Parse the time input as if it's in the user's timezone
-    const [hours, minutes] = localTime.split(':').map(Number);
-    
-    // Create a date in user's timezone (using a reference date to handle DST correctly)
-    const localDate = new Date();
-    localDate.setFullYear(parseInt(today.split('-')[0]));
-    localDate.setMonth(parseInt(today.split('-')[1]) - 1); // Month is 0-indexed
-    localDate.setDate(parseInt(today.split('-')[2]));
-    localDate.setHours(hours, minutes, 0, 0);
-    
-    // Convert to UTC
-    const utcTime = localDate.toISOString().substring(11, 19); // Extract HH:MM:SS
-    return utcTime;
-  };
-
-  // Convert UTC time (HH:MM:SS) from database to local time for display
-  const convertUTCTimeToLocal = (utcTime: string): string => {
-    const today = new Date().toISOString().split('T')[0]; // Today in YYYY-MM-DD
-    const utcDateTime = `${today}T${utcTime}Z`;
-    const utcDate = new Date(utcDateTime);
-    
-    // Convert to user's configured timezone (or browser timezone as fallback)
+  // Convert schedule time from its stored timezone to user's timezone for display
+  // Handles both old UTC schedules and new timezone-aware schedules
+  const convertScheduleTimeToLocal = (timeStr: string, scheduleTimezone: string): string => {
     const userTimezone = getUserTimezone();
-    const localTime = utcDate.toLocaleTimeString('en-GB', { 
+
+    // If schedule is already in user's timezone, no conversion needed
+    if (scheduleTimezone && scheduleTimezone === userTimezone) {
+      return timeStr.substring(0, 5); // Just return HH:MM
+    }
+
+    // Convert from schedule's timezone to user's timezone
+    const today = new Date().toISOString().split('T')[0];
+    const scheduleDateTime = scheduleTimezone === "UTC"
+      ? `${today}T${timeStr}Z`
+      : `${today}T${timeStr}`;
+    const scheduleDate = new Date(scheduleDateTime);
+
+    const localTime = scheduleDate.toLocaleTimeString('en-GB', {
       timeZone: userTimezone,
-      hour12: false, 
-      hour: '2-digit', 
+      hour12: false,
+      hour: '2-digit',
       minute: '2-digit'
     });
-    
+
     return localTime; // Returns HH:MM
   };
   const [pluginInstances, setPluginInstances] = useState<PluginInstance[]>([]);
@@ -1071,6 +1113,68 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
     }
   };
 
+  const loadSelectorMashupLayouts = async () => {
+    setSelectorLayoutsLoading(true);
+    
+    const availableInstances = getAvailablePluginInstances();
+    console.log('Available instances for selector:', availableInstances);
+    
+    // Debug: Compare data for instances that should be mashups
+    availableInstances.forEach(instance => {
+      if (instance.name.toLowerCase().includes('f1') || instance.name.toLowerCase().includes('formula')) {
+        console.group(`🔍 DEBUG: Analyzing ${instance.name}`);
+        
+        const selectorIsMashup = instance.plugin_definition?.is_mashup;
+        console.log('Selector data - is_mashup:', selectorIsMashup);
+        console.log('Selector data - full plugin_definition:', instance.plugin_definition);
+        
+        // Compare with playlist version if it exists
+        const playlistItem = playlistItems.find(pi => pi.plugin_instance_id === instance.id);
+        if (playlistItem) {
+          const playlistIsMashup = playlistItem.plugin_instance?.plugin_definition?.is_mashup;
+          console.log('Playlist data - is_mashup:', playlistIsMashup);
+          console.log('Playlist data - full plugin_definition:', playlistItem.plugin_instance?.plugin_definition);
+          
+          if (selectorIsMashup !== playlistIsMashup) {
+            console.error('❌ DATA MISMATCH FOUND!');
+            console.log('Selector has:', selectorIsMashup);
+            console.log('Playlist has:', playlistIsMashup);
+          }
+        }
+        
+        console.groupEnd();
+      }
+    });
+
+    const mashupInstances = availableInstances.filter(instance => {
+      return instance.plugin_definition?.is_mashup === true;
+    });
+    
+    console.log('Detected mashup instances:', mashupInstances);
+
+    for (const instance of mashupInstances) {
+      // Skip if already cached
+      if (selectorMashupLayoutCache[instance.id]) {
+        console.log(`Layout already cached for ${instance.name}`);
+        continue;
+      }
+
+      try {
+        console.log(`Loading layout for mashup instance: ${instance.name}`);
+        const mashupData = await mashupService.getChildren(instance.id);
+        const layout = mashupData.layout;
+        console.log(`Loaded layout for ${instance.name}:`, layout);
+        
+        // Cache the layout
+        setSelectorMashupLayoutCache(prev => ({ ...prev, [instance.id]: layout }));
+      } catch (error) {
+        console.error(`Failed to load mashup layout for selector ${instance.name}:`, error);
+      }
+    }
+    
+    setSelectorLayoutsLoading(false);
+  };
+
   const fetchPluginInstances = async () => {
     try {
       const response = await fetch("/api/plugin-instances", {
@@ -1204,11 +1308,11 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
   const openScheduleDialog = async (item: PlaylistItem) => {
     setScheduleItem(item);
     
-    // Convert UTC times from database to local times for display
+    // Convert schedule times to user's timezone for display
     const schedulesWithLocalTimes = (item.schedules || []).map(schedule => ({
       ...schedule,
-      start_time: convertUTCTimeToLocal(schedule.start_time) + ":00", // Add seconds for UI
-      end_time: convertUTCTimeToLocal(schedule.end_time) + ":00", // Add seconds for UI
+      start_time: convertScheduleTimeToLocal(schedule.start_time, schedule.timezone) + ":00", // Add seconds for UI
+      end_time: convertScheduleTimeToLocal(schedule.end_time, schedule.timezone) + ":00", // Add seconds for UI
       is_active: schedule.is_active !== undefined ? schedule.is_active : true, // Ensure is_active is set
     }));
     
@@ -1280,9 +1384,9 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
         const scheduleData = {
           name: schedule.name || "Unnamed Schedule",
           day_mask: schedule.day_mask,
-          start_time: convertLocalTimeToUTC(schedule.start_time.substring(0, 5)), // Convert to UTC
-          end_time: convertLocalTimeToUTC(schedule.end_time.substring(0, 5)), // Convert to UTC
-          timezone: "UTC",
+          start_time: schedule.start_time.substring(0, 8), // Keep as local time HH:MM:SS
+          end_time: schedule.end_time.substring(0, 8), // Keep as local time HH:MM:SS
+          timezone: getUserTimezone(), // Use user's actual timezone
           is_active: schedule.is_active,
         };
 
@@ -1377,6 +1481,11 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
     }
   }, [selectedDeviceId]);
 
+  // Debug log when selector mashup cache updates
+  useEffect(() => {
+    console.log('Selector mashup layout cache updated:', selectorMashupLayoutCache);
+  }, [selectorMashupLayoutCache]);
+
 
   useEffect(() => {
     if (error) {
@@ -1391,6 +1500,14 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
       handleTimeTravelChange();
     }
   }, [timeTravelDate, timeTravelTime, timeTravelMode]);
+
+  // Listen for skip display updates via SSE and refresh playlist items
+  useEffect(() => {
+    if (deviceEvents.lastEvent?.type === 'playlist_item_skip_updated') {
+      // Refresh playlist items when skip display status changes
+      fetchPlaylistItems();
+    }
+  }, [deviceEvents.lastEvent]);
 
 
   return (
@@ -1457,7 +1574,10 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
                 Time Travel
               </Button>
               <Button
-                onClick={() => setShowAddDialog(true)}
+                onClick={() => {
+                  setShowAddDialog(true);
+                  loadSelectorMashupLayouts();
+                }}
                 disabled={getAvailablePluginInstances().length === 0}
               >
                 {getAvailablePluginInstances().length === 0 ? "All Plugins Added" : "Add Item"}
@@ -1489,7 +1609,10 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
               Add plugin instances to this playlist to display content on your device.
             </p>
             <Button 
-              onClick={() => setShowAddDialog(true)}
+              onClick={() => {
+                setShowAddDialog(true);
+                loadSelectorMashupLayouts();
+              }}
               disabled={getAvailablePluginInstances().length === 0}
             >
               {getAvailablePluginInstances().length === 0 ? "All Plugins Added" : "Add Item"}
@@ -1586,11 +1709,32 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
                   <SelectValue placeholder="Choose a plugin instance..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {getAvailablePluginInstances().map((userPlugin) => (
-                    <SelectItem key={userPlugin.id} value={userPlugin.id}>
-                      {userPlugin.name}
-                    </SelectItem>
-                  ))}
+                  {selectorLayoutsLoading ? (
+                    <div className="py-2 px-3 text-sm text-muted-foreground">
+                      Loading layouts...
+                    </div>
+                  ) : (
+                    getAvailablePluginInstances().map((userPlugin) => {
+                      const isMashup = userPlugin.plugin_definition?.is_mashup === true;
+                      const hasLayout = !!selectorMashupLayoutCache[userPlugin.id];
+                      const layoutId = selectorMashupLayoutCache[userPlugin.id];
+                      
+                      console.log(`Rendering SelectItem for ${userPlugin.name}: isMashup=${isMashup}, hasLayout=${hasLayout}, layoutId=${layoutId}`);
+                      
+                      return (
+                        <SelectItem key={userPlugin.id} value={userPlugin.id}>
+                          <div className="flex items-center justify-between w-full">
+                            <span>{userPlugin.name}</span>
+                            {isMashup && hasLayout && (
+                              <div className="ml-2">
+                                {getMashupLayoutGrid(layoutId, 'tiny', 'subtle')}
+                              </div>
+                            )}
+                          </div>
+                        </SelectItem>
+                      );
+                    })
+                  )}
                 </SelectContent>
               </Select>
             </div>

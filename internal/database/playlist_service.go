@@ -410,8 +410,19 @@ func (pls *PlaylistService) GetActivePlaylistItemsForTime(deviceID uuid.UUID, cu
 			continue
 		}
 		
+		// Skip items where SkipDisplay is true (plugin requested to skip)
+		if item.SkipDisplay {
+			continue
+		}
+		
 		// Skip items that need config updates - they shouldn't be served to devices
 		if item.PluginInstance.NeedsConfigUpdate {
+			continue
+		}
+		
+		// Skip items with unavailable plugins - they can't be rendered
+		if item.PluginInstance.PluginDefinition.ID != "" && 
+		   item.PluginInstance.PluginDefinition.Status == "unavailable" {
 			continue
 		}
 

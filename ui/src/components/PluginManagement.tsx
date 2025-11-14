@@ -63,6 +63,7 @@ import {
   Settings as SettingsIcon,
   AlertTriangle,
   CheckCircle,
+  Loader2,
   RefreshCw,
   ChevronUp,
   ChevronDown,
@@ -78,6 +79,8 @@ import { AddPluginDropdown } from "./AddPluginDropdown";
 import { MashupSlotGrid } from "./MashupSlotGrid";
 import { getMashupLayoutGrid } from "./MashupLayoutGrid";
 import { MashupLayout, MashupSlotInfo, AvailablePluginInstance, mashupService } from "@/services/mashupService";
+import { OAuthConnection } from "./OAuthConnection";
+import { useOAuthStatus } from "@/hooks/useOAuthStatus";
 
 interface Plugin {
   id: string;
@@ -89,9 +92,18 @@ interface Plugin {
   author: string;
   is_active: boolean;
   requires_processing: boolean;
+  status: string; // "available", "unavailable", "error"
   data_strategy?: string;
   created_at: string;
   updated_at: string;
+  oauth_config?: {
+    provider: string;
+    auth_url: string;
+    token_url: string;
+    scopes: string[];
+    client_id_env: string;
+    client_secret_env: string;
+  };
 }
 
 interface PluginInstance {
@@ -175,6 +187,10 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
   const [editPluginInstance, setEditPluginInstance] = useState<PluginInstance | null>(null);
   const [editMashupLayout, setEditMashupLayout] = useState<string | null>(null);
   const [editMashupLayoutLoading, setEditMashupLayoutLoading] = useState(false);
+  
+  // Dynamic field options state
+  const [dynamicFieldOptions, setDynamicFieldOptions] = useState<Record<string, any[]>>({});
+  const [dynamicFieldsLoading, setDynamicFieldsLoading] = useState<Record<string, boolean>>({});
   const [editMashupSlots, setEditMashupSlots] = useState<MashupSlotInfo[]>([]);
   const [editMashupAssignments, setEditMashupAssignments] = useState<Record<string, string>>({});
   const [editOriginalMashupAssignments, setEditOriginalMashupAssignments] = useState<Record<string, string>>({});
@@ -737,15 +753,9 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
 
   // Helper function to load mashup layout info for editing
   const loadEditMashupLayout = async (instanceId: string) => {
-    console.log('🔄 loadEditMashupLayout called with instanceId:', instanceId);
     setEditMashupLayoutLoading(true);
     try {
-      console.log('📡 Fetching mashup children data...');
       const mashupData = await mashupService.getChildren(instanceId);
-      console.log('✅ Mashup data received:', mashupData);
-      console.log('🎯 Layout extracted:', mashupData.layout);
-      console.log('🔍 Slots extracted:', mashupData.slots);
-      console.log('📋 Assignments extracted:', mashupData.assignments);
       
       setEditMashupLayout(mashupData.layout);
       setEditMashupSlots(mashupData.slots || []);
@@ -753,23 +763,17 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
       // Convert assignments from MashupChild objects to plugin instance IDs
       const assignmentMap: Record<string, string> = {};
       if (mashupData.assignments) {
-        console.log('🔍 Processing assignments:', mashupData.assignments);
         for (const [slotPosition, child] of Object.entries(mashupData.assignments)) {
-          console.log(`  - Slot ${slotPosition}:`, child);
           if (child && child.instance_id) {
             assignmentMap[slotPosition] = child.instance_id;
-            console.log(`    ✅ Mapped to instance ID: ${child.instance_id}`);
           }
         }
       }
-      console.log('📊 Final assignment map:', assignmentMap);
       setEditMashupAssignments(assignmentMap);
       setEditOriginalMashupAssignments({...assignmentMap}); // Store original for change detection
       
       // Load available plugins to display names
-      console.log('📡 Loading available plugins for edit modal...');
       const availablePlugins = await mashupService.getAvailablePluginInstances();
-      console.log('✅ Available plugins loaded:', availablePlugins);
       setEditAvailablePlugins(availablePlugins);
     } catch (error) {
       console.error('❌ Error loading mashup layout:', error);
@@ -785,10 +789,6 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
 
   // Helper function to open edit dialog for an instance
   const openEditDialog = (instanceToEdit: PluginInstance) => {
-    console.log('🚀 openEditDialog called with instance:', instanceToEdit);
-    console.log('🔍 Instance plugin object:', instanceToEdit.plugin);
-    console.log('🏷️ Plugin type:', instanceToEdit.plugin?.type);
-    console.log('📋 Plugin name:', instanceToEdit.plugin?.name);
     
     setEditPluginInstance(instanceToEdit);
     setEditInstanceName(instanceToEdit.name);
@@ -815,12 +815,9 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
     
     // If it's a mashup, load the layout info
     const isMashup = instanceToEdit.plugin?.type === 'mashup';
-    console.log('🤔 Is mashup check:', isMashup);
     if (isMashup) {
-      console.log('✅ Detected mashup - loading layout info');
       loadEditMashupLayout(instanceToEdit.id);
     } else {
-      console.log('❌ Not a mashup - clearing layout');
       setEditMashupLayout(null);
       setEditMashupSlots([]);
       setEditMashupAssignments({});
@@ -928,19 +925,14 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
     }
   }, [searchParams, plugins, setSearchParams]);
 
-  // Debug: Log when editPluginInstance changes
+  // Log when editPluginInstance changes for debugging
   useEffect(() => {
-    console.log('🔄 editPluginInstance state changed:', editPluginInstance);
-    if (editPluginInstance) {
-      console.log('  - Instance ID:', editPluginInstance.id);
-      console.log('  - Instance name:', editPluginInstance.name);
-      console.log('  - Plugin type:', editPluginInstance.plugin?.type);
-    }
+    // Debug logging removed for production
   }, [editPluginInstance]);
 
-  // Debug: Log when editMashupLayout changes
+  // Log when editMashupLayout changes for debugging
   useEffect(() => {
-    console.log('🗂️ editMashupLayout state changed:', editMashupLayout);
+    // Debug logging removed for production
   }, [editMashupLayout]);
 
   // Sort function
@@ -967,9 +959,15 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
           bValue = b.plugin?.name?.toLowerCase() || '';
           break;
         case 'status':
-          // Priority system: Update Config (3) > Active (2) > Unused (1)
-          aValue = a.needs_config_update ? 3 : (a.is_used_in_playlists ? 2 : 1);
-          bValue = b.needs_config_update ? 3 : (b.is_used_in_playlists ? 2 : 1);
+          // Priority system: Unavailable (4) > Update Config (3) > Active (2) > Unused (1)
+          const getStatusPriority = (instance: PluginInstance) => {
+            if (instance.plugin?.status === 'unavailable') return 4;
+            if (instance.needs_config_update) return 3;
+            if (instance.is_used_in_playlists) return 2;
+            return 1;
+          };
+          aValue = getStatusPriority(a);
+          bValue = getStatusPriority(b);
           break;
         case 'created':
           aValue = new Date(a.created_at).getTime();
@@ -1007,32 +1005,339 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
 
   // Helper function to check if a plugin has configuration fields
   const hasConfigurationFields = (plugin: Plugin): boolean => {
+    console.log(`[DEBUG] hasConfigurationFields called for plugin:`, plugin.id, plugin.name);
     try {
       const schema = JSON.parse(plugin.config_schema);
       const properties = schema.properties || {};
-      return Object.keys(properties).length > 0;
+      const hasFields = Object.keys(properties).length > 0;
+      console.log(`[DEBUG] hasConfigurationFields result:`, hasFields, 'properties count:', Object.keys(properties).length);
+      return hasFields;
     } catch (e) {
+      console.error(`[DEBUG] hasConfigurationFields failed to parse schema:`, e);
       return false;
     }
   };
+  
+  // Fetch dynamic field options from the plugin service
+  const fetchDynamicFieldOptions = async (
+    pluginIdentifier: string, 
+    fieldName: string,
+    oauthTokens: Record<string, any>
+  ) => {
+    const fieldKey = `${pluginIdentifier}.${fieldName}`;
+    setDynamicFieldsLoading(prev => ({ ...prev, [fieldKey]: true }));
+    
+    try {
+      const response = await fetch(`/api/plugins/${pluginIdentifier}/options/${fieldName}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          oauth_tokens: oauthTokens,
+          user: { id: localStorage.getItem('user_id') || 'default' }
+        })
+      });
+      
+      const result = await response.json();
+      
+      if (result.success && result.data?.options) {
+        setDynamicFieldOptions(prev => ({
+          ...prev,
+          [fieldKey]: result.data.options
+        }));
+      } else {
+        console.error(`Failed to fetch options for ${fieldKey}:`, result.error);
+        setDynamicFieldOptions(prev => ({
+          ...prev,
+          [fieldKey]: []
+        }));
+      }
+    } catch (error) {
+      console.error(`Error fetching dynamic options for ${fieldKey}:`, error);
+      setDynamicFieldOptions(prev => ({
+        ...prev,
+        [fieldKey]: []
+      }));
+    } finally {
+      setDynamicFieldsLoading(prev => ({ ...prev, [fieldKey]: false }));
+    }
+  };
 
-  const renderSettingsForm = (plugin: Plugin, settings: Record<string, any>, onChange: (key: string, value: any) => void) => {
+  // OAuth Status Badge Component for Plugin Cards
+  const OAuthStatusBadge: React.FC<{ plugin: Plugin }> = ({ plugin }) => {
+    const { connection, loading } = useOAuthStatus(plugin.oauth_config?.provider);
+
+    if (loading) {
+      return (
+        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-600">
+          <Loader2 className="h-3 w-3 animate-spin mr-1" />
+          Checking...
+        </span>
+      );
+    }
+
+    if (connection?.connected) {
+      return (
+        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-green-100 text-green-800">
+          <CheckCircle className="h-3 w-3 mr-1" />
+          Connected
+        </span>
+      );
+    }
+
+    return (
+      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-amber-100 text-amber-800">
+        <AlertTriangle className="h-3 w-3 mr-1" />
+        Needs Connection
+      </span>
+    );
+  };
+
+  // OAuth Connection Wrapper Component
+  const OAuthConnectionWrapper: React.FC<{
+    plugin: Plugin;
+    onConnectionChange: (connected: boolean) => void;
+  }> = ({ plugin, onConnectionChange }) => {
+    const { connection, loading } = useOAuthStatus(plugin.oauth_config?.provider);
+
+    if (!plugin.oauth_config) return null;
+
+    return (
+      <div className="mb-6">
+        <OAuthConnection
+          oauthConfig={plugin.oauth_config}
+          onConnectionChange={onConnectionChange}
+          className="mb-4"
+        />
+        {connection && !connection.connected && (
+          <Alert className="border-amber-200 bg-amber-50">
+            <AlertTriangle className="h-4 w-4 text-amber-600" />
+            <AlertDescription>
+              You must connect to {plugin.oauth_config.provider} to configure this plugin. 
+              The settings below will be available after connecting your account.
+            </AlertDescription>
+          </Alert>
+        )}
+      </div>
+    );
+  };
+
+  // Settings Form Component that can properly use hooks
+  const PluginSettingsForm: React.FC<{
+    plugin: Plugin;
+    settings: Record<string, any>;
+    onChange: (key: string, value: any) => void;
+  }> = ({ plugin, settings, onChange }) => {
+    console.log(`[DEBUG] PluginSettingsForm mounted for plugin:`, plugin);
+    console.log(`[DEBUG] Plugin ID:`, plugin.id);
+    console.log(`[DEBUG] Plugin type:`, plugin.type);
+    console.log(`[DEBUG] Plugin name:`, plugin.name);
+    console.log(`[DEBUG] Settings:`, settings);
+
     let schema;
     try {
       schema = JSON.parse(plugin.config_schema);
+      console.log(`[DEBUG] Schema parsed successfully for ${plugin.id}:`, schema);
     } catch (e) {
+      console.error(`[DEBUG] Failed to parse schema for ${plugin.id}:`, e);
+      console.error(`[DEBUG] Raw config_schema:`, plugin.config_schema);
       return <div className="text-muted-foreground">Invalid schema configuration</div>;
     }
 
     const properties = schema.properties || {};
+    console.log(`[DEBUG] Plugin object in edit context:`, plugin);
+    console.log(`[DEBUG] plugin.identifier:`, plugin.identifier);
+    console.log(`[DEBUG] plugin.id:`, plugin.id);
+    const pluginIdentifier = plugin.identifier || plugin.id;
+    console.log(`[DEBUG] Final pluginIdentifier:`, pluginIdentifier);
+
+    console.log(`[DEBUG] Properties found:`, Object.keys(properties));
+    console.log(`[DEBUG] Full properties object:`, properties);
+
+    // Debug logging for any plugin that might be Google Calendar
+    if (pluginIdentifier.includes('google') || pluginIdentifier.includes('calendar') || plugin.name.toLowerCase().includes('calendar')) {
+      console.log(`[DEBUG] POTENTIAL GOOGLE CALENDAR PLUGIN DETECTED:`);
+      console.log(`[DEBUG] ID: ${pluginIdentifier}`);
+      console.log(`[DEBUG] Name: ${plugin.name}`);
+      console.log(`[DEBUG] ignore_phrases_exact_match field:`, properties.ignore_phrases_exact_match);
+      console.log(`[DEBUG] calendar field:`, properties.calendar);
+    }
+    
+    // Use OAuth status hook at component level
+    const { connection: oauthConnection } = useOAuthStatus(plugin.oauth_config?.provider);
+    
+    // Fetch dynamic fields when OAuth is connected
+    React.useEffect(() => {
+      console.log(`[DEBUG] OAuth effect triggered for ${pluginIdentifier}:`, {
+        connected: oauthConnection?.connected,
+        hasOauthConfig: !!plugin.oauth_config
+      });
+      if (oauthConnection?.connected && plugin.oauth_config) {
+        Object.keys(properties).forEach(key => {
+          const prop = properties[key];
+          const dynamicSourceField = prop.dynamicSource || prop.dynamic_source;
+          if (prop.dynamic && dynamicSourceField) {
+            const fieldKey = `${pluginIdentifier}.${dynamicSourceField}`;
+            console.log(`[DEBUG] Processing dynamic field ${key}:`, {
+              fieldKey,
+              dynamicSourceField,
+              hasOptions: !!dynamicFieldOptions[fieldKey],
+              isLoading: !!dynamicFieldsLoading[fieldKey],
+              willFetch: !dynamicFieldOptions[fieldKey] && !dynamicFieldsLoading[fieldKey]
+            });
+            if (!dynamicFieldOptions[fieldKey] && !dynamicFieldsLoading[fieldKey]) {
+              fetchDynamicFieldOptions(
+                pluginIdentifier,
+                dynamicSourceField,
+                oauthConnection.tokens || {}
+              );
+            }
+          }
+        });
+      }
+    }, [oauthConnection?.connected, pluginIdentifier]);
 
     return (
       <div className="space-y-4">
+        {/* OAuth Connection Section */}
+        {plugin.oauth_config && (
+          <OAuthConnectionWrapper 
+            plugin={plugin} 
+            onConnectionChange={(connected) => {
+              // Clear dynamic options when disconnected
+              if (!connected) {
+                Object.keys(properties).forEach(key => {
+                  const prop = properties[key];
+                  const dynamicSourceField = prop.dynamicSource || prop.dynamic_source;
+                  if (prop.dynamic && dynamicSourceField) {
+                    const fieldKey = `${pluginIdentifier}.${dynamicSourceField}`;
+                    setDynamicFieldOptions(prev => {
+                      const newOptions = { ...prev };
+                      delete newOptions[fieldKey];
+                      return newOptions;
+                    });
+                  }
+                });
+              }
+            }}
+          />
+        )}
         {Object.keys(properties).map((key) => {
           const prop = properties[key];
           const value = settings[key] || prop.default || "";
 
-          // Handle enum (select dropdown) FIRST - before string type
+          // Handle dynamic select fields
+          console.log(`[DEBUG] Checking dynamic field for ${key}:`, {
+            dynamic: prop.dynamic,
+            dynamicSource: prop.dynamicSource,
+            dynamic_source: prop.dynamic_source,
+            isDynamic: prop.dynamic && (prop.dynamicSource || prop.dynamic_source)
+          });
+          if (prop.dynamic && (prop.dynamicSource || prop.dynamic_source)) {
+            const dynamicSourceField = prop.dynamicSource || prop.dynamic_source;
+            const fieldKey = `${pluginIdentifier}.${dynamicSourceField}`;
+            const options = dynamicFieldOptions[fieldKey] || [];
+            const isLoading = dynamicFieldsLoading[fieldKey] || false;
+
+            // Check if OAuth is required but not connected
+            if ((prop.dependsOn === 'oauth_connected' || prop.depends_on === 'oauth_connected') && !oauthConnection?.connected) {
+              return (
+                <div key={key}>
+                  <Label htmlFor={key}>{prop.title || key}</Label>
+                  <div className="mt-2 p-3 border rounded-md bg-muted/30">
+                    <p className="text-sm text-muted-foreground">
+                      Connect {plugin.oauth_config?.provider || 'OAuth'} to see available options
+                    </p>
+                  </div>
+                  {prop.description && (
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {prop.description}
+                    </p>
+                  )}
+                </div>
+              );
+            }
+            
+            // Handle multiple select
+            if (prop.multiple) {
+              const selectedValues = Array.isArray(value) ? value : (value ? [value] : []);
+              
+              return (
+                <div key={key}>
+                  <Label htmlFor={key}>{prop.title || key}</Label>
+                  {isLoading ? (
+                    <div className="mt-2 p-3 border rounded-md">
+                      <Loader2 className="h-4 w-4 animate-spin mr-2 inline" />
+                      <span className="text-sm text-muted-foreground">Loading options...</span>
+                    </div>
+                  ) : options.length > 0 ? (
+                    <div className="mt-2 space-y-2 max-h-48 overflow-y-auto border rounded-md p-3">
+                      {options.map((option) => (
+                        <label key={option.value} className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            className="rounded border-gray-300"
+                            checked={selectedValues.includes(option.value)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                onChange(key, [...selectedValues, option.value]);
+                              } else {
+                                onChange(key, selectedValues.filter(v => v !== option.value));
+                              }
+                            }}
+                          />
+                          <span className="text-sm">{option.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="mt-2 p-3 border rounded-md bg-muted/30">
+                      <p className="text-sm text-muted-foreground">No options available</p>
+                    </div>
+                  )}
+                  {prop.description && (
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {prop.description}
+                    </p>
+                  )}
+                </div>
+              );
+            }
+            
+            // Single select dynamic field
+            return (
+              <div key={key}>
+                <Label htmlFor={key}>{prop.title || key}</Label>
+                {isLoading ? (
+                  <div className="mt-2 p-3 border rounded-md">
+                    <Loader2 className="h-4 w-4 animate-spin mr-2 inline" />
+                    <span className="text-sm text-muted-foreground">Loading options...</span>
+                  </div>
+                ) : (
+                  <Select value={value} onValueChange={(val) => onChange(key, val)} disabled={isLoading || options.length === 0}>
+                    <SelectTrigger className="mt-2">
+                      <SelectValue placeholder={options.length === 0 ? "No options available" : (prop.placeholder || "Select an option")} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {options.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+                {prop.description && (
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {prop.description}
+                  </p>
+                )}
+              </div>
+            );
+          }
+
+          // Handle static enum (select dropdown) FIRST - before string type
           if (prop.enum && Array.isArray(prop.enum)) {
             const enumNames = prop.enumNames && Array.isArray(prop.enumNames) ? prop.enumNames : prop.enum;
             return (
@@ -1161,8 +1466,14 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
               );
             }
 
-            // Check if it should be a textarea (long text)
-            if (prop.maxLength && prop.maxLength > 200) {
+            // Check if it should be a textarea
+            console.log(`[DEBUG] Checking textarea condition for ${key}:`, {
+              format: prop.format,
+              field_type: prop.field_type,
+              maxLength: prop.maxLength,
+              shouldBeTextarea: prop.format === "textarea" || prop.field_type === "textarea" || (prop.maxLength && prop.maxLength > 200)
+            });
+            if (prop.format === "textarea" || prop.field_type === "textarea" || (prop.maxLength && prop.maxLength > 200)) {
               return (
                 <div key={key}>
                   <Label htmlFor={key}>{prop.title || key}</Label>
@@ -1271,6 +1582,16 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
     );
   };
 
+  // Simple wrapper for backwards compatibility
+  const renderSettingsForm = (plugin: Plugin, settings: Record<string, any>, onChange: (key: string, value: any) => void) => {
+    return (
+      <PluginSettingsForm 
+        plugin={plugin}
+        settings={settings}
+        onChange={onChange}
+      />
+    );
+  };
 
   return (
     <div className="space-y-4">
@@ -1450,11 +1771,15 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                               </>
                             ) : (userPlugin.plugin?.name || "Unknown Plugin")}
                           </span>
-                          {userPlugin.needs_config_update ? (
+                          {userPlugin.plugin?.status === 'unavailable' ? (
+                            <Badge variant="secondary" className="text-xs">
+                              Unavailable
+                            </Badge>
+                          ) : userPlugin.needs_config_update ? (
                             <Badge 
                               variant="destructive" 
-                              className="text-xs cursor-pointer hover:bg-destructive/80"
-                              onClick={() => openEditDialog(userPlugin)}
+                              className={`text-xs ${userPlugin.plugin?.status !== 'unavailable' ? 'cursor-pointer hover:bg-destructive/80' : 'opacity-60 cursor-not-allowed'}`}
+                              onClick={userPlugin.plugin?.status !== 'unavailable' ? () => openEditDialog(userPlugin) : undefined}
                             >
                               Update Config
                             </Badge>
@@ -1480,11 +1805,13 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                     </TableCell>
                     <TableCell className="hidden md:table-cell">
                       <div className="flex gap-1 flex-wrap">
-                        {userPlugin.needs_config_update ? (
+                        {userPlugin.plugin?.status === 'unavailable' ? (
+                          <Badge variant="secondary">Unavailable</Badge>
+                        ) : userPlugin.needs_config_update ? (
                           <Badge 
                             variant="destructive" 
-                            className="cursor-pointer hover:bg-destructive/80"
-                            onClick={() => openEditDialog(userPlugin)}
+                            className={userPlugin.plugin?.status !== 'unavailable' ? 'cursor-pointer hover:bg-destructive/80' : 'opacity-60 cursor-not-allowed'}
+                            onClick={userPlugin.plugin?.status !== 'unavailable' ? () => openEditDialog(userPlugin) : undefined}
                           >
                             Update Config
                           </Badge>
@@ -1514,13 +1841,24 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                             <TooltipContent>Copy Webhook URL</TooltipContent>
                           </Tooltip>
                         )}
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => openEditDialog(userPlugin)}
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => openEditDialog(userPlugin)}
+                              disabled={userPlugin.plugin?.status === 'unavailable'}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {userPlugin.plugin?.status === 'unavailable' 
+                              ? "Plugin unavailable - cannot edit settings"
+                              : "Edit plugin instance"
+                            }
+                          </TooltipContent>
+                        </Tooltip>
                         <Button
                           size="sm"
                           variant="outline"
@@ -1537,14 +1875,24 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
       )}
 
       {/* Add Plugin Dialog */}
+      {(() => {
+        console.log(`[DEBUG] Add Plugin Dialog render check:`, {
+          showAddDialog,
+          selectedPlugin: selectedPlugin?.name || 'none',
+          pluginId: selectedPlugin?.id || 'none'
+        });
+        return null;
+      })()}
       <Dialog open={showAddDialog} onOpenChange={(open) => {
+        console.log(`[DEBUG] Add dialog onOpenChange:`, open);
         setShowAddDialog(open);
         if (!open) {
+          console.log(`[DEBUG] Add dialog closing, resetting state`);
           resetAddDialogState();
         }
       }}>
-        <DialogContent 
-          className="sm:max-w-5xl max-h-[70vh] overflow-hidden flex flex-col mobile-dialog-content !top-[0vh] !translate-y-0 sm:!top-[6vh]"
+        <DialogContent
+          className="sm:max-w-5xl max-h-[70vh] overflow-y-auto flex flex-col mobile-dialog-content !top-[0vh] !translate-y-0 sm:!top-[6vh]"
           onOpenAutoFocus={(e) => e.preventDefault()}
         >
           <DialogHeader className="pb-3">
@@ -1641,6 +1989,17 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                     </Card>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-3">
+                      {(() => {
+                        console.log(`[DEBUG] Rendering plugin list, total plugins:`, plugins.length);
+                        console.log(`[DEBUG] Available plugins:`, plugins.map(p => ({ id: p.id, name: p.name, type: p.type })));
+                        const googleCalendar = plugins.find(p =>
+                          p.name.toLowerCase().includes('calendar') ||
+                          p.id.toLowerCase().includes('calendar') ||
+                          p.name.toLowerCase().includes('google')
+                        );
+                        console.log(`[DEBUG] Google Calendar plugin found:`, googleCalendar);
+                        return null;
+                      })()}
                       {plugins.map((plugin) => (
                         <Card key={plugin.id} className="flex flex-col">
                           <CardHeader className="pb-2">
@@ -1655,6 +2014,9 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                                   }`}>
                                     {plugin.type === 'system' ? 'System' : 'Private'}
                                   </span>
+                                  {plugin.oauth_config && (
+                                    <OAuthStatusBadge plugin={plugin} />
+                                  )}
                                 </div>
                                 <div className="text-xs text-muted-foreground">
                                   v{plugin.version} by {plugin.author}
@@ -1673,6 +2035,10 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                             </div>
                             <Button
                               onClick={() => {
+                                console.log(`[DEBUG] Plugin selected:`, plugin);
+                                console.log(`[DEBUG] Plugin ID:`, plugin.id);
+                                console.log(`[DEBUG] Plugin name:`, plugin.name);
+                                console.log(`[DEBUG] Plugin type:`, plugin.type);
                                 setSelectedPlugin(plugin);
                                 setInstanceName(plugin.name);
                                 setCreateDialogError(null);
@@ -1765,16 +2131,36 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                     </div>
                   )}
 
-                  {hasConfigurationFields(selectedPlugin) && (
-                    <div>
-                      <Label className="text-sm">Plugin Configuration</Label>
-                      <div className="mt-1">
-                        {renderSettingsForm(selectedPlugin, instanceSettings, (key, value) => {
-                          setInstanceSettings(prev => ({ ...prev, [key]: value }));
-                        })}
-                      </div>
-                    </div>
-                  )}
+{(() => {
+                    console.log(`[DEBUG] Add dialog config check:`, {
+                      hasSelectedPlugin: !!selectedPlugin,
+                      pluginId: selectedPlugin?.id,
+                      pluginName: selectedPlugin?.name,
+                      pluginType: selectedPlugin?.type,
+                      hasConfigFields: selectedPlugin ? hasConfigurationFields(selectedPlugin) : false
+                    });
+
+                    if (hasConfigurationFields(selectedPlugin)) {
+                      console.log(`[DEBUG] Rendering PluginSettingsForm for add dialog - selected plugin:`, selectedPlugin);
+                      return (
+                        <div>
+                          <Label className="text-sm">Plugin Configuration</Label>
+                          <div className="mt-1">
+                            <PluginSettingsForm
+                              plugin={selectedPlugin}
+                              settings={instanceSettings}
+                              onChange={(key, value) => {
+                                setInstanceSettings(prev => ({ ...prev, [key]: value }));
+                              }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    } else {
+                      console.log(`[DEBUG] NOT rendering PluginSettingsForm in add dialog - no config fields`);
+                      return null;
+                    }
+                  })()}
                 </>
               )}
             </div>
@@ -1818,11 +2204,11 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
           setEditDialogSuccess(null);
         }
       }}>
-        <DialogContent 
-          className="sm:max-w-2xl max-h-[80vh] overflow-y-auto mobile-dialog-content !top-[0vh] !translate-y-0 sm:!top-[6vh]"
+        <DialogContent
+          className="sm:max-w-5xl max-h-[80vh] overflow-y-auto flex flex-col mobile-dialog-content !top-[0vh] !translate-y-0 sm:!top-[6vh]"
           onOpenAutoFocus={(e) => e.preventDefault()}
         >
-          <DialogHeader>
+          <DialogHeader className="flex-shrink-0">
             {(() => {
               const pluginType = editPluginInstance?.plugin?.type;
               const layoutId = editMashupLayout;
@@ -1830,15 +2216,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
               const hasLayout = !!layoutId;
               const isLoading = editMashupLayoutLoading;
               const showMashupHeader = isMashup && (hasLayout || isLoading);
-              
-              console.log('🎨 Edit dialog header render:');
-              console.log('  - Plugin type:', pluginType);
-              console.log('  - Layout ID:', layoutId);
-              console.log('  - Is mashup:', isMashup);
-              console.log('  - Has layout:', hasLayout);
-              console.log('  - Is loading:', isLoading);
-              console.log('  - Show mashup header:', showMashupHeader);
-              
+
               return showMashupHeader ? (
                 <div className="flex items-start gap-4">
                   <div className="flex-shrink-0">
@@ -1867,20 +2245,21 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
               );
             })()}
           </DialogHeader>
-          
-          {/* Schema diff warning banner */}
-          {editPluginInstance?.needs_config_update && schemaDiff?.needs_update && (
-            <Alert variant="destructive">
-              <AlertTriangle className="h-4 w-4" />
-              <AlertDescription>
-                <strong>Configuration Update Required</strong>
-                <br />
-                {schemaDiff.message || "This plugin's form has changed. Please review and update your settings."}
-              </AlertDescription>
-            </Alert>
-          )}
 
-          <div className="space-y-6">
+          <div className="flex-1 overflow-y-auto">
+            {/* Schema diff warning banner */}
+            {editPluginInstance?.needs_config_update && schemaDiff?.needs_update && (
+              <Alert variant="destructive" className="mb-6">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription>
+                  <strong>Configuration Update Required</strong>
+                  <br />
+                  {schemaDiff.message || "This plugin's form has changed. Please review and update your settings."}
+                </AlertDescription>
+              </Alert>
+            )}
+
+            <div className="space-y-6">
             {editDialogError && (
               <Alert variant="destructive">
                 <AlertTriangle className="h-4 w-4" />
@@ -1982,31 +2361,56 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
               </div>
             )}
 
-            {editPluginInstance?.plugin && hasConfigurationFields(editPluginInstance.plugin) && (
-              <>
-                <Separator />
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-base flex items-center gap-2">
-                      <SettingsIcon className="h-4 w-4" />
-                      Plugin Configuration
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="pt-0">
-                    {renderSettingsForm(
-                      editPluginInstance.plugin,
-                      editInstanceSettings,
-                      (key: string, value: any) => {
-                        setEditInstanceSettings(prev => ({ ...prev, [key]: value }));
-                      }
-                    )}
-                  </CardContent>
-                </Card>
-              </>
-            )}
+{(() => {
+              console.log(`[DEBUG] Edit dialog render check:`, {
+                hasEditPluginInstance: !!editPluginInstance,
+                hasPlugin: !!editPluginInstance?.plugin,
+                pluginId: editPluginInstance?.plugin?.id,
+                pluginName: editPluginInstance?.plugin?.name,
+                hasConfigFields: editPluginInstance?.plugin ? hasConfigurationFields(editPluginInstance.plugin) : false
+              });
+
+              if (editPluginInstance?.plugin && hasConfigurationFields(editPluginInstance.plugin)) {
+                console.log(`[DEBUG] Rendering PluginSettingsForm for edit dialog`);
+                return (
+                  <>
+                    <Separator />
+                    <Card>
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-base flex items-center gap-2">
+                          <SettingsIcon className="h-4 w-4" />
+                          Plugin Configuration
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="pt-0">
+                        <PluginSettingsForm
+                          plugin={(() => {
+                            // Find the plugin definition that matches this plugin instance
+                            // The plugin instance has a plugin.id that should match a plugin definition's id
+                            const pluginDefinition = plugins.find(p => p.id === editPluginInstance.plugin.id);
+                            console.log(`[DEBUG] Looking for plugin definition with id: ${editPluginInstance.plugin.id}`);
+                            console.log(`[DEBUG] Found plugin definition:`, pluginDefinition);
+                            console.log(`[DEBUG] Plugin definition identifier:`, pluginDefinition?.identifier);
+                            return pluginDefinition || editPluginInstance.plugin;
+                          })()}
+                          settings={editInstanceSettings}
+                          onChange={(key: string, value: any) => {
+                            setEditInstanceSettings(prev => ({ ...prev, [key]: value }));
+                          }}
+                        />
+                      </CardContent>
+                    </Card>
+                  </>
+                );
+              } else {
+                console.log(`[DEBUG] NOT rendering PluginSettingsForm - conditions not met`);
+                return null;
+              }
+            })()}
+            </div>
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="flex-shrink-0">
             <Button variant="outline" onClick={() => {
               setShowEditDialog(false);
               setEditDialogError(null);

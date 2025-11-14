@@ -8,6 +8,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      stationmaster-plugins:
+        condition: service_started
     ports:
       - "8000:8000"
     volumes:
@@ -53,7 +55,32 @@ services:
       - PROXY_AUTH_HEADER=${PROXY_AUTH_HEADER:-X-Remote-User}
       - PROXY_AUTH_AUTO_CREATE=${PROXY_AUTH_AUTO_CREATE:-false}
       # Browserless Configuration
-      - BROWSERLESS_URL=${BROWSERLESS_URL:-http://browserless:3000}
+      - BROWSERLESS_URL=${BROWSERLESS_URL:-http://browserless:3001}
+      # External Plugin Services Configuration
+      - EXTERNAL_PLUGIN_SERVICES=http://stationmaster-plugins:3000
+      # Asset Configuration
+      - ASSET_BASE_URL=${ASSET_BASE_URL:-http://stationmaster:8000}
+
+  # Ruby plugins service for external/private plugin support
+  stationmaster-plugins:
+    image: ghcr.io/rmitchellscott/stationmaster-plugins:latest
+    container_name: stationmaster-plugins
+    restart: unless-stopped
+    environment:
+      - RAILS_ENV=production
+      - RAILS_LOG_TO_STDOUT=true
+      - RAILS_BASE_URL=http://stationmaster:8000
+      - GITHUB_API_TOKEN=${GITHUB_API_TOKEN:-your_github_token_here}
+      - MARKETDATA_API_TOKEN=${MARKETDATA_API_TOKEN:-}
+      - CURRENCY_API_KEY=${CURRENCY_API_KEY:-}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+      - TODOIST_CLIENT_ID=${TODOIST_CLIENT_ID:-}
+      - TODOIST_CLIENT_SECRET=${TODOIST_CLIENT_SECRET:-}
+    ports:
+      - "3000:3000"
+    networks:
+      - default
 
   # Browserless service for HTML rendering
   browserless:
@@ -67,7 +94,7 @@ services:
       - DEBUG=browserless:*
       - TZ=UTC
     ports:
-      - "3000:3000"
+      - "3001:3000"
     networks:
       - default
 

@@ -81,9 +81,6 @@ func GetSystemStatusHandler(c *gin.Context) {
 	siteURL, _ := database.GetSystemSetting("site_url")
 	enableFrequentRefreshes, _ := database.GetSystemSetting("enable_frequent_refreshes")
 
-	// Check if we're in dry run mode
-	dryRunMode := config.Get("DRY_RUN", "") != ""
-
 	// Check authentication methods
 	oidcEnabled := IsOIDCEnabled()
 	proxyAuthEnabled := IsProxyAuthEnabled()
@@ -118,8 +115,7 @@ func GetSystemStatusHandler(c *gin.Context) {
 			"oidc_enabled":       oidcEnabled,
 			"proxy_auth_enabled": proxyAuthEnabled,
 		},
-		"mode":    "multi_user",
-		"dry_run": dryRunMode,
+		"mode": "multi_user",
 	})
 }
 

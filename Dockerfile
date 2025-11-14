@@ -1,6 +1,5 @@
 FROM --platform=$BUILDPLATFORM tonistiigi/xx:1.6.1 AS xx
 
-
 # Frontend build
 FROM --platform=$BUILDPLATFORM node:24-alpine AS ui-builder
 WORKDIR /app
@@ -24,17 +23,11 @@ RUN go mod download
 COPY . .
 COPY --from=ui-builder /app/ui/dist ./ui/dist
 
-# Download TRMNL locale files for i18n compatibility
-RUN apk add --no-cache git && \
-    echo "Cloning TRMNL i18n repository..." && \
-    git clone --depth 1 --filter=blob:none --sparse https://github.com/usetrmnl/trmnl-i18n.git /tmp/trmnl-i18n && \
-    cd /tmp/trmnl-i18n && \
-    git sparse-checkout set lib/trmnl/i18n/locales/custom_plugins && \
-    mkdir -p /app/internal/locales && \
-    cp lib/trmnl/i18n/locales/custom_plugins/*.yml /app/internal/locales/ && \
-    echo "Successfully copied $(ls /app/internal/locales/*.yml | wc -l) locale files" && \
-    rm -rf /tmp/trmnl-i18n && \
-    apk del git
+# Download TRMNL assets at build time
+RUN apk add --no-cache curl bash \
+    && chmod +x ./scripts/download-trmnl-assets.sh \
+    && ./scripts/download-trmnl-assets.sh \
+    && apk del curl bash
 
 # Build args for version injection
 ARG VERSION=dev
@@ -44,6 +37,7 @@ ARG TARGETPLATFORM
 
 RUN --mount=type=cache,target=/root/.cache \
     CGO_ENABLED=0 xx-go build \
+    -tags production \
     -ldflags="-w -s \
         -X github.com/rmitchellscott/stationmaster/internal/version.Version=${VERSION} \
         -X github.com/rmitchellscott/stationmaster/internal/version.GitCommit=${GIT_COMMIT} \
@@ -51,28 +45,63 @@ RUN --mount=type=cache,target=/root/.cache \
     -trimpath
 
 
+# Ruby setup stage - use Alpine's Ruby and install gems
+FROM alpine:3.22 AS ruby-setup
+
+# Install Ruby and build dependencies for gems
+RUN apk add --no-cache \
+    ruby \
+    ruby-dev \
+    build-base
+
+# Install required Ruby gems
+RUN gem install \
+    liquid \
+    trmnl-liquid \
+    trmnl-i18n \
+    --no-document
+
 # Final image
 FROM alpine:3.22
 
-# Install runtime dependencies
+ARG S6_OVERLAY_VERSION=3.2.0.2
+ARG TARGETARCH
+
+# Install minimal runtime dependencies including Ruby
 RUN apk add --no-cache \
       ca-certificates \
       postgresql-client \
       tzdata \
-    && update-ca-certificates
+      ruby \
+      curl \
+      xz \
+    && update-ca-certificates \
+    && case ${TARGETARCH} in \
+         "amd64")  S6_ARCH=x86_64  ;; \
+         "arm64")  S6_ARCH=aarch64 ;; \
+         *)        S6_ARCH=x86_64  ;; \
+       esac \
+    && curl -sSL https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-noarch.tar.xz | tar -C / -Jxpf - \
+    && curl -sSL https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-${S6_ARCH}.tar.xz | tar -C / -Jxpf - \
+    && apk del curl xz
 
 WORKDIR /app
+
+# Copy pre-built Go binary and assets
 COPY --from=stationmaster-builder /app/stationmaster .
 COPY --from=stationmaster-builder /app/images ./images
 
-# Create data directory and setup for Chromium
-RUN mkdir -p /data /app/static/rendered \
-    && addgroup -g 1000 -S appuser \
-    && adduser -u 1000 -S appuser -G appuser \
-    && chown -R appuser:appuser /app /data
+# Copy installed gems from ruby-setup stage
+COPY --from=ruby-setup /usr/lib/ruby/gems /usr/lib/ruby/gems
 
+# Copy Ruby scripts
+COPY embedded_ruby/scripts/ ./scripts/
+RUN chmod +x ./scripts/start.sh ./scripts/liquid_server.rb
 
-USER appuser
+# Copy s6-overlay service definitions
+COPY embedded_ruby/s6-rc.d/ /etc/s6-overlay/s6-rc.d/
+RUN chmod +x /etc/s6-overlay/s6-rc.d/liquid-renderer/run \
+             /etc/s6-overlay/s6-rc.d/stationmaster/run
 
 EXPOSE 8000
-CMD ["./stationmaster"]
+ENTRYPOINT ["/init"]

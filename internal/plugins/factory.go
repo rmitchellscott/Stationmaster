@@ -43,6 +43,8 @@ func (f *UnifiedPluginFactory) CreatePlugin(def *database.PluginDefinition, inst
 		return f.createPrivatePlugin(def, inst)
 	case "mashup":
 		return f.createMashupPlugin(def, inst)
+	case "external":
+		return f.createExternalPlugin(def, inst)
 	case "public":
 		// Future implementation
 		return nil, fmt.Errorf("public plugins not yet implemented")
@@ -88,6 +90,18 @@ func (f *UnifiedPluginFactory) createMashupPlugin(def *database.PluginDefinition
 	return factory(def, inst), nil
 }
 
+// createExternalPlugin creates an external plugin instance
+func (f *UnifiedPluginFactory) createExternalPlugin(def *database.PluginDefinition, inst *database.PluginInstance) (Plugin, error) {
+	// Get the registered external plugin factory
+	factory := GetExternalPluginFactory()
+	if factory == nil {
+		return nil, fmt.Errorf("external plugin factory not registered")
+	}
+	
+	// Create an external plugin with the definition and instance
+	return factory(def, inst), nil
+}
+
 // RefreshSystemPlugins updates the system plugin registry
 func (f *UnifiedPluginFactory) RefreshSystemPlugins() {
 	f.registry = GetAll()
@@ -115,6 +129,8 @@ func (f *UnifiedPluginFactory) ValidateDefinition(def *database.PluginDefinition
 		return f.validatePrivateDefinition(def)
 	case "mashup":
 		return f.validateMashupDefinition(def)
+	case "external":
+		return f.validateExternalDefinition(def)
 	case "public":
 		// Future implementation
 		return fmt.Errorf("public plugins not yet implemented")
@@ -199,6 +215,32 @@ func (f *UnifiedPluginFactory) validateMashupDefinition(def *database.PluginDefi
 	
 	if !validLayouts[*def.MashupLayout] {
 		return fmt.Errorf("invalid mashup layout: %s", *def.MashupLayout)
+	}
+	
+	return nil
+}
+
+// validateExternalDefinition validates an external plugin definition
+func (f *UnifiedPluginFactory) validateExternalDefinition(def *database.PluginDefinition) error {
+	if def.Identifier == "" {
+		return fmt.Errorf("external plugin identifier cannot be empty")
+	}
+	
+	if def.Author != "TRMNL" {
+		return fmt.Errorf("external plugins must be authored by TRMNL")
+	}
+	
+	// External plugins should not have owners (they're like system plugins)
+	if def.OwnerID != nil {
+		return fmt.Errorf("external plugins cannot have owners")
+	}
+	
+	// Validate that at least one layout template is provided
+	if (def.MarkupFull == nil || *def.MarkupFull == "") &&
+		(def.MarkupHalfVert == nil || *def.MarkupHalfVert == "") &&
+		(def.MarkupHalfHoriz == nil || *def.MarkupHalfHoriz == "") &&
+		(def.MarkupQuadrant == nil || *def.MarkupQuadrant == "") {
+		return fmt.Errorf("external plugins must have at least one layout template")
 	}
 	
 	return nil

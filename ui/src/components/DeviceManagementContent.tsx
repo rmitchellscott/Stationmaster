@@ -411,10 +411,18 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
       };
 
 
-      // Add model name if it has changed from the original
-      const originalModelName = editDevice.model_name || "none";
+      // Add device model ID if model selection has changed from the original
+      const originalModelName = editDevice.device_model?.model_name || "none";
       if (editModelName !== originalModelName) {
-        requestBody.model_name = editModelName === "none" ? null : editModelName;
+        if (editModelName === "none") {
+          requestBody.device_model_id = 0; // 0 means clear the model
+        } else {
+          // Find the device model ID by name
+          const selectedModel = deviceModels.find(m => m.model_name === editModelName);
+          if (selectedModel) {
+            requestBody.device_model_id = selectedModel.id;
+          }
+        }
       }
 
       const response = await fetch(`/api/devices/${editDevice.id}`, {
@@ -507,7 +515,7 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
       setEditDeviceName(device.name || "");
       setEditRefreshRate(device.refresh_rate.toString());
       setEditAllowFirmwareUpdates(device.allow_firmware_updates ?? true);
-      setEditModelName(device.model_name || "none");
+      setEditModelName(device.device_model?.model_name || "none");
       setEditIsShareable(device.is_shareable ?? false);
       
       // Initialize sleep mode settings
@@ -541,7 +549,7 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
       editDeviceName.trim() !== (editDevice.name || "") ||
       editRefreshRate !== editDevice.refresh_rate.toString() ||
       editAllowFirmwareUpdates !== (editDevice.allow_firmware_updates ?? true) ||
-      editModelName !== (editDevice.model_name || "none") ||
+      editModelName !== (editDevice.device_model?.model_name || "none") ||
       editIsShareable !== (editDevice.is_shareable ?? false) ||
       editSleepEnabled !== (editDevice.sleep_enabled ?? false) ||
       editSleepStartTime !== (editDevice.sleep_start_time || "22:00") ||
@@ -1279,7 +1287,7 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
               <div>
                 <Label className="text-sm">Device Model</Label>
                 <div className="mt-1 text-sm">
-                  {editDevice?.device_model?.display_name || editDevice?.reported_model_name || editDevice?.model_name || "Unknown"}
+                  {editDevice?.device_model?.display_name || editDevice?.reported_model_name || "Unknown"}
                 </div>
               </div>
               <div>
@@ -1552,7 +1560,7 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
                     {/* Model Specifications */}
                     {(() => {
                       const selectedModel = editModelName === "none" 
-                        ? deviceModels.find(m => m.model_name === (editDevice?.reported_model_name || editDevice?.model_name))
+                        ? deviceModels.find(m => m.model_name === (editDevice?.reported_model_name || editDevice?.device_model?.model_name))
                         : deviceModels.find(m => m.model_name === editModelName);
                       return selectedModel && (
                         <div className="mt-3 pt-3 border-t border-border/50">

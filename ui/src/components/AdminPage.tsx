@@ -416,6 +416,7 @@ export function AdminPage() {
   
   // Plugin management state
   const [plugins, setPlugins] = useState<Plugin[]>([]);
+  const [externalPlugins, setExternalPlugins] = useState<any[]>([]);
   
   // Plugins table sorting state with localStorage persistence
   const [pluginSortState, setPluginSortState] = useState<PluginSortState>(() => {
@@ -1365,6 +1366,37 @@ export function AdminPage() {
     }
   }, []);
 
+  const fetchExternalPlugins = useCallback(async () => {
+    try {
+      const response = await fetch("/api/admin/external-plugins", {
+        credentials: "include",
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setExternalPlugins(data.plugins || []);
+      }
+    } catch (error) {
+      console.error("Failed to fetch external plugins:", error);
+    }
+  }, []);
+
+  const deleteExternalPlugin = async (pluginId: string) => {
+    try {
+      const response = await fetch(`/api/admin/external-plugins/${pluginId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (response.ok) {
+        await fetchExternalPlugins();
+      } else {
+        const errorData = await response.json();
+        setError(errorData.error || "Failed to delete external plugin");
+      }
+    } catch (error) {
+      setError("Network error occurred");
+    }
+  };
+
   const createPlugin = async () => {
     if (!pluginName.trim()) {
       setError("Please fill in required fields");
@@ -1743,13 +1775,14 @@ export function AdminPage() {
     fetchDeviceModels();
     fetchPlugins();
     fetchPluginStats();
+    fetchExternalPlugins();
     fetchFirmwareVersions();
     fetchFirmwareStats();
     fetchFirmwareMode();
     fetchBackupJobs();
     fetchRestoreUploads();
     fetchVersionInfo();
-  }, [fetchSystemStatus, fetchUsers, fetchDevices, fetchDeviceStats, fetchDeviceModels, fetchPlugins, fetchPluginStats, fetchFirmwareVersions, fetchFirmwareStats, fetchFirmwareMode]);
+  }, [fetchSystemStatus, fetchUsers, fetchDevices, fetchDeviceStats, fetchDeviceModels, fetchPlugins, fetchPluginStats, fetchExternalPlugins, fetchFirmwareVersions, fetchFirmwareStats, fetchFirmwareMode]);
   
   // Polling for active backup jobs
   useEffect(() => {
@@ -2801,6 +2834,84 @@ export function AdminPage() {
                               </TableCell>
                             </TableRow>
                           ))}
+                        </TableBody>
+                      </Table>
+                    </CardContent>
+                  </Card>
+                  
+                  {/* External Plugins Section */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>External Plugins ({externalPlugins.length})</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Name</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead>Version</TableHead>
+                            <TableHead className="hidden md:table-cell">Instances</TableHead>
+                            <TableHead className="hidden lg:table-cell">Updated</TableHead>
+                            <TableHead className="text-right">Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {externalPlugins.map((plugin) => (
+                            <TableRow key={plugin.id}>
+                              <TableCell>
+                                <div className="flex flex-col">
+                                  <span className="font-medium">{plugin.name}</span>
+                                  <span className="text-sm text-muted-foreground">{plugin.description}</span>
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <Badge 
+                                  variant={plugin.status === 'available' ? 'outline' : 'secondary'}
+                                  className={plugin.status === 'unavailable' ? 'text-muted-foreground' : ''}
+                                >
+                                  {plugin.status === 'available' ? 'Available' : 
+                                   plugin.status === 'unavailable' ? 'Unavailable' : 'Error'}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>{plugin.version}</TableCell>
+                              <TableCell className="hidden md:table-cell">
+                                <div className="flex items-center gap-2">
+                                  <span>{plugin.instance_count}</span>
+                                  {plugin.instance_count > 0 && plugin.status === 'unavailable' && (
+                                    <Badge variant="destructive" className="text-xs">
+                                      Affected
+                                    </Badge>
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell className="hidden lg:table-cell">
+                                {new Date(plugin.updated_at).toLocaleDateString()}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                {plugin.status === 'unavailable' && (
+                                  <Button
+                                    size="sm"
+                                    variant="destructive"
+                                    onClick={() => {
+                                      if (confirm(`Delete "${plugin.name}" and all ${plugin.instance_count} user instances?`)) {
+                                        deleteExternalPlugin(plugin.id);
+                                      }
+                                    }}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                          {externalPlugins.length === 0 && (
+                            <TableRow>
+                              <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                                No external plugins found
+                              </TableCell>
+                            </TableRow>
+                          )}
                         </TableBody>
                       </Table>
                     </CardContent>

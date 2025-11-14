@@ -92,6 +92,30 @@ func (s *UserSession) BeforeCreate(tx *gorm.DB) error {
 	return nil
 }
 
+// UserOAuthToken represents stored OAuth tokens for external service integrations
+type UserOAuthToken struct {
+	ID           uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
+	UserID       uuid.UUID `gorm:"type:uuid;not null;index" json:"user_id"`
+	Provider     string    `gorm:"size:50;not null" json:"provider"`         // "google", "todoist", etc.
+	ServiceName  string    `gorm:"size:50;not null" json:"service_name"`     // "google_analytics", "youtube_analytics"
+	AccessToken  string    `gorm:"type:text" json:"-"`                       // Access token for providers that use long-lived tokens, never expose in JSON
+	RefreshToken string    `gorm:"type:text;not null" json:"-"`              // Encrypted refresh token, never expose in JSON
+	Scopes       string    `gorm:"type:text" json:"scopes,omitempty"`        // JSON array of granted scopes
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+
+	// Association
+	User User `gorm:"foreignKey:UserID" json:"-"`
+}
+
+// BeforeCreate sets UUID if not already set
+func (t *UserOAuthToken) BeforeCreate(tx *gorm.DB) error {
+	if t.ID == uuid.Nil {
+		t.ID = uuid.New()
+	}
+	return nil
+}
+
 // SystemSetting represents system-wide configuration
 type SystemSetting struct {
 	Key         string     `gorm:"primaryKey" json:"key"`
@@ -307,6 +331,7 @@ type PlaylistItem struct {
 	IsVisible        bool      `gorm:"default:true" json:"is_visible"`
 	Importance       bool      `gorm:"default:false" json:"importance"` // false=normal, true=important
 	DurationOverride *int      `json:"duration_override,omitempty"`     // override default refresh rate
+	SkipDisplay      bool      `gorm:"default:false" json:"skip_display"` // true if plugin requested to skip display
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`
 
@@ -347,20 +372,21 @@ func (s *Schedule) BeforeCreate(tx *gorm.DB) error {
 	return nil
 }
 
-// PluginDefinition represents a unified plugin definition (system, private, public, or mashup)
+// PluginDefinition represents a unified plugin definition (system, private, public, mashup, or external)
 type PluginDefinition struct {
-	ID         string     `gorm:"size:255;primaryKey" json:"id"`        // Plugin type for system plugins, UUID string for private/public
-	PluginType string     `gorm:"size:20;not null" json:"plugin_type"` // "system", "private", "public", "mashup"
-	OwnerID    *uuid.UUID `gorm:"type:uuid;index" json:"owner_id"`     // NULL for system plugins, user_id for private/public
+	ID         string     `gorm:"size:255;primaryKey" json:"id"`        // Plugin type for system/external plugins, UUID string for private/public
+	PluginType string     `gorm:"size:20;not null" json:"plugin_type"` // "system", "private", "public", "mashup", "external"
+	OwnerID    *uuid.UUID `gorm:"type:uuid;index" json:"owner_id"`     // NULL for system/external plugins, user_id for private/public
 	
 	// Core fields
-	Identifier         string `gorm:"size:255;not null" json:"identifier"`          // Type string for system, UUID for private
+	Identifier         string `gorm:"size:255;not null" json:"identifier"`          // Type string for system/external, UUID for private
 	Name              string `gorm:"size:255;not null" json:"name"`
 	Description       string `gorm:"type:text" json:"description"`
 	Version           string `gorm:"size:50" json:"version"`
 	Author            string `gorm:"size:255" json:"author"`
 	ConfigSchema      string `gorm:"type:text" json:"config_schema"` // JSON schema for settings
 	RequiresProcessing bool   `gorm:"default:false" json:"requires_processing"`
+	Status            string `gorm:"size:20;default:'available'" json:"status"` // "available", "unavailable", "error"
 	
 	// Private/Public plugin specific fields (NULL for system plugins)
 	MarkupFull      *string        `gorm:"type:text" json:"markup_full,omitempty"`
@@ -371,6 +397,7 @@ type PluginDefinition struct {
 	DataStrategy    *string        `gorm:"size:50" json:"data_strategy,omitempty"`      // webhook, polling, static
 	PollingConfig   datatypes.JSON `json:"polling_config,omitempty"`   // URLs, headers, body, intervals, etc.
 	FormFields      datatypes.JSON `json:"form_fields"`                // YAML form field definitions converted to JSON schema
+	OAuthConfig     datatypes.JSON `json:"oauth_config,omitempty"`     // OAuth provider configuration for external service integration
 	
 	// Mashup specific fields (NULL for non-mashup plugins)
 	IsMashup     bool           `gorm:"default:false" json:"is_mashup"`           // True for mashup plugin definitions
@@ -560,6 +587,7 @@ type RenderQueue struct {
 	Attempts         int        `gorm:"default:0" json:"attempts"`
 	LastAttempt      *time.Time `json:"last_attempt,omitempty"`
 	ErrorMessage     string     `gorm:"type:text" json:"error_message,omitempty"`
+	RenderDurationMs int        `gorm:"default:0" json:"render_duration_ms"` // Render duration in milliseconds
 	CreatedAt        time.Time  `json:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at"`
 
@@ -600,6 +628,7 @@ func GetAllModels() []interface{} {
 		&User{},
 		&APIKey{},
 		&UserSession{},
+		&UserOAuthToken{}, // OAuth tokens for external services
 		&SystemSetting{},
 		&LoginAttempt{},
 		&BackupJob{},

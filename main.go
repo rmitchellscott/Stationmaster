@@ -4,6 +4,7 @@ import (
 	// standard library
 	"context"
 	"embed"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
@@ -42,6 +43,7 @@ import (
 	// Plugin imports for auto-registration
 	_ "github.com/rmitchellscott/stationmaster/internal/plugins/alias"
 	_ "github.com/rmitchellscott/stationmaster/internal/plugins/core_proxy"
+	_ "github.com/rmitchellscott/stationmaster/internal/plugins/external"  // Register external plugin factory
 	_ "github.com/rmitchellscott/stationmaster/internal/plugins/image_display"
 	_ "github.com/rmitchellscott/stationmaster/internal/plugins/redirect"
 	_ "github.com/rmitchellscott/stationmaster/internal/plugins/screenshot"
@@ -53,6 +55,10 @@ import (
 //go:embed ui/dist/assets
 var embeddedUI embed.FS
 
+//go:embed assets/trmnl/*
+var embeddedTRNMLAssets embed.FS
+
+
 // Global render poller for handlers to schedule renders
 var globalRenderPoller *pollers.RenderPoller
 
@@ -63,7 +69,7 @@ func ScheduleRender(pluginInstanceIDs []uuid.UUID) {
 		return
 	}
 	
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	
 	for _, instanceID := range pluginInstanceIDs {
@@ -128,6 +134,27 @@ func main() {
 	
 	// Initialize plugin factory
 	plugins.InitPluginFactory(db)
+	
+	// Initialize external plugin scanner
+	pluginScanner := plugins.NewPluginScannerService(db)
+	
+	// Initialize OAuth manager for external service integration
+	auth.InitOAuthManager()
+	
+	// Perform initial plugin scan
+	scanCtx, scanCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	if err := pluginScanner.ScanAndRegisterPlugins(scanCtx); err != nil {
+		logging.WarnWithComponent(logging.ComponentStartup, "Initial external plugin scan failed", "error", err)
+	}
+	scanCancel()
+	
+	// Register OAuth providers from plugin discovery
+	if err := registerOAuthProvidersFromPlugins(pluginScanner); err != nil {
+		logging.WarnWithComponent(logging.ComponentStartup, "Failed to register OAuth providers", "error", err)
+	}
+	
+	// Start periodic plugin scanning (every 5 minutes)
+	pluginScanner.StartPeriodicScanning(5 * time.Minute)
 	
 	// Initialize plugin processor with database
 	if err := trmnl.InitPluginProcessor(db); err != nil {
@@ -366,9 +393,25 @@ func main() {
 	router.POST("/api/auth/password-reset", auth.PasswordResetHandler)
 	router.POST("/api/auth/password-reset/confirm", auth.PasswordResetConfirmHandler)
 
+	// OAuth callback route - must be outside protected group since it's the return from OAuth provider
+	router.GET("/api/oauth/:provider/callback", auth.OAuthCallbackHandler) // No auth required for callback
+
 	// Protected routes (always require authentication)
 	protected := router.Group("/api")
 	protected.Use(auth.MultiUserAuthMiddleware())
+
+	// Add route debugging middleware for plugin routes
+	protected.Use(func(c *gin.Context) {
+		if strings.HasPrefix(c.Request.URL.Path, "/api/plugins/") {
+			logging.Info("[ROUTE_DEBUG] Request for plugin route",
+				"method", c.Request.Method,
+				"path", c.Request.URL.Path,
+				"full_url", c.Request.URL.String(),
+				"route_params", c.Params,
+				"handler_name", c.HandlerName())
+		}
+		c.Next()
+	})
 
 	// User management endpoints (admin only)
 	users := protected.Group("/users")
@@ -393,6 +436,14 @@ func main() {
 		profile.POST("/password", auth.UpdatePasswordHandler)  // POST /api/profile/password - update password
 		profile.GET("/stats", auth.GetCurrentUserStatsHandler) // GET /api/profile/stats - get current user stats
 		profile.DELETE("", auth.DeleteCurrentUserHandler)      // DELETE /api/profile - delete current user account
+	}
+
+	// OAuth endpoints for external service integration
+	oauth := protected.Group("/oauth")
+	{
+		oauth.GET("/:provider/auth", auth.OAuthAuthHandler)         // GET /api/oauth/:provider/auth - initiate OAuth flow (requires auth)
+		oauth.GET("/:provider/status", auth.OAuthStatusHandler)     // GET /api/oauth/:provider/status - check connection status
+		oauth.DELETE("/:provider/disconnect", auth.OAuthDisconnectHandler) // DELETE /api/oauth/:provider/disconnect - disconnect provider
 	}
 
 	// API key management endpoints
@@ -457,6 +508,10 @@ func main() {
 		// Manual polling endpoints
 		admin.POST("/firmware/poll", handlers.TriggerFirmwarePollHandler) // POST /api/admin/firmware/poll - trigger manual firmware poll
 		admin.POST("/models/poll", handlers.TriggerModelPollHandler)      // POST /api/admin/models/poll - trigger manual model poll
+		
+		// External plugin management endpoints
+		admin.GET("/external-plugins", handlers.AdminGetExternalPluginsHandler)       // GET /api/admin/external-plugins - list external plugins for admin
+		admin.DELETE("/external-plugins/:id", handlers.AdminDeleteExternalPluginHandler) // DELETE /api/admin/external-plugins/:id - delete external plugin
 	}
 
 	// Device management endpoints
@@ -503,6 +558,10 @@ func main() {
 
 	protected.GET("/plugin-instances", handlers.GetPluginInstancesHandler) // GET /api/plugin-instances - list user's plugin instances
 	protected.POST("/plugin-instances", handlers.CreatePluginInstanceFromDefinitionHandler) // POST /api/plugin-instances - create plugin instance from definition
+	
+	// Dynamic plugin options endpoint
+	logging.Info("[ROUTE_SETUP] Registering dynamic options route", "path", "/api/plugins/:plugin_identifier/options/:field_name", "method", "POST")
+	protected.POST("/plugins/:plugin_identifier/options/:field_name", handlers.GetPluginDynamicOptionsHandler) // POST /api/plugins/:plugin_identifier/options/:field_name - get dynamic field options
 	
 	// Static routes must come before parameterized routes
 	protected.GET("/plugin-instances/private", handlers.GetUserPrivatePluginInstancesHandler) // GET /api/plugin-instances/private - get user's private plugin instances for mashup children
@@ -559,6 +618,83 @@ func main() {
 		if strings.HasPrefix(filepath, "/") {
 			filepath = filepath[1:]
 		}
+		
+		// First try to serve from embedded TRMNL assets
+		embedPath := "assets/trmnl/images/" + filepath
+		if data, err := embeddedTRNMLAssets.ReadFile(embedPath); err == nil {
+			// Determine content type from file extension
+			contentType := "application/octet-stream"
+			if strings.HasSuffix(strings.ToLower(filepath), ".png") {
+				contentType = "image/png"
+			} else if strings.HasSuffix(strings.ToLower(filepath), ".jpg") || strings.HasSuffix(strings.ToLower(filepath), ".jpeg") {
+				contentType = "image/jpeg"
+			} else if strings.HasSuffix(strings.ToLower(filepath), ".gif") {
+				contentType = "image/gif"
+			} else if strings.HasSuffix(strings.ToLower(filepath), ".svg") {
+				contentType = "image/svg+xml"
+			}
+			
+			c.Header("Content-Type", contentType)
+			c.Header("Cache-Control", "public, max-age=31536000") // Cache for 1 year
+			c.Data(http.StatusOK, contentType, data)
+			return
+		}
+		
+		// Check if this is a plugin image request that should be proxied to Ruby app
+		if strings.HasPrefix(filepath, "plugins/") {
+			externalPluginServices := config.Get("EXTERNAL_PLUGIN_SERVICES", "")
+			if externalPluginServices != "" {
+				// Proxy to Ruby app for plugin images
+				proxyURL := externalPluginServices + "/images/" + filepath
+				
+				// Create HTTP client with timeout
+				client := &http.Client{
+					Timeout: 10 * time.Second,
+				}
+				
+				// Create request to Ruby app
+				req, err := http.NewRequest("GET", proxyURL, nil)
+				if err != nil {
+					logging.Warn("[IMAGE_PROXY] Failed to create proxy request", "url", proxyURL, "error", err)
+					c.Status(http.StatusInternalServerError)
+					return
+				}
+				
+				// Forward relevant headers from original request
+				req.Header.Set("User-Agent", c.GetHeader("User-Agent"))
+				if acceptHeader := c.GetHeader("Accept"); acceptHeader != "" {
+					req.Header.Set("Accept", acceptHeader)
+				}
+				
+				// Make request to Ruby app
+				resp, err := client.Do(req)
+				if err != nil {
+					logging.Warn("[IMAGE_PROXY] Failed to proxy image request", "url", proxyURL, "error", err)
+					c.Status(http.StatusBadGateway)
+					return
+				}
+				defer resp.Body.Close()
+				
+				// Forward status code
+				c.Status(resp.StatusCode)
+				
+				// Forward response headers
+				for key, values := range resp.Header {
+					for _, value := range values {
+						c.Header(key, value)
+					}
+				}
+				
+				// Stream response body
+				_, err = io.Copy(c.Writer, resp.Body)
+				if err != nil {
+					logging.Warn("[IMAGE_PROXY] Failed to stream proxy response", "url", proxyURL, "error", err)
+				}
+				return
+			}
+		}
+		
+		// Fallback to filesystem images
 		c.File("./images/" + filepath)
 	})
 	router.GET("/static/rendered/*filepath", func(c *gin.Context) {
@@ -568,6 +704,72 @@ func main() {
 			filepath = filepath[1:]
 		}
 		c.File("./static/rendered/" + filepath)
+	})
+
+	// TRMNL assets (no authentication required - used by browserless)
+	router.GET("/assets/trmnl/*filepath", func(c *gin.Context) {
+		filepath := c.Param("filepath")
+		// Remove leading slash from filepath
+		if strings.HasPrefix(filepath, "/") {
+			filepath = filepath[1:]
+		}
+		
+		// Serve from embedded assets
+		assetPath := "assets/trmnl/" + filepath
+		data, err := embeddedTRNMLAssets.ReadFile(assetPath)
+		if err != nil {
+			c.Status(http.StatusNotFound)
+			return
+		}
+		
+		// Set appropriate content type based on file extension
+		if strings.HasSuffix(filepath, ".css") {
+			c.Header("Content-Type", "text/css")
+		} else if strings.HasSuffix(filepath, ".js") {
+			c.Header("Content-Type", "application/javascript")
+		} else if strings.HasSuffix(filepath, ".ttf") {
+			c.Header("Content-Type", "font/ttf")
+		} else if strings.HasSuffix(filepath, ".woff") {
+			c.Header("Content-Type", "font/woff")
+		} else if strings.HasSuffix(filepath, ".woff2") {
+			c.Header("Content-Type", "font/woff2")
+		}
+		
+		// Set cache headers for assets
+		c.Header("Cache-Control", "public, max-age=31536000") // 1 year
+		
+		c.Data(http.StatusOK, c.GetHeader("Content-Type"), data)
+	})
+
+	// TRMNL fonts at expected /fonts/ path (no authentication required)
+	router.GET("/fonts/*filepath", func(c *gin.Context) {
+		filepath := c.Param("filepath")
+		// Remove leading slash from filepath
+		if strings.HasPrefix(filepath, "/") {
+			filepath = filepath[1:]
+		}
+		
+		// Serve TRMNL fonts from embedded assets
+		assetPath := "assets/trmnl/fonts/" + filepath
+		data, err := embeddedTRNMLAssets.ReadFile(assetPath)
+		if err != nil {
+			c.Status(http.StatusNotFound)
+			return
+		}
+		
+		// Set appropriate content type for fonts
+		if strings.HasSuffix(filepath, ".ttf") {
+			c.Header("Content-Type", "font/ttf")
+		} else if strings.HasSuffix(filepath, ".woff") {
+			c.Header("Content-Type", "font/woff")
+		} else if strings.HasSuffix(filepath, ".woff2") {
+			c.Header("Content-Type", "font/woff2")
+		}
+		
+		// Set cache headers for fonts
+		c.Header("Cache-Control", "public, max-age=31536000") // 1 year
+		
+		c.Data(http.StatusOK, c.GetHeader("Content-Type"), data)
 	})
 
 	// Serve UI
@@ -651,4 +853,51 @@ func main() {
 	}
 
 	logging.Info("[SHUTDOWN] Server and pollers stopped")
+}
+
+// registerOAuthProvidersFromPlugins registers OAuth providers based on plugin discovery
+func registerOAuthProvidersFromPlugins(scanner *plugins.PluginScannerService) error {
+	// Get all registered plugin definitions that have OAuth configs
+	pluginDefinitions, err := scanner.GetAvailablePluginDefinitions()
+	if err != nil {
+		return fmt.Errorf("failed to get plugin definitions: %w", err)
+	}
+	
+	logging.InfoWithComponent(logging.ComponentStartup, "Checking plugins for OAuth configs", "total_plugins", len(pluginDefinitions))
+	
+	for _, plugin := range pluginDefinitions {
+		if len(plugin.OAuthConfig) > 0 {
+			logging.InfoWithComponent(logging.ComponentStartup, "Found plugin with OAuth config", "plugin", plugin.Identifier, "oauth_config_length", len(plugin.OAuthConfig))
+			
+			// Parse OAuth config from JSON
+			var oauthData struct {
+				Provider     string   `json:"provider"`
+				AuthURL      string   `json:"auth_url"`
+				TokenURL     string   `json:"token_url"`
+				Scopes       []string `json:"scopes"`
+				ClientID     string   `json:"client_id"`
+				ClientSecret string   `json:"client_secret"`
+			}
+			
+			if err := json.Unmarshal(plugin.OAuthConfig, &oauthData); err != nil {
+				logging.WarnWithComponent(logging.ComponentStartup, 
+					"Failed to parse OAuth config for plugin", "plugin", plugin.Identifier, "error", err, "raw_config", string(plugin.OAuthConfig))
+				continue
+			}
+			
+			oauthConfig := auth.OAuthProviderConfig{
+				Provider:     oauthData.Provider,
+				AuthURL:      oauthData.AuthURL,
+				TokenURL:     oauthData.TokenURL,
+				Scopes:       oauthData.Scopes,
+				ClientID:     oauthData.ClientID,
+				ClientSecret: oauthData.ClientSecret,
+			}
+			
+			logging.InfoWithComponent(logging.ComponentStartup, "Registering OAuth provider", "provider", oauthData.Provider, "plugin", plugin.Identifier)
+			auth.RegisterOAuthProvider(oauthConfig)
+		}
+	}
+	
+	return nil
 }

@@ -1,0 +1,3 @@
+#!/command/with-contenv sh
+cd /app
+exec ruby /app/scripts/liquid_server.rb

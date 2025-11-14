@@ -133,6 +133,7 @@ func UpdateDeviceHandler(c *gin.Context) {
 		SleepShowScreen         *bool   `json:"sleep_show_screen"`
 		FirmwareUpdateStartTime string  `json:"firmware_update_start_time"`
 		FirmwareUpdateEndTime   string  `json:"firmware_update_end_time"`
+		TargetFirmwareVersion   *string `json:"target_firmware_version"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -277,6 +278,11 @@ func UpdateDeviceHandler(c *gin.Context) {
 		// If empty string is sent, set to default
 		device.FirmwareUpdateEndTime = "23:59"
 		logging.Debug("[DEVICE UPDATE] Set firmware end time to default", "time", "23:59")
+	}
+
+	if req.TargetFirmwareVersion != nil {
+		device.TargetFirmwareVersion = *req.TargetFirmwareVersion
+		logging.Debug("[DEVICE UPDATE] Set target firmware version", "version", device.TargetFirmwareVersion)
 	}
 
 	err = deviceService.UpdateDevice(device)

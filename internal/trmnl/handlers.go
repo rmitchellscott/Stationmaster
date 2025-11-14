@@ -272,12 +272,20 @@ func DisplayHandler(c *gin.Context) {
 		modelHeader:     modelHeader,
 		deviceID:        device.ID,
 	}
-	
+
+	// Update device struct in memory immediately with fresh values from check-in
+	// This ensures firmware update checks and low battery checks use current data
+	if firmwareVersion != "" {
+		device.FirmwareVersion = firmwareVersion
+	}
+	device.BatteryVoltage = batteryVoltage
+	device.RSSI = rssi
+
 	// Capture data for background operations
 	backgroundData.deviceID = device.ID
 	backgroundData.accessToken = accessToken
 	backgroundData.statusValues = statusValues
-	
+
 
 	// Get current playlist items for this device
 	playlistService := database.NewPlaylistService(db)
@@ -749,14 +757,17 @@ func checkFirmwareUpdate(c *gin.Context, device *database.Device, userTimezone s
 		ResetFirmware:  false,
 	}
 
+	// 0. Never update firmware for unclaimed devices
+	if !device.IsClaimed {
+		return defaultResponse
+	}
+
 	// 1. Check if updates are allowed for this device
 	if !device.AllowFirmwareUpdates {
 		return defaultResponse
 	}
 
 	// 2. Check if we're in the firmware update schedule window
-	// Use user timezone passed from caller (eliminates duplicate lookup)
-	
 	if !isInFirmwareUpdatePeriod(device, userTimezone) {
 		return defaultResponse
 	}
@@ -764,47 +775,77 @@ func checkFirmwareUpdate(c *gin.Context, device *database.Device, userTimezone s
 	db := database.GetDB()
 	firmwareService := database.NewFirmwareService(db)
 
-	// 3. Get latest firmware version
-	latestFirmware, err := firmwareService.GetLatestFirmwareVersion()
-	if err != nil {
-		return defaultResponse
+	// 3. Determine target firmware version
+	var targetVersion string
+	if device.TargetFirmwareVersion != "" && device.TargetFirmwareVersion != "latest" {
+		targetVersion = device.TargetFirmwareVersion
+	} else {
+		latestFirmware, err := firmwareService.GetLatestFirmwareVersion()
+		if err != nil {
+			return defaultResponse
+		}
+		targetVersion = latestFirmware.Version
 	}
 
 	// 4. Compare with device's current version
-	if device.FirmwareVersion != "" && device.FirmwareVersion >= latestFirmware.Version {
+	if device.FirmwareVersion == targetVersion {
 		return defaultResponse
 	}
 
-	// 5. Check if firmware is available based on current mode
-	firmwareMode := os.Getenv("FIRMWARE_MODE")
-	if firmwareMode == "" {
-		firmwareMode = "proxy" // Default to proxy mode
-	}
+	// 5. Get the target firmware to check availability
+	var targetFirmware *database.FirmwareVersion
+	var err error
 
-	if firmwareMode == "proxy" {
-		// In proxy mode, firmware is available if we have a download URL
-		if latestFirmware.DownloadURL == "" {
+	if device.TargetFirmwareVersion != "" && device.TargetFirmwareVersion != "latest" {
+		targetFirmware, err = firmwareService.GetFirmwareVersionByVersion(targetVersion)
+		if err != nil {
+			logging.Warn("[FIRMWARE UPDATE] Target firmware version not found", "target_version", targetVersion, "mac_address", device.MacAddress)
 			return defaultResponse
 		}
 	} else {
-		// In download mode, firmware must be downloaded locally
-		if !latestFirmware.IsDownloaded || latestFirmware.FilePath == "" {
+		targetFirmware, err = firmwareService.GetLatestFirmwareVersion()
+		if err != nil {
 			return defaultResponse
 		}
 	}
 
-	// 6. Generate firmware URL using request-based host return
+	// 6. Check if firmware is available based on current mode
+	firmwareMode := os.Getenv("FIRMWARE_MODE")
+	if firmwareMode == "" {
+		firmwareMode = "proxy"
+	}
+
+	if firmwareMode == "proxy" {
+		if targetFirmware.DownloadURL == "" {
+			return defaultResponse
+		}
+	} else {
+		if !targetFirmware.IsDownloaded || targetFirmware.FilePath == "" {
+			return defaultResponse
+		}
+	}
+
+	// 7. Generate firmware URL using request-based host
 	baseURL := utils.BaseURLFromRequest(c.Request)
-	firmwareURL := fmt.Sprintf("%s/files/firmware/firmware_%s.bin", baseURL, latestFirmware.Version)
-	
+	firmwareURL := fmt.Sprintf("%s/files/firmware/firmware_%s.bin", baseURL, targetFirmware.Version)
+
 	logging.Debug("[FIRMWARE UPDATE] Using request-based URL", "url", firmwareURL)
 
-	logging.Info("[FIRMWARE UPDATE] Device will be updated", "mac_address", device.MacAddress, "current_version", device.FirmwareVersion, "new_version", latestFirmware.Version)
+	updateType := "upgrade"
+	if device.FirmwareVersion > targetVersion {
+		updateType = "downgrade"
+	}
+
+	logging.Info("[FIRMWARE UPDATE] Device will be updated",
+		"mac_address", device.MacAddress,
+		"current_version", device.FirmwareVersion,
+		"target_version", targetVersion,
+		"update_type", updateType)
 
 	return FirmwareUpdateResponse{
 		UpdateFirmware: true,
 		FirmwareURL:    firmwareURL,
-		ResetFirmware:  false, // Usually false unless doing a factory reset
+		ResetFirmware:  false,
 	}
 }
 

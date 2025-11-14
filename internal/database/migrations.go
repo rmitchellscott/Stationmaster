@@ -990,6 +990,46 @@ func RunMigrations(logPrefix string) error {
 				return nil
 			},
 		},
+		{
+			ID: "20251113_add_target_firmware_version_and_change_firmware_updates_default",
+			Migrate: func(tx *gorm.DB) error {
+				logging.Info("[MIGRATION] Adding target_firmware_version column and changing allow_firmware_updates default to false")
+
+				if !tx.Migrator().HasColumn(&Device{}, "target_firmware_version") {
+					if err := tx.Exec("ALTER TABLE devices ADD COLUMN target_firmware_version VARCHAR(50)").Error; err != nil {
+						return fmt.Errorf("failed to add target_firmware_version column: %w", err)
+					}
+					logging.Info("[MIGRATION] Added target_firmware_version column")
+				} else {
+					logging.Info("[MIGRATION] target_firmware_version column already exists")
+				}
+
+				if err := tx.Exec("ALTER TABLE devices ALTER COLUMN allow_firmware_updates SET DEFAULT false").Error; err != nil {
+					return fmt.Errorf("failed to change allow_firmware_updates default: %w", err)
+				}
+				logging.Info("[MIGRATION] Changed allow_firmware_updates default to false for new devices")
+
+				logging.Info("[MIGRATION] Successfully added target firmware version support")
+				return nil
+			},
+			Rollback: func(tx *gorm.DB) error {
+				logging.Info("[MIGRATION] Rolling back target firmware version changes")
+
+				if tx.Migrator().HasColumn(&Device{}, "target_firmware_version") {
+					if err := tx.Exec("ALTER TABLE devices DROP COLUMN target_firmware_version").Error; err != nil {
+						return fmt.Errorf("failed to drop target_firmware_version column: %w", err)
+					}
+					logging.Info("[MIGRATION] Dropped target_firmware_version column")
+				}
+
+				if err := tx.Exec("ALTER TABLE devices ALTER COLUMN allow_firmware_updates SET DEFAULT true").Error; err != nil {
+					return fmt.Errorf("failed to restore allow_firmware_updates default: %w", err)
+				}
+				logging.Info("[MIGRATION] Restored allow_firmware_updates default to true")
+
+				return nil
+			},
+		},
 	}
 
 	// Create migrator with our migrations

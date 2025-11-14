@@ -235,10 +235,11 @@ type Device struct {
 	APIKey                  string     `gorm:"size:255;not null;index" json:"api_key"`
 	IsClaimed               bool       `gorm:"default:false" json:"is_claimed"`
 	FirmwareVersion         string     `gorm:"size:50" json:"firmware_version,omitempty"`
+	TargetFirmwareVersion   string     `gorm:"size:50" json:"target_firmware_version,omitempty"`
 	BatteryVoltage          float64    `json:"battery_voltage,omitempty"`
 	RSSI                    int        `json:"rssi,omitempty"`
 	RefreshRate             int        `gorm:"default:1800" json:"refresh_rate"` // seconds
-	AllowFirmwareUpdates    bool       `gorm:"default:true" json:"allow_firmware_updates"`
+	AllowFirmwareUpdates    bool       `gorm:"default:false" json:"allow_firmware_updates"`
 	LastSeen                *time.Time `json:"last_seen,omitempty"`
 	LastPlaylistItemID      *uuid.UUID `gorm:"type:uuid;references:playlist_items(id)" json:"last_playlist_item_id,omitempty"` // Track last shown playlist item by UUID
 	IsActive                bool       `gorm:"default:true" json:"is_active"`

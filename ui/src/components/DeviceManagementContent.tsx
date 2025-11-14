@@ -105,6 +105,7 @@ interface Device {
   api_key: string;
   is_claimed: boolean;
   firmware_version?: string;
+  target_firmware_version?: string;
   battery_voltage?: number;
   rssi?: number;
   refresh_rate: number;
@@ -131,6 +132,15 @@ interface DeviceLog {
   log_data: string;
   timestamp: string;
   created_at: string;
+}
+
+interface FirmwareVersion {
+  id: string;
+  version: string;
+  download_url: string;
+  is_latest: boolean;
+  is_downloaded: boolean;
+  released_at: string;
 }
 
 // Sort types for devices table
@@ -198,6 +208,10 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
   // Firmware update schedule settings
   const [editFirmwareUpdateStartTime, setEditFirmwareUpdateStartTime] = useState("00:00");
   const [editFirmwareUpdateEndTime, setEditFirmwareUpdateEndTime] = useState("23:59");
+  const [editTargetFirmwareVersion, setEditTargetFirmwareVersion] = useState<string>("latest");
+
+  // Firmware versions for dropdown
+  const [firmwareVersions, setFirmwareVersions] = useState<FirmwareVersion[]>([]);
 
   // Device deletion
   const [deleteDevice, setDeleteDevice] = useState<Device | null>(null);
@@ -372,13 +386,32 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
         setDeviceModels(data.models || []);
       } else {
         console.error("Failed to fetch device models");
-        setDeviceModels([]); // Set empty array on error
+        setDeviceModels([]);
       }
     } catch (error) {
       console.error("Error fetching device models:", error);
-      setDeviceModels([]); // Set empty array on error
+      setDeviceModels([]);
     } finally {
       setModelsLoading(false);
+    }
+  };
+
+  const fetchFirmwareVersions = async () => {
+    try {
+      const response = await fetch("/api/admin/firmware/versions", {
+        credentials: "include",
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setFirmwareVersions(data.firmware_versions || []);
+      } else {
+        console.error("Failed to fetch firmware versions");
+        setFirmwareVersions([]);
+      }
+    } catch (error) {
+      console.error("Error fetching firmware versions:", error);
+      setFirmwareVersions([]);
     }
   };
 
@@ -408,6 +441,7 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
         sleep_show_screen: editSleepShowScreen,
         firmware_update_start_time: editFirmwareUpdateStartTime,
         firmware_update_end_time: editFirmwareUpdateEndTime,
+        target_firmware_version: editTargetFirmwareVersion === "latest" ? null : editTargetFirmwareVersion,
       };
 
 
@@ -527,14 +561,22 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
       // Initialize firmware update schedule settings
       setEditFirmwareUpdateStartTime(device.firmware_update_start_time || "00:00");
       setEditFirmwareUpdateEndTime(device.firmware_update_end_time || "23:59");
-      
+      setEditTargetFirmwareVersion(device.target_firmware_version || "latest");
+
       // Clear any previous dialog errors
       setEditDialogError(null);
-      
+
       // Fetch device models when opening edit dialog
       if (deviceModels.length === 0) {
         fetchDeviceModels().catch(error => {
           console.error("Failed to fetch device models:", error);
+        });
+      }
+
+      // Fetch firmware versions when opening edit dialog
+      if (firmwareVersions.length === 0) {
+        fetchFirmwareVersions().catch(error => {
+          console.error("Failed to fetch firmware versions:", error);
         });
       }
     } catch (error) {
@@ -556,7 +598,8 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
       editSleepEndTime !== (editDevice.sleep_end_time || "06:00") ||
       editSleepShowScreen !== (editDevice.sleep_show_screen ?? true) ||
       editFirmwareUpdateStartTime !== (editDevice.firmware_update_start_time || "00:00") ||
-      editFirmwareUpdateEndTime !== (editDevice.firmware_update_end_time || "23:59")
+      editFirmwareUpdateEndTime !== (editDevice.firmware_update_end_time || "23:59") ||
+      editTargetFirmwareVersion !== (editDevice.target_firmware_version || "latest")
     );
   };
 
@@ -1349,6 +1392,28 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
                           className="mt-1"
                         />
                       </div>
+                    </div>
+                    <div>
+                      <Label htmlFor="edit-target-firmware" className="text-sm">Target Firmware Version</Label>
+                      <Select
+                        value={editTargetFirmwareVersion}
+                        onValueChange={setEditTargetFirmwareVersion}
+                      >
+                        <SelectTrigger id="edit-target-firmware" className="mt-1">
+                          <SelectValue placeholder="Latest (Auto)" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="latest">Latest (Auto)</SelectItem>
+                          {firmwareVersions.map((fw) => (
+                            <SelectItem key={fw.id} value={fw.version}>
+                              {fw.version} {fw.is_latest && "(Latest)"}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Pin device to a specific firmware version or keep it on latest
+                      </p>
                     </div>
                   </div>
                 )}

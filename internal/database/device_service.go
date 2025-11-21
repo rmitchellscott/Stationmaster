@@ -418,10 +418,28 @@ func (ds *DeviceService) UnclaimDevice(deviceID uuid.UUID) error {
 	})
 }
 
-// UnlinkDevice removes a device from a user account (admin operation)
 func (ds *DeviceService) UnlinkDevice(deviceID uuid.UUID) error {
 	return ds.db.Transaction(func(tx *gorm.DB) error {
-		// Delete device will cascade to playlists, playlist items, and schedules
+		if err := tx.Where("device_id = ?", deviceID).Delete(&Playlist{}).Error; err != nil {
+			return fmt.Errorf("failed to delete playlists: %w", err)
+		}
+
+		updates := map[string]interface{}{
+			"user_id":    nil,
+			"is_claimed": false,
+			"name":       "",
+		}
+
+		if err := tx.Model(&Device{}).Where("id = ?", deviceID).Updates(updates).Error; err != nil {
+			return fmt.Errorf("failed to unlink device: %w", err)
+		}
+
+		return nil
+	})
+}
+
+func (ds *DeviceService) AdminDeleteDevice(deviceID uuid.UUID) error {
+	return ds.db.Transaction(func(tx *gorm.DB) error {
 		return tx.Delete(&Device{}, "id = ?", deviceID).Error
 	})
 }

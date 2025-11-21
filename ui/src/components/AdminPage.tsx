@@ -380,6 +380,9 @@ export function AdminPage() {
   const [deviceModels, setDeviceModels] = useState<DeviceModel[]>([]);
   const [viewDevice, setViewDevice] = useState<Device | null>(null);
   const [unlinkingDevice, setUnlinkingDevice] = useState<string | null>(null);
+  const [deletingDevice, setDeletingDevice] = useState<string | null>(null);
+  const [unlinkConfirmDevice, setUnlinkConfirmDevice] = useState<Device | null>(null);
+  const [deleteConfirmDevice, setDeleteConfirmDevice] = useState<Device | null>(null);
   const [showDeviceModels, setShowDeviceModels] = useState(false);
   
   // Backup/restore state
@@ -1356,6 +1359,41 @@ export function AdminPage() {
     } finally {
       setUnlinkingDevice(null);
     }
+  };
+
+  const deleteDevice = async (deviceId: string) => {
+    try {
+      setDeletingDevice(deviceId);
+      setError(null);
+      const response = await fetch(`/api/admin/devices/${deviceId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (response.ok) {
+        await fetchDevices();
+        await fetchDeviceStats();
+        setViewDevice(null);
+      } else {
+        const errorData = await response.json();
+        setError(errorData.error || "Failed to delete device");
+      }
+    } catch (error) {
+      setError("Network error occurred");
+    } finally {
+      setDeletingDevice(null);
+    }
+  };
+
+  const confirmUnlink = async () => {
+    if (!unlinkConfirmDevice) return;
+    await unlinkDevice(unlinkConfirmDevice.id);
+    setUnlinkConfirmDevice(null);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteConfirmDevice) return;
+    await deleteDevice(deleteConfirmDevice.id);
+    setDeleteConfirmDevice(null);
   };
 
   // Plugin management functions
@@ -2596,17 +2634,30 @@ export function AdminPage() {
                                   >
                                     <Eye className="h-4 w-4" />
                                   </Button>
-                                  {device.is_claimed && (
+                                  {device.is_claimed ? (
                                     <Button
                                       size="sm"
                                       variant="outline"
-                                      onClick={() => unlinkDevice(device.id)}
+                                      onClick={() => setUnlinkConfirmDevice(device)}
                                       disabled={unlinkingDevice === device.id}
                                     >
                                       {unlinkingDevice === device.id ? (
                                         <Loader2 className="h-4 w-4 animate-spin" />
                                       ) : (
                                         <Unlink className="h-4 w-4" />
+                                      )}
+                                    </Button>
+                                  ) : (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => setDeleteConfirmDevice(device)}
+                                      disabled={deletingDevice === device.id}
+                                    >
+                                      {deletingDevice === device.id ? (
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                      ) : (
+                                        <Trash2 className="h-4 w-4" />
                                       )}
                                     </Button>
                                   )}
@@ -4154,6 +4205,58 @@ export function AdminPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={!!unlinkConfirmDevice} onOpenChange={() => setUnlinkConfirmDevice(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-destructive" />
+              Unlink Device
+            </DialogTitle>
+            <DialogDescription>
+              Are you sure you want to unlink "{unlinkConfirmDevice?.name}"? This will remove all associated playlists and make the device available for reclaiming.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setUnlinkConfirmDevice(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmUnlink}
+              disabled={!!unlinkingDevice}
+            >
+              {unlinkingDevice ? "Unlinking..." : "Unlink Device"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!deleteConfirmDevice} onOpenChange={() => setDeleteConfirmDevice(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-destructive" />
+              Delete Device
+            </DialogTitle>
+            <DialogDescription>
+              Are you sure you want to permanently delete this device? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteConfirmDevice(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmDelete}
+              disabled={!!deletingDevice}
+            >
+              {deletingDevice ? "Deleting..." : "Delete Device"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

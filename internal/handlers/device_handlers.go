@@ -293,8 +293,7 @@ func UpdateDeviceHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"device": device})
 }
 
-// DeleteDeviceHandler deletes a device
-func DeleteDeviceHandler(c *gin.Context) {
+func UnclaimDeviceHandler(c *gin.Context) {
 	user, ok := auth.RequireUser(c)
 	if !ok {
 		return
@@ -317,7 +316,6 @@ func DeleteDeviceHandler(c *gin.Context) {
 		return
 	}
 
-	// Verify ownership
 	if device.UserID == nil || *device.UserID != userUUID {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
 		return
@@ -368,6 +366,27 @@ func UnlinkDeviceHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Device unlinked successfully"})
+}
+
+func AdminDeleteDeviceHandler(c *gin.Context) {
+	deviceIDStr := c.Param("id")
+
+	deviceID, err := uuid.Parse(deviceIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid device ID"})
+		return
+	}
+
+	db := database.GetDB()
+	deviceService := database.NewDeviceService(db)
+
+	err = deviceService.AdminDeleteDevice(deviceID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete device"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Device deleted successfully"})
 }
 
 // GetDeviceStatsHandler returns device statistics (admin only)

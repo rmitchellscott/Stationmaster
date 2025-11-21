@@ -521,7 +521,8 @@ func main() {
 		// Admin device management
 		admin.GET("/devices", handlers.GetAllDevicesHandler)              // GET /api/admin/devices - list all devices
 		admin.GET("/devices/stats", handlers.GetDeviceStatsHandler)       // GET /api/admin/devices/stats - get device statistics
-		admin.DELETE("/devices/:id/unlink", handlers.UnlinkDeviceHandler) // DELETE /api/admin/devices/:id/unlink - unlink device
+		admin.DELETE("/devices/:id/unlink", handlers.UnlinkDeviceHandler)
+		admin.DELETE("/devices/:id", handlers.AdminDeleteDeviceHandler)
 
 
 		// Firmware management endpoints
@@ -553,7 +554,7 @@ func main() {
 		devices.POST("/claim", handlers.ClaimDeviceHandler)                 // POST /api/devices/claim - claim unclaimed device
 		devices.GET("/:id", handlers.GetDeviceHandler)                      // GET /api/devices/:id - get specific device
 		devices.PUT("/:id", handlers.UpdateDeviceHandler)                   // PUT /api/devices/:id - update device
-		devices.DELETE("/:id", handlers.DeleteDeviceHandler)                // DELETE /api/devices/:id - delete device
+		devices.DELETE("/:id", handlers.UnclaimDeviceHandler)
 		devices.GET("/:id/logs", handlers.GetDeviceLogsHandler)             // GET /api/devices/:id/logs - get device logs
 		devices.GET("/:id/events", handlers.DeviceEventsHandler)            // GET /api/devices/:id/events - SSE for device events
 		devices.GET("/:id/active-items", handlers.DeviceActiveItemsHandler) // GET /api/devices/:id/active-items - get schedule-filtered active items

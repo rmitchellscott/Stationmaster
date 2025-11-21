@@ -30,6 +30,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -141,6 +142,9 @@ interface FirmwareVersion {
   is_latest: boolean;
   is_downloaded: boolean;
   released_at: string;
+  download_status?: string;
+  file_size?: number;
+  release_notes?: string;
 }
 
 // Sort types for devices table
@@ -212,6 +216,57 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
 
   // Firmware versions for dropdown
   const [firmwareVersions, setFirmwareVersions] = useState<FirmwareVersion[]>([]);
+  const [showUnstableVersions, setShowUnstableVersions] = useState(false);
+
+  // Semantic version comparison utility
+  const compareSemanticVersions = React.useCallback((a: string, b: string): number => {
+    const parseVersion = (v: string) => {
+      const parts = v.split('.').map(x => parseInt(x, 10) || 0);
+      return { major: parts[0] || 0, minor: parts[1] || 0, patch: parts[2] || 0 };
+    };
+
+    const vA = parseVersion(a);
+    const vB = parseVersion(b);
+
+    if (vA.major !== vB.major) return vB.major - vA.major;
+    if (vA.minor !== vB.minor) return vB.minor - vA.minor;
+    return vB.patch - vA.patch;
+  }, []);
+
+  // Sort firmware versions by semantic version (descending: newest first)
+  const sortedFirmwareVersions = React.useMemo(() => {
+    return [...firmwareVersions].sort((a, b) =>
+      compareSemanticVersions(a.version, b.version)
+    );
+  }, [firmwareVersions, compareSemanticVersions]);
+
+  // Filter firmware versions based on unstable checkbox
+  const filteredFirmwareVersions = React.useMemo(() => {
+    console.log('[FIRMWARE FILTER] Running filter, showUnstableVersions:', showUnstableVersions);
+
+    const stableVersion = sortedFirmwareVersions.find(fw => fw.is_latest);
+    if (!stableVersion) {
+      console.log('[FIRMWARE FILTER] No stable version found, showing all');
+      return sortedFirmwareVersions;
+    }
+
+    console.log('[FIRMWARE FILTER] Stable version:', stableVersion.version);
+
+    if (showUnstableVersions) {
+      console.log('[FIRMWARE FILTER] Showing all versions (checkbox checked)');
+      return sortedFirmwareVersions;
+    }
+
+    const filtered = sortedFirmwareVersions.filter(fw => {
+      const versionComparison = compareSemanticVersions(fw.version, stableVersion.version);
+      const shouldInclude = fw.is_latest || versionComparison >= 0;
+      console.log(`[FIRMWARE FILTER] ${fw.version} vs ${stableVersion.version}: comparison=${versionComparison}, is_latest=${fw.is_latest}, include=${shouldInclude}`);
+      return shouldInclude;
+    });
+
+    console.log('[FIRMWARE FILTER] Filtered from', sortedFirmwareVersions.length, 'to', filtered.length, 'versions');
+    return filtered;
+  }, [sortedFirmwareVersions, showUnstableVersions, compareSemanticVersions]);
 
   // Device deletion
   const [deleteDevice, setDeleteDevice] = useState<Device | null>(null);
@@ -1400,19 +1455,29 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
                         onValueChange={setEditTargetFirmwareVersion}
                       >
                         <SelectTrigger id="edit-target-firmware" className="mt-1">
-                          <SelectValue placeholder="Latest (Auto)" />
+                          <SelectValue placeholder="Stable (Auto)" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="latest">Latest (Auto)</SelectItem>
-                          {firmwareVersions.map((fw) => (
+                          <SelectItem value="latest">Stable (Auto)</SelectItem>
+                          {filteredFirmwareVersions.map((fw) => (
                             <SelectItem key={fw.id} value={fw.version}>
-                              {fw.version} {fw.is_latest && "(Latest)"}
+                              {fw.version} {fw.is_latest && "(Stable)"}
                             </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
+                      <div className="flex items-center gap-2 mt-2">
+                        <Checkbox
+                          id="show-unstable-versions"
+                          checked={showUnstableVersions}
+                          onCheckedChange={(checked) => setShowUnstableVersions(checked as boolean)}
+                        />
+                        <Label htmlFor="show-unstable-versions" className="text-sm font-normal cursor-pointer">
+                          Show unstable versions
+                        </Label>
+                      </div>
                       <p className="text-sm text-muted-foreground mt-1">
-                        Pin device to a specific firmware version or keep it on latest
+                        Pin device to a specific firmware version or keep it on stable
                       </p>
                     </div>
                   </div>

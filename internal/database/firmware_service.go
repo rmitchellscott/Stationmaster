@@ -2,6 +2,7 @@ package database
 
 import (
 	"errors"
+	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -123,4 +124,77 @@ func (s *FirmwareService) CanUpdateFirmware(device *Device, firmwareVersion *Fir
 	}
 
 	return nil
+}
+
+// SyncFirmwareVersionsFromS3 syncs firmware versions from S3 bucket listing
+func (s *FirmwareService) SyncFirmwareVersionsFromS3(firmwareList []struct {
+	Version     string
+	DownloadURL string
+	ReleasedAt  time.Time
+	FileSize    int64
+	ETag        string
+}) error {
+	if len(firmwareList) == 0 {
+		return nil
+	}
+
+	newCount := 0
+	for _, fw := range firmwareList {
+		var existingVersion FirmwareVersion
+		err := s.db.Where("version = ?", fw.Version).First(&existingVersion).Error
+
+		if err == gorm.ErrRecordNotFound {
+			newFirmware := FirmwareVersion{
+				Version:          fw.Version,
+				DownloadURL:      fw.DownloadURL,
+				IsLatest:         false,
+				IsDownloaded:     false,
+				DownloadStatus:   "pending",
+				DownloadProgress: 0,
+				ReleasedAt:       fw.ReleasedAt,
+				FileSize:         fw.FileSize,
+			}
+
+			if createErr := s.db.Create(&newFirmware).Error; createErr != nil {
+				return createErr
+			}
+			newCount++
+		} else if err != nil {
+			return err
+		}
+	}
+
+	if newCount > 0 {
+		if err := s.updateLatestVersion(); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (s *FirmwareService) updateLatestVersion() error {
+	var versions []FirmwareVersion
+	if err := s.db.Order("released_at DESC").Find(&versions).Error; err != nil {
+		return err
+	}
+
+	if len(versions) == 0 {
+		return nil
+	}
+
+	latestVersion := versions[0]
+
+	tx := s.db.Begin()
+	if err := tx.Model(&FirmwareVersion{}).Where("1 = 1").Update("is_latest", false).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	if err := tx.Model(&FirmwareVersion{}).Where("id = ?", latestVersion.ID).Update("is_latest", true).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	return tx.Commit().Error
 }

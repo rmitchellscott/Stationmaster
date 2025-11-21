@@ -35,6 +35,7 @@ import (
 	_ "github.com/rmitchellscott/stationmaster/internal/plugins/mashup"  // Register mashup plugin factory
 	"github.com/rmitchellscott/stationmaster/internal/pollers"
 	"github.com/rmitchellscott/stationmaster/internal/rendering"
+	"github.com/rmitchellscott/stationmaster/internal/services"
 	"github.com/rmitchellscott/stationmaster/internal/sse"
 	"github.com/rmitchellscott/stationmaster/internal/trmnl"
 
@@ -168,7 +169,37 @@ func main() {
 	}()
 	firmwarePoller := pollers.NewFirmwarePoller(db)
 	modelPoller := pollers.NewModelPoller(db)
-	
+
+	// Sync firmware versions from S3 bucket on startup
+	logging.Info("[STARTUP] Syncing firmware versions from S3 bucket")
+	s3FirmwareList, err := services.FetchS3FirmwareList(context.Background())
+	if err != nil {
+		logging.Warn("[STARTUP] Failed to fetch firmware list from S3, continuing anyway", "error", err)
+	} else {
+		firmwareService := database.NewFirmwareService(db)
+		firmwareData := make([]struct {
+			Version     string
+			DownloadURL string
+			ReleasedAt  time.Time
+			FileSize    int64
+			ETag        string
+		}, len(s3FirmwareList))
+
+		for i, fw := range s3FirmwareList {
+			firmwareData[i].Version = fw.Version
+			firmwareData[i].DownloadURL = fw.DownloadURL
+			firmwareData[i].ReleasedAt = fw.ReleasedAt
+			firmwareData[i].FileSize = fw.FileSize
+			firmwareData[i].ETag = fw.ETag
+		}
+
+		if err := firmwareService.SyncFirmwareVersionsFromS3(firmwareData); err != nil {
+			logging.Warn("[STARTUP] Failed to sync firmware versions from S3", "error", err)
+		} else {
+			logging.Info("[STARTUP] Successfully synced firmware versions from S3", "count", len(s3FirmwareList))
+		}
+	}
+
 	// Create render poller for pre-rendering plugin content
 	staticDir := config.Get("STATIC_DIR", "./static")
 	renderPollerConfig := pollers.PollerConfig{

@@ -454,6 +454,27 @@ export function AdminPage() {
   const [firmwareVersions, setFirmwareVersions] = useState<FirmwareVersion[]>([]);
   const [firmwareStats, setFirmwareStats] = useState<FirmwareStats | null>(null);
   const [firmwareMode, setFirmwareMode] = useState<string>('proxy');
+
+  // Sort firmware versions by semantic version (descending: newest first)
+  const sortedFirmwareVersions = React.useMemo(() => {
+    const compareSemanticVersions = (a: string, b: string): number => {
+      const parseVersion = (v: string) => {
+        const parts = v.split('.').map(x => parseInt(x, 10) || 0);
+        return { major: parts[0] || 0, minor: parts[1] || 0, patch: parts[2] || 0 };
+      };
+
+      const vA = parseVersion(a);
+      const vB = parseVersion(b);
+
+      if (vA.major !== vB.major) return vB.major - vA.major;
+      if (vA.minor !== vB.minor) return vB.minor - vA.minor;
+      return vB.patch - vA.patch;
+    };
+
+    return [...firmwareVersions].sort((a, b) =>
+      compareSemanticVersions(a.version, b.version)
+    );
+  }, [firmwareVersions]);
   const [firmwarePolling, setFirmwarePolling] = useState(false);
   const [modelPolling, setModelPolling] = useState(false);
   const [deleteFirmwareDialog, setDeleteFirmwareDialog] = useState<{
@@ -3036,12 +3057,12 @@ export function AdminPage() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {firmwareVersions.map((version) => (
+                          {sortedFirmwareVersions.map((version) => (
                             <TableRow key={version.id}>
                               <TableCell className="font-medium">
                                 {version.version}
                                 {version.is_latest && (
-                                  <Badge variant="secondary" className="ml-2">Latest</Badge>
+                                  <Badge variant="secondary" className="ml-2">Stable</Badge>
                                 )}
                               </TableCell>
                               <TableCell>
@@ -3063,7 +3084,9 @@ export function AdminPage() {
                                     Failed
                                   </Badge>
                                 )}
-                                {(!version.download_status || version.download_status === 'pending') && (
+                                {(version.download_status !== 'downloaded' &&
+                                  version.download_status !== 'downloading' &&
+                                  version.download_status !== 'failed') && (
                                   firmwareMode === 'proxy' ? (
                                     <Badge variant="secondary" className="flex items-center gap-1 w-fit">
                                       <ArrowRightLeft className="w-3 h-3" />

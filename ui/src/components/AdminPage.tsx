@@ -806,29 +806,24 @@ export function AdminPage() {
 
   const handleCreateBackupJob = async () => {
     try {
-      console.log("Starting backup job creation...");
       setCreatingBackup(true);
       setBackupError(null);
-      
+
       const response = await fetch("/api/admin/backup-job", {
         method: "POST",
         credentials: "include",
       });
-      
-      console.log("Backup job response status:", response.status);
-      console.log("Backup job response headers:", response.headers);
-      
+
       if (response.ok) {
         const data = await response.json();
-        console.log("Backup job created successfully:", data);
         await fetchBackupJobs();
       } else {
         console.error("Backup job creation failed with status:", response.status);
         try {
           const errorData = await response.json();
           console.error("Error response data:", errorData);
-          const errorMessage = errorData.error_type ? t(`admin.errors.${errorData.error_type}`) : 
-                              errorData.error || errorData.message || 
+          const errorMessage = errorData.error_type ? t(`admin.errors.${errorData.error_type}`) :
+                              errorData.error || errorData.message ||
                               `Failed to create backup (HTTP ${response.status})`;
           setBackupError(errorMessage);
         } catch (parseError) {

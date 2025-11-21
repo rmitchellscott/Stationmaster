@@ -369,13 +369,11 @@ export function PrivatePluginCreator({
         try {
           const parsedStaticData = JSON.parse(trimmedStaticJSON);
           submitData.sample_data = parsedStaticData;
-          console.log('[UI] Submitting static data:', parsedStaticData);
         } catch (e) {
           throw new Error(`Invalid JSON in Static Data field: ${e.message}`);
         }
       } else {
         submitData.sample_data = null;
-        console.log('[UI] No static data provided, setting to null');
       }
 
       onSave(submitData);

@@ -248,16 +248,14 @@ export const MashupCreator: React.FC<MashupCreatorProps> = ({
       }
       
       const instanceData = await instanceResponse.json();
-      console.log('Instance creation response:', instanceData);
-      
+
       if (!instanceData || !instanceData.instance || !instanceData.instance.id) {
         console.error('Invalid instance creation response:', instanceData);
         throw new Error('Invalid response from instance creation - missing instance ID');
       }
-      
+
       const mashupInstanceId = instanceData.instance.id;
-      console.log('Created mashup instance ID:', mashupInstanceId);
-      
+
       // Assign children if any
       if (Object.keys(assignments).length > 0) {
         await mashupService.assignChildren(mashupInstanceId, assignments);

@@ -61,10 +61,7 @@ export function PrivatePluginEditorPage() {
         
         if (response.ok) {
           const data = await response.json();
-          console.log('[PrivatePluginEditorPage] Fetched plugin data:', data);
           const pluginData = data.plugin_definition || data;
-          console.log('[PrivatePluginEditorPage] Setting plugin:', pluginData);
-          console.log('[PrivatePluginEditorPage] Plugin sample_data:', pluginData.sample_data);
           setPlugin(pluginData);
         } else {
           const errorData = await response.json();

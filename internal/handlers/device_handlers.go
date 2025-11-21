@@ -72,6 +72,55 @@ func ClaimDeviceHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"device": device})
 }
 
+// ImportDeviceHandler imports a device with existing credentials
+func ImportDeviceHandler(c *gin.Context) {
+	user, ok := auth.RequireUser(c)
+	if !ok {
+		return
+	}
+	userUUID := user.ID
+
+	var req struct {
+		MacAddress    string `json:"mac_address" binding:"required"`
+		APIKey        string `json:"api_key" binding:"required"`
+		FriendlyID    string `json:"friendly_id" binding:"required"`
+		Name          string `json:"name"`
+		DeviceModelID *uint  `json:"device_model_id"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	db := database.GetDB()
+	deviceService := database.NewDeviceService(db)
+
+	var modelName string
+	if req.DeviceModelID != nil && *req.DeviceModelID != 0 {
+		deviceModel, err := deviceService.ValidateDeviceModelByID(*req.DeviceModelID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		modelName = deviceModel.ModelName
+	}
+
+	device, err := deviceService.ImportDevice(userUUID, req.MacAddress, req.APIKey, req.FriendlyID, req.Name, modelName)
+	if err != nil {
+		if err.Error() == "device with MAC address "+req.MacAddress+" already exists" ||
+			err.Error() == "device with friendly ID "+req.FriendlyID+" already exists" ||
+			err.Error() == "device with this API key already exists" {
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to import device"})
+		}
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"device": device})
+}
+
 // GetDeviceHandler returns a specific device
 func GetDeviceHandler(c *gin.Context) {
 	user, ok := auth.RequireUser(c)

@@ -101,25 +101,10 @@ export function AddPluginPage() {
     const fieldKey = `${pluginId}.${fieldName}`;
     const apiUrl = `/api/plugins/${pluginId}/options/${fieldName}`;
 
-    console.log('[DEBUG] fetchDynamicFieldOptions called:', {
-      pluginId,
-      fieldName,
-      fieldKey,
-      apiUrl,
-      hasTokens: !!oauthTokens,
-      tokenKeys: Object.keys(oauthTokens || {}),
-      tokens: oauthTokens
-    });
-
     try {
       setDynamicFieldsLoading(prev => ({ ...prev, [fieldKey]: true }));
 
       const requestBody = { oauth_tokens: oauthTokens };
-      console.log('[DEBUG] Sending API request:', {
-        url: apiUrl,
-        method: 'POST',
-        body: requestBody
-      });
 
       const response = await fetch(apiUrl, {
         method: 'POST',
@@ -130,33 +115,17 @@ export function AddPluginPage() {
         body: JSON.stringify(requestBody)
       });
 
-      console.log('[DEBUG] API response:', {
-        ok: response.ok,
-        status: response.status,
-        statusText: response.statusText
-      });
-
       if (response.ok) {
         const data = await response.json();
-        console.log('[DEBUG] API response data:', data);
-        console.log('[DEBUG] Options received:', data.data?.options);
 
         setDynamicFieldOptions(prev => {
           const updated = { ...prev, [fieldKey]: data.data?.options || [] };
-          console.log('[DEBUG] Updated dynamicFieldOptions state:', updated);
           return updated;
         });
       } else {
-        const errorText = await response.text();
-        console.error('[DEBUG] Failed to fetch dynamic field options:', {
-          status: response.status,
-          statusText: response.statusText,
-          errorBody: errorText
-        });
         setDynamicFieldOptions(prev => ({ ...prev, [fieldKey]: [] }));
       }
     } catch (error) {
-      console.error('[DEBUG] Error fetching dynamic field options:', error);
       setDynamicFieldOptions(prev => ({ ...prev, [fieldKey]: [] }));
     } finally {
       setDynamicFieldsLoading(prev => ({ ...prev, [fieldKey]: false }));
@@ -203,69 +172,28 @@ export function AddPluginPage() {
 
   // Fetch dynamic fields when plugin is expanded and OAuth is connected
   useEffect(() => {
-    console.log('[DEBUG] OAuth useEffect triggered:', {
-      hasExpandedPlugin: !!expandedPlugin,
-      pluginId: expandedPlugin?.id,
-      pluginType: expandedPlugin?.type,
-      pluginName: expandedPlugin?.name,
-      oauthConnected: oauthConnection?.connected,
-      hasStoredTokens: !!oauthTokens,
-      storedTokenKeys: Object.keys(oauthTokens || {}),
-      fullOauthConnection: oauthConnection,
-      oauthTokens: oauthTokens
-    });
-
-    // Try to fetch if OAuth is connected, even without tokens (backend might have them in session)
     if (expandedPlugin && oauthConnection?.connected) {
       try {
         const schema = JSON.parse(expandedPlugin.config_schema);
         const properties = schema.properties || {};
 
-        console.log('[DEBUG] Plugin schema parsed:', {
-          pluginId: expandedPlugin.id,
-          propertyKeys: Object.keys(properties),
-          fullProperties: properties
-        });
-
         Object.keys(properties).forEach(key => {
           const prop = properties[key];
           const dynamicSourceField = prop.dynamicSource || prop.dynamic_source;
 
-          console.log(`[DEBUG] Checking property ${key}:`, {
-            isDynamic: prop.dynamic,
-            dynamicSource: prop.dynamicSource,
-            dynamic_source: prop.dynamic_source,
-            dynamicSourceField,
-            fullProp: prop
-          });
-
           if (prop.dynamic && dynamicSourceField) {
-            // Use the same identifier logic as during rendering to ensure key consistency
             const pluginIdentifier = expandedPlugin.identifier || expandedPlugin.id;
             const fieldKey = `${pluginIdentifier}.${dynamicSourceField}`;
             const alreadyFetched = !!dynamicFieldOptions[fieldKey];
             const currentlyLoading = !!dynamicFieldsLoading[fieldKey];
 
-            console.log(`[DEBUG] Dynamic field ${key} status:`, {
-              fieldKey,
-              pluginIdentifier,
-              expandedPluginId: expandedPlugin.id,
-              expandedPluginIdentifier: expandedPlugin.identifier,
-              alreadyFetched,
-              currentlyLoading,
-              willFetch: !alreadyFetched && !currentlyLoading
-            });
-
             if (!alreadyFetched && !currentlyLoading) {
-              console.log(`[DEBUG] Fetching dynamic options for ${key} (tokens: ${!!oauthTokens}, identifier: ${pluginIdentifier})`);
-              // Pass tokens if available, otherwise empty object - backend might have them in session
               fetchDynamicFieldOptions(pluginIdentifier, dynamicSourceField, oauthTokens || {});
             }
           }
         });
       } catch (e) {
-        console.error('[DEBUG] Error parsing plugin schema for dynamic fields:', e);
-        console.error('[DEBUG] Plugin config_schema:', expandedPlugin.config_schema);
+        // Schema parsing error
       }
     }
   }, [expandedPlugin, oauthConnection?.connected, oauthTokens]);
@@ -431,15 +359,6 @@ export function AddPluginPage() {
             const options = dynamicFieldOptions[fieldKey] || [];
             const isLoading = dynamicFieldsLoading[fieldKey] || false;
 
-            console.log(`[DEBUG] Rendering dynamic field ${key}:`, {
-              pluginIdentifier,
-              dynamicSourceField,
-              fieldKey,
-              optionsCount: options.length,
-              allKeys: Object.keys(dynamicFieldOptions),
-              isLoading
-            });
-
             // Check if OAuth is required but not connected - handle multi-select vs single-select
             if ((prop.dependsOn === 'oauth_connected' || prop.depends_on === 'oauth_connected')) {
               // For multi-select fields, show checkbox interface even when loading/empty
@@ -505,27 +424,9 @@ export function AddPluginPage() {
             }
 
             // Render dynamic select with fetched options
-            console.log(`[DEBUG] Rendering dynamic field ${key}:`, {
-              pluginIdentifier,
-              dynamicSourceField,
-              fieldKey,
-              optionsCount: options.length,
-              isMultiple: prop.multiple,
-              propKeys: Object.keys(prop),
-              fullProp: prop,
-              value: value,
-              isLoading
-            });
-
             if (prop.multiple) {
               // Multi-select implementation using checkboxes in a dropdown-like container
               const selectedValues = Array.isArray(value) ? value : (value ? [value] : []);
-
-              console.log(`[DEBUG] Rendering multi-select for ${key}:`, {
-                selectedValues,
-                optionsCount: options.length,
-                options: options.slice(0, 3) // Log first 3 options
-              });
 
               return (
                 <div key={key}>
@@ -977,18 +878,9 @@ export function AddPluginPage() {
                     <OAuthConnection
                       oauthConfig={expandedPlugin.oauth_config}
                       onConnectionChange={(connected, tokens) => {
-                        console.log('[DEBUG] OAuthConnection onConnectionChange:', {
-                          connected,
-                          hasTokens: !!tokens,
-                          tokenKeys: Object.keys(tokens || {}),
-                          tokens
-                        });
-
                         if (connected && tokens) {
-                          // Store tokens in state
                           setOauthTokens(tokens);
 
-                          // Fetch dynamic field options when OAuth connects
                           const schema = JSON.parse(expandedPlugin.config_schema);
                           const properties = schema.properties || {};
 
@@ -996,15 +888,11 @@ export function AddPluginPage() {
                             const prop = properties[key];
                             const dynamicSourceField = prop.dynamicSource || prop.dynamic_source;
                             if (prop.dynamic && dynamicSourceField) {
-                              // Use the identifier field from plugin metadata
                               const pluginIdentifier = expandedPlugin.identifier || expandedPlugin.id;
-
-                              console.log(`[DEBUG] Fetching options for ${key} on OAuth connect (identifier: ${pluginIdentifier})`);
                               fetchDynamicFieldOptions(pluginIdentifier, dynamicSourceField, tokens);
                             }
                           });
                         } else if (!connected) {
-                          // Clear tokens when disconnected
                           setOauthTokens(null);
                         }
                       }}

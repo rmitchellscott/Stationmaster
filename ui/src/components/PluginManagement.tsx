@@ -1005,15 +1005,12 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
 
   // Helper function to check if a plugin has configuration fields
   const hasConfigurationFields = (plugin: Plugin): boolean => {
-    console.log(`[DEBUG] hasConfigurationFields called for plugin:`, plugin.id, plugin.name);
     try {
       const schema = JSON.parse(plugin.config_schema);
       const properties = schema.properties || {};
       const hasFields = Object.keys(properties).length > 0;
-      console.log(`[DEBUG] hasConfigurationFields result:`, hasFields, 'properties count:', Object.keys(properties).length);
       return hasFields;
     } catch (e) {
-      console.error(`[DEBUG] hasConfigurationFields failed to parse schema:`, e);
       return false;
     }
   };
@@ -1129,63 +1126,27 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
     settings: Record<string, any>;
     onChange: (key: string, value: any) => void;
   }> = ({ plugin, settings, onChange }) => {
-    console.log(`[DEBUG] PluginSettingsForm mounted for plugin:`, plugin);
-    console.log(`[DEBUG] Plugin ID:`, plugin.id);
-    console.log(`[DEBUG] Plugin type:`, plugin.type);
-    console.log(`[DEBUG] Plugin name:`, plugin.name);
-    console.log(`[DEBUG] Settings:`, settings);
-
     let schema;
     try {
       schema = JSON.parse(plugin.config_schema);
-      console.log(`[DEBUG] Schema parsed successfully for ${plugin.id}:`, schema);
     } catch (e) {
-      console.error(`[DEBUG] Failed to parse schema for ${plugin.id}:`, e);
-      console.error(`[DEBUG] Raw config_schema:`, plugin.config_schema);
       return <div className="text-muted-foreground">Invalid schema configuration</div>;
     }
 
     const properties = schema.properties || {};
-    console.log(`[DEBUG] Plugin object in edit context:`, plugin);
-    console.log(`[DEBUG] plugin.identifier:`, plugin.identifier);
-    console.log(`[DEBUG] plugin.id:`, plugin.id);
     const pluginIdentifier = plugin.identifier || plugin.id;
-    console.log(`[DEBUG] Final pluginIdentifier:`, pluginIdentifier);
-
-    console.log(`[DEBUG] Properties found:`, Object.keys(properties));
-    console.log(`[DEBUG] Full properties object:`, properties);
-
-    // Debug logging for any plugin that might be Google Calendar
-    if (pluginIdentifier.includes('google') || pluginIdentifier.includes('calendar') || plugin.name.toLowerCase().includes('calendar')) {
-      console.log(`[DEBUG] POTENTIAL GOOGLE CALENDAR PLUGIN DETECTED:`);
-      console.log(`[DEBUG] ID: ${pluginIdentifier}`);
-      console.log(`[DEBUG] Name: ${plugin.name}`);
-      console.log(`[DEBUG] ignore_phrases_exact_match field:`, properties.ignore_phrases_exact_match);
-      console.log(`[DEBUG] calendar field:`, properties.calendar);
-    }
     
     // Use OAuth status hook at component level
     const { connection: oauthConnection } = useOAuthStatus(plugin.oauth_config?.provider);
     
     // Fetch dynamic fields when OAuth is connected
     React.useEffect(() => {
-      console.log(`[DEBUG] OAuth effect triggered for ${pluginIdentifier}:`, {
-        connected: oauthConnection?.connected,
-        hasOauthConfig: !!plugin.oauth_config
-      });
       if (oauthConnection?.connected && plugin.oauth_config) {
         Object.keys(properties).forEach(key => {
           const prop = properties[key];
           const dynamicSourceField = prop.dynamicSource || prop.dynamic_source;
           if (prop.dynamic && dynamicSourceField) {
             const fieldKey = `${pluginIdentifier}.${dynamicSourceField}`;
-            console.log(`[DEBUG] Processing dynamic field ${key}:`, {
-              fieldKey,
-              dynamicSourceField,
-              hasOptions: !!dynamicFieldOptions[fieldKey],
-              isLoading: !!dynamicFieldsLoading[fieldKey],
-              willFetch: !dynamicFieldOptions[fieldKey] && !dynamicFieldsLoading[fieldKey]
-            });
             if (!dynamicFieldOptions[fieldKey] && !dynamicFieldsLoading[fieldKey]) {
               fetchDynamicFieldOptions(
                 pluginIdentifier,
@@ -1228,12 +1189,6 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
           const value = settings[key] || prop.default || "";
 
           // Handle dynamic select fields
-          console.log(`[DEBUG] Checking dynamic field for ${key}:`, {
-            dynamic: prop.dynamic,
-            dynamicSource: prop.dynamicSource,
-            dynamic_source: prop.dynamic_source,
-            isDynamic: prop.dynamic && (prop.dynamicSource || prop.dynamic_source)
-          });
           if (prop.dynamic && (prop.dynamicSource || prop.dynamic_source)) {
             const dynamicSourceField = prop.dynamicSource || prop.dynamic_source;
             const fieldKey = `${pluginIdentifier}.${dynamicSourceField}`;
@@ -1467,12 +1422,6 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
             }
 
             // Check if it should be a textarea
-            console.log(`[DEBUG] Checking textarea condition for ${key}:`, {
-              format: prop.format,
-              field_type: prop.field_type,
-              maxLength: prop.maxLength,
-              shouldBeTextarea: prop.format === "textarea" || prop.field_type === "textarea" || (prop.maxLength && prop.maxLength > 200)
-            });
             if (prop.format === "textarea" || prop.field_type === "textarea" || (prop.maxLength && prop.maxLength > 200)) {
               return (
                 <div key={key}>
@@ -1875,19 +1824,9 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
       )}
 
       {/* Add Plugin Dialog */}
-      {(() => {
-        console.log(`[DEBUG] Add Plugin Dialog render check:`, {
-          showAddDialog,
-          selectedPlugin: selectedPlugin?.name || 'none',
-          pluginId: selectedPlugin?.id || 'none'
-        });
-        return null;
-      })()}
       <Dialog open={showAddDialog} onOpenChange={(open) => {
-        console.log(`[DEBUG] Add dialog onOpenChange:`, open);
         setShowAddDialog(open);
         if (!open) {
-          console.log(`[DEBUG] Add dialog closing, resetting state`);
           resetAddDialogState();
         }
       }}>
@@ -1989,17 +1928,6 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                     </Card>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-3">
-                      {(() => {
-                        console.log(`[DEBUG] Rendering plugin list, total plugins:`, plugins.length);
-                        console.log(`[DEBUG] Available plugins:`, plugins.map(p => ({ id: p.id, name: p.name, type: p.type })));
-                        const googleCalendar = plugins.find(p =>
-                          p.name.toLowerCase().includes('calendar') ||
-                          p.id.toLowerCase().includes('calendar') ||
-                          p.name.toLowerCase().includes('google')
-                        );
-                        console.log(`[DEBUG] Google Calendar plugin found:`, googleCalendar);
-                        return null;
-                      })()}
                       {plugins.map((plugin) => (
                         <Card key={plugin.id} className="flex flex-col">
                           <CardHeader className="pb-2">
@@ -2035,10 +1963,6 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                             </div>
                             <Button
                               onClick={() => {
-                                console.log(`[DEBUG] Plugin selected:`, plugin);
-                                console.log(`[DEBUG] Plugin ID:`, plugin.id);
-                                console.log(`[DEBUG] Plugin name:`, plugin.name);
-                                console.log(`[DEBUG] Plugin type:`, plugin.type);
                                 setSelectedPlugin(plugin);
                                 setInstanceName(plugin.name);
                                 setCreateDialogError(null);
@@ -2132,16 +2056,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                   )}
 
 {(() => {
-                    console.log(`[DEBUG] Add dialog config check:`, {
-                      hasSelectedPlugin: !!selectedPlugin,
-                      pluginId: selectedPlugin?.id,
-                      pluginName: selectedPlugin?.name,
-                      pluginType: selectedPlugin?.type,
-                      hasConfigFields: selectedPlugin ? hasConfigurationFields(selectedPlugin) : false
-                    });
-
                     if (hasConfigurationFields(selectedPlugin)) {
-                      console.log(`[DEBUG] Rendering PluginSettingsForm for add dialog - selected plugin:`, selectedPlugin);
                       return (
                         <div>
                           <Label className="text-sm">Plugin Configuration</Label>
@@ -2157,7 +2072,6 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                         </div>
                       );
                     } else {
-                      console.log(`[DEBUG] NOT rendering PluginSettingsForm in add dialog - no config fields`);
                       return null;
                     }
                   })()}
@@ -2362,16 +2276,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
             )}
 
 {(() => {
-              console.log(`[DEBUG] Edit dialog render check:`, {
-                hasEditPluginInstance: !!editPluginInstance,
-                hasPlugin: !!editPluginInstance?.plugin,
-                pluginId: editPluginInstance?.plugin?.id,
-                pluginName: editPluginInstance?.plugin?.name,
-                hasConfigFields: editPluginInstance?.plugin ? hasConfigurationFields(editPluginInstance.plugin) : false
-              });
-
               if (editPluginInstance?.plugin && hasConfigurationFields(editPluginInstance.plugin)) {
-                console.log(`[DEBUG] Rendering PluginSettingsForm for edit dialog`);
                 return (
                   <>
                     <Separator />
@@ -2385,12 +2290,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                       <CardContent className="pt-0">
                         <PluginSettingsForm
                           plugin={(() => {
-                            // Find the plugin definition that matches this plugin instance
-                            // The plugin instance has a plugin.id that should match a plugin definition's id
                             const pluginDefinition = plugins.find(p => p.id === editPluginInstance.plugin.id);
-                            console.log(`[DEBUG] Looking for plugin definition with id: ${editPluginInstance.plugin.id}`);
-                            console.log(`[DEBUG] Found plugin definition:`, pluginDefinition);
-                            console.log(`[DEBUG] Plugin definition identifier:`, pluginDefinition?.identifier);
                             return pluginDefinition || editPluginInstance.plugin;
                           })()}
                           settings={editInstanceSettings}
@@ -2403,7 +2303,6 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                   </>
                 );
               } else {
-                console.log(`[DEBUG] NOT rendering PluginSettingsForm - conditions not met`);
                 return null;
               }
             })()}

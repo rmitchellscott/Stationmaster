@@ -552,6 +552,7 @@ func main() {
 		devices.GET("", handlers.GetDevicesHandler)                         // GET /api/devices - list user's devices
 		devices.GET("/models", handlers.GetDeviceModelOptionsHandler)       // GET /api/devices/models - list available device models
 		devices.POST("/claim", handlers.ClaimDeviceHandler)                 // POST /api/devices/claim - claim unclaimed device
+		devices.POST("/import", handlers.ImportDeviceHandler)
 		devices.GET("/:id", handlers.GetDeviceHandler)                      // GET /api/devices/:id - get specific device
 		devices.PUT("/:id", handlers.UpdateDeviceHandler)                   // PUT /api/devices/:id - update device
 		devices.DELETE("/:id", handlers.UnclaimDeviceHandler)

@@ -209,7 +209,6 @@ export default function HomePage() {
               setPlaylistItems([]);
             }
           } else {
-            console.log("No default playlist found for device, setting empty playlist items");
             setPlaylistItems([]);
           }
         } catch (parseError) {
@@ -308,8 +307,6 @@ export default function HomePage() {
       return;
     }
 
-    console.log(`Primary tab creating SSE connections for ${devices.length} devices`)
-    
     // Create SSE connections for each device via tab manager
     devices.forEach(device => {
       tabManager.createSSEConnection(device.id, `/api/devices/${device.id}/events`)

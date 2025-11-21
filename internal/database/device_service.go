@@ -134,6 +134,57 @@ func (ds *DeviceService) ClaimDeviceByIdentifier(userID uuid.UUID, identifier, n
 	return device, nil
 }
 
+// ImportDevice creates a new device with provided credentials and immediately claims it to a user
+func (ds *DeviceService) ImportDevice(userID uuid.UUID, macAddress, apiKey, friendlyID, name, modelName string) (*Device, error) {
+	normalizedMAC := ds.normalizeMAC(macAddress)
+	upperFriendlyID := strings.ToUpper(friendlyID)
+
+	var existingDevice Device
+	if err := ds.db.Where("mac_address = ?", normalizedMAC).First(&existingDevice).Error; err == nil {
+		return nil, fmt.Errorf("device with MAC address %s already exists", macAddress)
+	}
+
+	if err := ds.db.Where("friendly_id = ?", upperFriendlyID).First(&existingDevice).Error; err == nil {
+		return nil, fmt.Errorf("device with friendly ID %s already exists", friendlyID)
+	}
+
+	if err := ds.db.Where("api_key = ?", apiKey).First(&existingDevice).Error; err == nil {
+		return nil, fmt.Errorf("device with this API key already exists")
+	}
+
+	device := &Device{
+		MacAddress:  normalizedMAC,
+		FriendlyID:  upperFriendlyID,
+		APIKey:      apiKey,
+		UserID:      &userID,
+		Name:        name,
+		RefreshRate: 1800,
+		IsActive:    true,
+		IsClaimed:   true,
+	}
+
+	if modelName != "" {
+		mappedModelName := mapDeviceModelName(modelName)
+		device.ReportedModelName = &mappedModelName
+
+		var deviceModel DeviceModel
+		if err := ds.db.Where("model_name = ? AND is_active = ? AND deleted_at IS NULL", mappedModelName, true).
+			Order("created_at DESC").
+			First(&deviceModel).Error; err == nil {
+			device.DeviceModelID = &deviceModel.ID
+		} else {
+			logging.Warn("[IMPORT DEVICE] Model not found in device_models table", "model", mappedModelName)
+		}
+	}
+
+	if err := ds.db.Create(device).Error; err != nil {
+		return nil, fmt.Errorf("failed to create device: %w", err)
+	}
+
+	logging.Info("[IMPORT DEVICE] Successfully imported device", "friendly_id", device.FriendlyID, "user_id", userID, "mac", normalizedMAC)
+	return device, nil
+}
+
 // isMAC checks if the identifier is a MAC address format
 func (ds *DeviceService) isMAC(identifier string) bool {
 	// Check for common MAC address patterns

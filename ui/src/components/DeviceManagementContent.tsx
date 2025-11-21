@@ -76,7 +76,7 @@ import {
 } from "lucide-react";
 
 interface DeviceModel {
-  id: string;
+  id: number;
   model_name: string;
   display_name: string;
   description?: string;
@@ -192,6 +192,16 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
   const [friendlyId, setFriendlyId] = useState("");
   const [deviceName, setDeviceName] = useState("");
 
+  // Device importing
+  const [showImportDialog, setShowImportDialog] = useState(false);
+  const [importLoading, setImportLoading] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importMacAddress, setImportMacAddress] = useState("");
+  const [importApiKey, setImportApiKey] = useState("");
+  const [importFriendlyId, setImportFriendlyId] = useState("");
+  const [importDeviceName, setImportDeviceName] = useState("");
+  const [importDeviceModelId, setImportDeviceModelId] = useState<number | undefined>(undefined);
+
   // Device editing
   const [editDevice, setEditDevice] = useState<Device | null>(null);
   const [editDeviceName, setEditDeviceName] = useState("");
@@ -242,29 +252,21 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
 
   // Filter firmware versions based on unstable checkbox
   const filteredFirmwareVersions = React.useMemo(() => {
-    console.log('[FIRMWARE FILTER] Running filter, showUnstableVersions:', showUnstableVersions);
-
     const stableVersion = sortedFirmwareVersions.find(fw => fw.is_latest);
     if (!stableVersion) {
-      console.log('[FIRMWARE FILTER] No stable version found, showing all');
       return sortedFirmwareVersions;
     }
 
-    console.log('[FIRMWARE FILTER] Stable version:', stableVersion.version);
-
     if (showUnstableVersions) {
-      console.log('[FIRMWARE FILTER] Showing all versions (checkbox checked)');
       return sortedFirmwareVersions;
     }
 
     const filtered = sortedFirmwareVersions.filter(fw => {
       const versionComparison = compareSemanticVersions(fw.version, stableVersion.version);
       const shouldInclude = fw.is_latest || versionComparison >= 0;
-      console.log(`[FIRMWARE FILTER] ${fw.version} vs ${stableVersion.version}: comparison=${versionComparison}, is_latest=${fw.is_latest}, include=${shouldInclude}`);
       return shouldInclude;
     });
 
-    console.log('[FIRMWARE FILTER] Filtered from', sortedFirmwareVersions.length, 'to', filtered.length, 'versions');
     return filtered;
   }, [sortedFirmwareVersions, showUnstableVersions, compareSemanticVersions]);
 
@@ -417,7 +419,7 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
         setDeviceName("");
         setClaimError(null);
         await fetchDevices();
-        onUpdate?.(); // Notify parent component to refresh
+        onUpdate?.();
       } else {
         const errorData = await response.json();
         setClaimError(errorData.error || "Failed to claim device");
@@ -426,6 +428,70 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
       setClaimError("Network error occurred");
     } finally {
       setClaimLoading(false);
+    }
+  };
+
+  const openImportDialog = () => {
+    setShowImportDialog(true);
+    if (deviceModels.length === 0) {
+      fetchDeviceModels().catch(error => {
+        console.error("Failed to fetch device models:", error);
+      });
+    }
+  };
+
+  const importDevice = async () => {
+    if (!importMacAddress.trim() || !importApiKey.trim() || !importFriendlyId.trim()) {
+      setImportError("MAC address, API key, and friendly ID are required");
+      return;
+    }
+
+    try {
+      setImportLoading(true);
+      setImportError(null);
+
+      const requestBody: any = {
+        mac_address: importMacAddress.trim(),
+        api_key: importApiKey.trim(),
+        friendly_id: importFriendlyId.trim().toUpperCase(),
+      };
+
+      if (importDeviceName.trim()) {
+        requestBody.name = importDeviceName.trim();
+      }
+
+      if (importDeviceModelId !== undefined) {
+        requestBody.device_model_id = importDeviceModelId;
+      }
+
+      const response = await fetch("/api/devices/import", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+        body: JSON.stringify(requestBody),
+      });
+
+      if (response.ok) {
+        setSuccessMessage("Device imported successfully!");
+        setShowImportDialog(false);
+        setImportMacAddress("");
+        setImportApiKey("");
+        setImportFriendlyId("");
+        setImportDeviceName("");
+        setImportDeviceModelId(undefined);
+        setImportError(null);
+        await fetchDevices();
+        onUpdate?.();
+      } else {
+        const errorData = await response.json();
+        setImportError(errorData.error || "Failed to import device");
+      }
+    } catch (error) {
+      setImportError("Network error occurred");
+    } finally {
+      setImportLoading(false);
     }
   };
 
@@ -983,11 +1049,19 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
       <div className="space-y-4">
         <div className="flex justify-between items-center">
           <h3 className="text-lg font-semibold">Your Devices</h3>
-                    <Button 
-            onClick={() => setShowClaimDialog(true)}
-          >
-            Claim Device
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              onClick={openImportDialog}
+              variant="outline"
+            >
+              Import Device
+            </Button>
+            <Button
+              onClick={() => setShowClaimDialog(true)}
+            >
+              Claim Device
+            </Button>
+          </div>
         </div>
 
         {loading ? (
@@ -1341,6 +1415,113 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
               disabled={claimLoading || !friendlyId.trim() || !deviceName.trim()}
             >
               {claimLoading ? "Claiming..." : "Claim Device"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Import Device Dialog */}
+      <Dialog open={showImportDialog} onOpenChange={(open) => {
+        setShowImportDialog(open);
+        if (!open) {
+          setImportError(null);
+          setImportMacAddress("");
+          setImportApiKey("");
+          setImportFriendlyId("");
+          setImportDeviceName("");
+          setImportDeviceModelId(undefined);
+        }
+      }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Import Device</DialogTitle>
+            <DialogDescription>
+              Import an existing device with its credentials. Use this to migrate a device from another instance.
+            </DialogDescription>
+          </DialogHeader>
+
+          {importError && (
+            <Alert variant="destructive" className="items-center">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>{importError}</AlertDescription>
+            </Alert>
+          )}
+
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="import-mac">MAC Address *</Label>
+              <Input
+                id="import-mac"
+                value={importMacAddress}
+                onChange={(e) => setImportMacAddress(e.target.value)}
+                placeholder="AA:BB:CC:DD:EE:FF"
+                className="mt-2"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="import-api-key">API Key *</Label>
+              <Input
+                id="import-api-key"
+                value={importApiKey}
+                onChange={(e) => setImportApiKey(e.target.value)}
+                placeholder="64-character hexadecimal API key"
+                className="mt-2"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="import-friendly-id">Friendly ID *</Label>
+              <Input
+                id="import-friendly-id"
+                value={importFriendlyId}
+                onChange={(e) => setImportFriendlyId(e.target.value.toUpperCase())}
+                placeholder="917F0B"
+                maxLength={6}
+                className="mt-2"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="import-name">Device Name (optional)</Label>
+              <Input
+                id="import-name"
+                value={importDeviceName}
+                onChange={(e) => setImportDeviceName(e.target.value)}
+                placeholder="e.g., Kitchen Display"
+                className="mt-2"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="import-model">Device Model (optional)</Label>
+              <Select
+                value={importDeviceModelId?.toString()}
+                onValueChange={(value) => setImportDeviceModelId(parseInt(value))}
+              >
+                <SelectTrigger className="mt-2">
+                  <SelectValue placeholder={modelsLoading ? "Loading models..." : "Auto-detect from device"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {(deviceModels || []).map((model) => (
+                    <SelectItem key={model.id} value={model.id.toString()}>
+                      {model.display_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowImportDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={importDevice}
+              disabled={importLoading || !importMacAddress.trim() || !importApiKey.trim() || !importFriendlyId.trim()}
+            >
+              {importLoading ? "Importing..." : "Import Device"}
             </Button>
           </DialogFooter>
         </DialogContent>

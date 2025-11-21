@@ -85,8 +85,7 @@ class TabManager {
 
   private becomePrimary() {
     this.isPrimary = true
-    console.log(`Tab ${this.tabId} became primary`)
-    
+
     // Start heartbeat
     this.heartbeatInterval = setInterval(() => {
       this.broadcast('primary_heartbeat', { tabId: this.tabId })
@@ -133,7 +132,6 @@ class TabManager {
     this.sseConnections.forEach(source => source.close())
     this.sseConnections.clear()
 
-    console.log(`Tab ${this.tabId} stepped down from primary`)
     this.emit('primary_changed', false)
   }
 
@@ -195,7 +193,6 @@ class TabManager {
   // SSE Connection Management
   public createSSEConnection(deviceId: string, url: string): EventSource | null {
     if (!this.isPrimary) {
-      console.log(`Tab ${this.tabId} is not primary, not creating SSE connection for device ${deviceId}`)
       return null
     }
 
@@ -232,8 +229,7 @@ class TabManager {
       }
 
       this.sseConnections.set(deviceId, eventSource)
-      console.log(`Tab ${this.tabId} created SSE connection for device ${deviceId}`)
-      
+
       return eventSource
     } catch (error) {
       console.error(`Failed to create SSE connection for device ${deviceId}:`, error)
@@ -246,14 +242,12 @@ class TabManager {
     if (connection) {
       connection.close()
       this.sseConnections.delete(deviceId)
-      console.log(`Tab ${this.tabId} closed SSE connection for device ${deviceId}`)
     }
   }
 
   public closeAllSSEConnections() {
     this.sseConnections.forEach((connection, deviceId) => {
       connection.close()
-      console.log(`Tab ${this.tabId} closed SSE connection for device ${deviceId}`)
     })
     this.sseConnections.clear()
   }

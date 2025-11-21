@@ -129,9 +129,6 @@ const sampleData = {
 };
 
 export function PluginPreview({ plugin, isOpen, onClose }: PluginPreviewProps) {
-  console.log('[PluginPreview] Component mounted/updated with plugin:', plugin?.name, 'isOpen:', isOpen);
-  console.log('[PluginPreview] Full plugin object:', plugin);
-
   const [selectedLayout, setSelectedLayout] = useState<string>('full');
   const [customData, setCustomData] = useState(JSON.stringify(sampleData, null, 2));
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -149,12 +146,9 @@ export function PluginPreview({ plugin, isOpen, onClose }: PluginPreviewProps) {
   // Initialize sample data from plugin when plugin changes
   useEffect(() => {
     if (plugin) {
-      console.log('[PluginPreview] Loading plugin:', plugin.name, 'sample_data:', plugin.sample_data);
       if (plugin.sample_data) {
-        console.log('[PluginPreview] Using plugin sample data');
         setCustomData(JSON.stringify(plugin.sample_data, null, 2));
       } else {
-        console.log('[PluginPreview] Using default sample data');
         setCustomData(JSON.stringify(sampleData, null, 2));
       }
       setSampleDataSaved(false);
@@ -170,8 +164,6 @@ export function PluginPreview({ plugin, isOpen, onClose }: PluginPreviewProps) {
 
   const generatePreview = async () => {
     try {
-      console.log('[PluginPreview] Starting generatePreview');
-      console.log('[PluginPreview] customData:', customData);
       setLoading(true);
       setError(null);
 
@@ -179,7 +171,6 @@ export function PluginPreview({ plugin, isOpen, onClose }: PluginPreviewProps) {
       let parsedData;
       try {
         parsedData = JSON.parse(customData);
-        console.log('[PluginPreview] Parsed customData:', parsedData);
       } catch (e) {
         throw new Error("Invalid JSON in sample data");
       }
@@ -224,8 +215,7 @@ export function PluginPreview({ plugin, isOpen, onClose }: PluginPreviewProps) {
         layout_width: currentLayout.width,   // Layout-specific dimensions for content positioning
         layout_height: currentLayout.height, // Layout-specific dimensions for content positioning
       };
-      console.log('[PluginPreview] Sending API request payload:', requestPayload);
-      
+
       const response = await fetch('/api/plugin-definitions/test', {
         method: 'POST',
         headers: {
@@ -241,10 +231,8 @@ export function PluginPreview({ plugin, isOpen, onClose }: PluginPreviewProps) {
       }
 
       const result = await response.json();
-      console.log('[PluginPreview] API response:', result);
-      
+
       if (result.preview_url) {
-        console.log('[PluginPreview] Setting preview URL:', result.preview_url);
         setPreviewUrl(result.preview_url);
       } else {
         throw new Error("No preview URL returned from server");
@@ -286,7 +274,6 @@ export function PluginPreview({ plugin, isOpen, onClose }: PluginPreviewProps) {
     }
 
     try {
-      console.log('[PluginPreview] Starting to save sample data for plugin:', plugin.id);
       setSavingSampleData(true);
       setError(null);
 
@@ -294,7 +281,6 @@ export function PluginPreview({ plugin, isOpen, onClose }: PluginPreviewProps) {
       let parsedData;
       try {
         parsedData = JSON.parse(customData);
-        console.log('[PluginPreview] Parsed sample data:', parsedData);
       } catch (e) {
         throw new Error("Invalid JSON in sample data");
       }
@@ -332,13 +318,10 @@ export function PluginPreview({ plugin, isOpen, onClose }: PluginPreviewProps) {
       }
 
       const responseData = await response.json();
-      console.log('[PluginPreview] Save successful:', responseData);
-      
+
       setSampleDataSaved(true);
-      // Update the plugin object in memory
       plugin.sample_data = parsedData;
-      console.log('[PluginPreview] Updated plugin object with sample data');
-      
+
     } catch (err) {
       console.error('[PluginPreview] Save error:', err);
       setError(err instanceof Error ? err.message : "Failed to save sample data");

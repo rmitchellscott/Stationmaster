@@ -130,7 +130,8 @@ func (p *PrivatePlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespon
 			}
 		} else {
 			// Poll fresh data and store it
-			poller := NewEnhancedDataPoller()
+			unifiedRenderer := rendering.NewUnifiedRenderer()
+			poller := NewEnhancedDataPoller(unifiedRenderer)
 			pollingCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			

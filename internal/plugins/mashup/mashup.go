@@ -159,7 +159,8 @@ func (p *MashupPlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespons
 			} else {
 				// Data is stale or doesn't exist - actively poll fresh data
 				logging.Debug("[MASHUP] Stored polling data stale, actively polling", "instance_id", childInstanceID, "slot", child.SlotPosition)
-				poller := private.NewEnhancedDataPoller()
+				unifiedRenderer := rendering.NewUnifiedRenderer()
+				poller := private.NewEnhancedDataPoller(unifiedRenderer)
 				pollingCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 				defer cancel()
 

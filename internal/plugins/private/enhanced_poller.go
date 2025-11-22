@@ -12,6 +12,7 @@ import (
 
 	"github.com/rmitchellscott/stationmaster/internal/database"
 	"github.com/rmitchellscott/stationmaster/internal/logging"
+	"github.com/rmitchellscott/stationmaster/internal/rendering"
 )
 
 // EnhancedPollingConfig represents the configuration for polling external data
@@ -42,15 +43,17 @@ type EnhancedPolledData struct {
 
 // EnhancedDataPoller handles polling external URLs for private plugin data with robust error handling
 type EnhancedDataPoller struct {
-	client *http.Client
+	client   *http.Client
+	renderer *rendering.UnifiedRenderer
 }
 
 // NewEnhancedDataPoller creates a new enhanced data poller
-func NewEnhancedDataPoller() *EnhancedDataPoller {
+func NewEnhancedDataPoller(renderer *rendering.UnifiedRenderer) *EnhancedDataPoller {
 	return &EnhancedDataPoller{
 		client: &http.Client{
 			Timeout: 30 * time.Second, // Default timeout, will be overridden per request
 		},
+		renderer: renderer,
 	}
 }
 
@@ -137,12 +140,42 @@ func (p *EnhancedDataPoller) PollData(ctx context.Context, plugin *database.Plug
 
 // pollSingleURL polls a single URL and returns the response data with retry logic
 func (p *EnhancedDataPoller) pollSingleURL(ctx context.Context, urlConfig EnhancedURLConfig, config *EnhancedPollingConfig, templateData map[string]interface{}) (interface{}, error) {
+	renderedURLs, err := p.renderLiquidURLTemplate(ctx, urlConfig.URL, templateData)
+	if err != nil {
+		logging.Warn("[ENHANCED_POLLER] Liquid rendering failed for URL, falling back to simple substitution",
+			"url", urlConfig.URL,
+			"error", err)
+		renderedURLs = []string{urlConfig.URL}
+	}
+
+	if len(renderedURLs) == 1 {
+		return p.fetchURLWithRetry(ctx, urlConfig, config, templateData, renderedURLs[0])
+	}
+
+	results := make(map[string]interface{})
+	var errors []string
+	for i, renderedURL := range renderedURLs {
+		data, err := p.fetchURLWithRetry(ctx, urlConfig, config, templateData, renderedURL)
+		if err != nil {
+			errors = append(errors, fmt.Sprintf("URL %d failed: %v", i, err))
+			continue
+		}
+		results[fmt.Sprintf("IDX_%d", i)] = data
+	}
+
+	if len(errors) > 0 && len(results) == 0 {
+		return nil, fmt.Errorf("all URLs failed: %s", strings.Join(errors, "; "))
+	}
+
+	return results, nil
+}
+
+// fetchURLWithRetry fetches a URL with retry logic
+func (p *EnhancedDataPoller) fetchURLWithRetry(ctx context.Context, urlConfig EnhancedURLConfig, config *EnhancedPollingConfig, templateData map[string]interface{}, renderedURL string) (interface{}, error) {
 	var lastErr error
 
-	// Retry logic with exponential backoff
 	for attempt := 0; attempt <= config.RetryCount; attempt++ {
 		if attempt > 0 {
-			// Wait before retrying (exponential backoff)
 			waitTime := time.Duration(attempt*attempt) * time.Second
 			select {
 			case <-ctx.Done():
@@ -151,14 +184,17 @@ func (p *EnhancedDataPoller) pollSingleURL(ctx context.Context, urlConfig Enhanc
 			}
 		}
 
-		data, err := p.fetchURL(ctx, urlConfig, config, templateData)
+		modifiedConfig := urlConfig
+		modifiedConfig.URL = renderedURL
+
+		data, err := p.fetchURL(ctx, modifiedConfig, config, templateData)
 		if err == nil {
 			return data, nil
 		}
 
 		lastErr = err
 		logging.Warn("[ENHANCED_POLLER] URL fetch failed, retrying",
-			"url", urlConfig.URL,
+			"url", renderedURL,
 			"attempt", attempt+1,
 			"max_attempts", config.RetryCount+1,
 			"error", err)
@@ -288,5 +324,38 @@ func (p *EnhancedDataPoller) replaceMergeVariables(template string, data map[str
 		result = strings.ReplaceAll(result, placeholderNoSpaces, valueStr)
 	}
 	return result
+}
+
+// renderLiquidURLTemplate renders a URL template using full Liquid templating and splits on newlines
+func (p *EnhancedDataPoller) renderLiquidURLTemplate(ctx context.Context, urlTemplate string, templateData map[string]interface{}) ([]string, error) {
+	if p.renderer == nil {
+		return []string{urlTemplate}, nil
+	}
+
+	renderedURL, err := p.renderer.ProcessTemplate(ctx, rendering.PluginRenderOptions{
+		SharedMarkup: urlTemplate,
+		Data:         templateData,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("liquid rendering failed: %w", err)
+	}
+
+	urls := strings.FieldsFunc(renderedURL, func(r rune) bool {
+		return r == '\r' || r == '\n'
+	})
+
+	var nonEmptyURLs []string
+	for _, url := range urls {
+		url = strings.TrimSpace(url)
+		if url != "" {
+			nonEmptyURLs = append(nonEmptyURLs, url)
+		}
+	}
+
+	if len(nonEmptyURLs) == 0 {
+		return []string{urlTemplate}, nil
+	}
+
+	return nonEmptyURLs, nil
 }
 

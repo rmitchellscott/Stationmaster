@@ -1235,10 +1235,11 @@ func getPollingDataForPreview(plugin TestPlugin, formDefaults map[string]interfa
 		DataStrategy:  &dataStrategy,
 		PollingConfig: pollingConfigBytes,
 	}
-	
+
 	// Create poller and fetch data
-	poller := private.NewEnhancedDataPoller()
-	
+	unifiedRenderer := rendering.NewUnifiedRenderer()
+	poller := private.NewEnhancedDataPoller(unifiedRenderer)
+
 	// Create context with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()

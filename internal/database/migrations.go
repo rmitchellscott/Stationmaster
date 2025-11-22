@@ -589,13 +589,13 @@ func RunMigrations(logPrefix string) error {
 						Key:         "webhook_rate_limit_per_hour",
 						Value:       "30",
 						Description: "Maximum number of webhook requests per user per hour",
-						UpdatedAt:   time.Now(),
+						UpdatedAt:   time.Now().UTC(),
 					},
 					{
 						Key:         "webhook_max_request_size_kb",
 						Value:       "5",
 						Description: "Maximum webhook request payload size in KB",
-						UpdatedAt:   time.Now(),
+						UpdatedAt:   time.Now().UTC(),
 					},
 				}
 				

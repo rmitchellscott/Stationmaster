@@ -33,7 +33,7 @@ func (s *ImageStorage) StoreImage(imageData []byte, deviceID uuid.UUID, pluginTy
 	
 	// Generate filename based on content hash and timestamp
 	hash := sha256.Sum256(imageData)
-	timestamp := time.Now().Format("20060102_150405")
+	timestamp := time.Now().UTC().Format("20060102_150405")
 	filename := fmt.Sprintf("%s_%s_%x.png", pluginType, timestamp, hash[:8])
 	
 	// Create full path

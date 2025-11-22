@@ -64,7 +64,7 @@ func (p *EnhancedDataPoller) PollData(ctx context.Context, plugin *database.Plug
 		return nil, fmt.Errorf("no polling configuration found")
 	}
 
-	startTime := time.Now()
+	startTime := time.Now().UTC()
 	result := &EnhancedPolledData{
 		Data:     make(map[string]interface{}),
 		Success:  true,

@@ -101,8 +101,8 @@ func LoginHandler(c *gin.Context) {
 	// Generate JWT token
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"username": req.Username,
-		"exp":      time.Now().Add(sessionTimeout).Unix(),
-		"iat":      time.Now().Unix(),
+		"exp":      time.Now().UTC().Add(sessionTimeout).Unix(),
+		"iat":      time.Now().UTC().Unix(),
 	})
 
 	tokenString, err := token.SignedString(jwtSecret)
@@ -237,8 +237,8 @@ func CheckAuthHandler(c *gin.Context) {
 		// Generate auto-JWT for UI user
 		token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 			"username": "ui-user",
-			"exp":      time.Now().Add(sessionTimeout).Unix(),
-			"iat":      time.Now().Unix(),
+			"exp":      time.Now().UTC().Add(sessionTimeout).Unix(),
+			"iat":      time.Now().UTC().Unix(),
 			"auto":     true, // Mark as auto-generated
 		})
 

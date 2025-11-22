@@ -57,7 +57,7 @@ type MonitoringService struct {
 
 // NewMonitoringService creates a new monitoring service
 func NewMonitoringService(workerPool *RenderWorkerPool, queueManager *QueueManager) *MonitoringService {
-	now := time.Now()
+	now := time.Now().UTC()
 	return &MonitoringService{
 		workerPool:       workerPool,
 		queueManager:     queueManager,
@@ -152,7 +152,7 @@ func (m *MonitoringService) GetHealthStatus(ctx context.Context) (*HealthStatus,
 		WorkerPool:      workerPoolHealth,
 		Queue:           queueHealth,
 		Performance:     performanceMetrics,
-		LastUpdated:     time.Now(),
+		LastUpdated:     time.Now().UTC(),
 		Recommendations: recommendations,
 	}
 	
@@ -228,7 +228,7 @@ func (m *MonitoringService) determineHealthStatus(
 
 // ResetMetrics resets the performance metrics counters
 func (m *MonitoringService) ResetMetrics() {
-	m.lastMetricsReset = time.Now()
+	m.lastMetricsReset = time.Now().UTC()
 	m.lastJobCount = m.workerPool.GetMetrics().TotalJobs
 	logging.Info("[MONITORING] Reset performance metrics counters")
 }

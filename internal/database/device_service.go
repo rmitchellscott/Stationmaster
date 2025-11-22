@@ -368,7 +368,7 @@ func (ds *DeviceService) UpdateLastPlaylistItemID(deviceID uuid.UUID, playlistIt
 
 // UpdateDeviceStatus updates device status information from TRMNL requests
 func (ds *DeviceService) UpdateDeviceStatus(macAddress string, firmwareVersion string, batteryVoltage float64, rssi int, modelName string) error {
-	now := time.Now()
+	now := time.Now().UTC()
 
 
 	// Use explicit transaction to ensure commit
@@ -517,7 +517,7 @@ func (ds *DeviceService) GetDeviceStats() (map[string]interface{}, error) {
 	}
 
 	// Consider devices online if they've been seen in the last hour
-	oneHourAgo := time.Now().Add(-1 * time.Hour)
+	oneHourAgo := time.Now().UTC().Add(-1 * time.Hour)
 	if err := ds.db.Model(&Device{}).Where("last_seen > ? AND is_active = ?", oneHourAgo, true).Count(&onlineDevices).Error; err != nil {
 		return nil, err
 	}
@@ -578,7 +578,7 @@ func (ds *DeviceService) CreateDeviceLog(deviceID uuid.UUID, logData string, lev
 		DeviceID:  deviceID,
 		LogData:   logData,
 		Level:     level,
-		Timestamp: time.Now(),
+		Timestamp: time.Now().UTC(),
 	}
 
 	if err := ds.db.Create(deviceLog).Error; err != nil {
@@ -617,7 +617,7 @@ func (ds *DeviceService) GetDeviceLogsCount(deviceID uuid.UUID) (int64, error) {
 
 // CleanupOldDeviceLogs removes logs older than the specified duration
 func (ds *DeviceService) CleanupOldDeviceLogs(olderThan time.Duration) (int64, error) {
-	cutoffTime := time.Now().Add(-olderThan)
+	cutoffTime := time.Now().UTC().Add(-olderThan)
 
 	result := ds.db.Where("timestamp < ?", cutoffTime).Delete(&DeviceLog{})
 	if result.Error != nil {

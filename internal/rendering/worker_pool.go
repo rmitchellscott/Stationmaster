@@ -271,7 +271,7 @@ func (p *RenderWorkerPool) loadPendingJobs(ctx context.Context) error {
 		)
 		GROUP BY plugin_instance_id, id
 		LIMIT 20
-	`, "pending", time.Now(), "pending", time.Now()).Scan(&jobIDs).Error
+	`, "pending", time.Now().UTC(), "pending", time.Now().UTC()).Scan(&jobIDs).Error
 
 	if err != nil {
 		return err
@@ -536,7 +536,7 @@ func (w *Worker) processJob(job RenderJob) {
 	}
 	
 	// Mark job as processing in database
-	now := time.Now()
+	now := time.Now().UTC()
 	err := w.pool.db.WithContext(job.Context).Model(&database.RenderQueue{}).
 		Where("id = ?", job.ID).
 		Updates(database.RenderQueue{
@@ -573,7 +573,7 @@ func (w *Worker) processJob(job RenderJob) {
 	}
 	
 	// Process the job using existing render worker logic
-	startTime := time.Now()
+	startTime := time.Now().UTC()
 	err = w.pool.renderWorker.processRenderJob(job.Context, dbJob)
 	processingDuration := time.Since(startTime)
 	durationMs := int(processingDuration.Milliseconds())

@@ -37,7 +37,7 @@ func generateRandomString(length int) string {
 	bytes := make([]byte, length/2)
 	if _, err := rand.Read(bytes); err != nil {
 		// Fallback to timestamp-based randomness if crypto/rand fails
-		return fmt.Sprintf("%x", time.Now().UnixNano())[:length]
+		return fmt.Sprintf("%x", time.Now().UTC().UnixNano())[:length]
 	}
 	return hex.EncodeToString(bytes)[:length]
 }
@@ -86,7 +86,7 @@ func (w *RenderWorker) ProcessRenderQueue(ctx context.Context) error {
 		)
 		GROUP BY rq1.plugin_instance_id, rq1.id
 		LIMIT 10
-	`, "pending", time.Now(), "pending", time.Now()).Scan(&jobIDs).Error
+	`, "pending", time.Now().UTC(), "pending", time.Now().UTC()).Scan(&jobIDs).Error
 
 	if err != nil {
 		return fmt.Errorf("failed to find job IDs: %w", err)
@@ -131,7 +131,7 @@ func (w *RenderWorker) ProcessRenderQueue(ctx context.Context) error {
 // processRenderJob processes a single render job
 func (w *RenderWorker) processRenderJob(ctx context.Context, job database.RenderQueue) error {
 	// Mark job as processing
-	now := time.Now()
+	now := time.Now().UTC()
 	err := w.db.WithContext(ctx).Model(&job).Updates(database.RenderQueue{
 		Status:      "processing",
 		LastAttempt: &now,
@@ -394,7 +394,7 @@ func (w *RenderWorker) renderForDevice(ctx context.Context, pluginInstance datab
 			
 			if err == nil && existingContent.ContentHash != nil && *existingContent.ContentHash == newHash {
 				// Content unchanged - update last_checked_at and continue with job completion
-				now := time.Now()
+				now := time.Now().UTC()
 				existingContent.LastCheckedAt = &now
 				existingContent.RenderAttempts = 0 // Reset attempts on successful check
 				
@@ -490,7 +490,7 @@ func (w *RenderWorker) renderForDevice(ctx context.Context, pluginInstance datab
 			ImagePath:      imagePath,
 			FileSize:       fileSize,
 			ContentHash:    contentHash,
-			RenderedAt:     time.Now(),
+			RenderedAt:     time.Now().UTC(),
 			LastCheckedAt:  nil, // Will be set on future hash checks
 			PreviousHash:   previousHash,
 			RenderAttempts: 0, // Reset attempts on successful render
@@ -600,7 +600,7 @@ func (w *RenderWorker) scheduleNextRenderWithOptions(ctx context.Context, plugin
 	if err != nil {
 		logging.Error("[RENDER_WORKER] Failed to calculate next render time", "error", err, "plugin", pluginInstance.Name)
 		// Fallback to simple interval scheduling
-		nextRender = time.Now().Add(time.Duration(pluginInstance.RefreshInterval) * time.Second)
+		nextRender = time.Now().UTC().Add(time.Duration(pluginInstance.RefreshInterval) * time.Second)
 	}
 
 	renderJob := database.RenderQueue{
@@ -637,8 +637,8 @@ func (w *RenderWorker) calculateNextRenderTime(ctx context.Context, pluginInstan
 		logging.Warn("[RENDER_WORKER] Invalid timezone, using UTC", "timezone", userTimezone, "error", err)
 		location = time.UTC
 	}
-	
-	now := time.Now().In(location)
+
+	now := time.Now().UTC().In(location)
 	refreshInterval := pluginInstance.RefreshInterval
 	
 	// For mashup plugins, use the minimum refresh rate of child plugins
@@ -676,7 +676,7 @@ func (w *RenderWorker) calculateNextRenderTime(ctx context.Context, pluginInstan
 		
 	default:
 		// For interval-based rates (15min, 30min, hourly, etc.), use simple addition
-		return time.Now().Add(time.Duration(refreshInterval) * time.Second), nil
+		return time.Now().UTC().Add(time.Duration(refreshInterval) * time.Second), nil
 	}
 }
 
@@ -727,7 +727,7 @@ func (w *RenderWorker) markJobCancelled(ctx context.Context, job database.Render
 
 // CleanupOldContent removes old rendered content and files
 func (w *RenderWorker) CleanupOldContent(ctx context.Context, maxAge time.Duration) error {
-	cutoff := time.Now().Add(-maxAge)
+	cutoff := time.Now().UTC().Add(-maxAge)
 
 	// Find old rendered content
 	var oldContent []database.RenderedContent

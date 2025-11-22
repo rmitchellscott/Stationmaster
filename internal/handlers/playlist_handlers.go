@@ -371,7 +371,7 @@ func AddPlaylistItemHandler(c *gin.Context) {
 		ID:               uuid.New(),
 		PluginInstanceID: req.PluginInstanceID,
 		Priority:         999, // High priority for immediate render on playlist addition
-		ScheduledFor:     time.Now(),
+		ScheduledFor:     time.Now().UTC(),
 		Status:           "pending",
 		IndependentRender: true, // Playlist additions are independent renders
 	}
@@ -396,7 +396,7 @@ func AddPlaylistItemHandler(c *gin.Context) {
 					ID:               uuid.New(),
 					PluginInstanceID: child.ChildInstanceID,
 					Priority:         998, // Slightly lower priority than parent mashup
-					ScheduledFor:     time.Now(),
+					ScheduledFor:     time.Now().UTC(),
 					Status:           "pending",
 					IndependentRender: true, // Independent renders for mashup children
 				}

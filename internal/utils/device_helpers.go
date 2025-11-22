@@ -88,7 +88,7 @@ func GetTimezoneFriendlyName(timezoneIANA string) string {
 	}
 	
 	// Get the current time in that timezone to determine the abbreviation
-	now := time.Now().In(location)
+	now := time.Now().UTC().In(location)
 	zoneName, _ := now.Zone()
 	
 	// Return just the timezone abbreviation (e.g., "MDT", "EST", "PST")

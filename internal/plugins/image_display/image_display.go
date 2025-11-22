@@ -140,7 +140,7 @@ func (p *ImageDisplayPlugin) Process(ctx plugins.PluginContext) (plugins.PluginR
 
 	// Generate filename
 	filename := fmt.Sprintf("image_display_%s_%dx%d.png",
-		time.Now().Format("20060102_150405"),
+		time.Now().UTC().Format("20060102_150405"),
 		ctx.Device.DeviceModel.ScreenWidth,
 		ctx.Device.DeviceModel.ScreenHeight)
 

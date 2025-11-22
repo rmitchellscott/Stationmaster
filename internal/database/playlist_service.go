@@ -326,7 +326,7 @@ func (pls *PlaylistService) consolidatePlaylistsForDevice(deviceID uuid.UUID) er
 				updates := map[string]interface{}{
 					"playlist_id": targetPlaylist.ID,
 					"order_index": orderIndex,
-					"updated_at":  time.Now(),
+					"updated_at":  time.Now().UTC(),
 				}
 				
 				if err := tx.Model(&item).Updates(updates).Error; err != nil {
@@ -585,7 +585,7 @@ func (pls *PlaylistService) CopyPlaylistItems(sourceDeviceID, targetDeviceID uui
 					"is_visible":        sourceItem.IsVisible,
 					"importance":        sourceItem.Importance,
 					"duration_override": sourceItem.DurationOverride,
-					"updated_at":        time.Now(),
+					"updated_at":        time.Now().UTC(),
 				}
 				orderIndex++ // Increment for next item
 
@@ -620,8 +620,8 @@ func (pls *PlaylistService) CopyPlaylistItems(sourceDeviceID, targetDeviceID uui
 						EndTime:        sourceSchedule.EndTime,
 						Timezone:       sourceSchedule.Timezone,
 						IsActive:       sourceSchedule.IsActive,
-						CreatedAt:      time.Now(),
-						UpdatedAt:      time.Now(),
+						CreatedAt:      time.Now().UTC(),
+						UpdatedAt:      time.Now().UTC(),
 					}
 
 					if err := tx.Create(&targetSchedule).Error; err != nil {

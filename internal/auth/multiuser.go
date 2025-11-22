@@ -241,7 +241,7 @@ func MultiUserLoginHandler(c *gin.Context) {
 		IPAddress:   ip,
 		Username:    req.Username,
 		Success:     false,
-		AttemptedAt: time.Now(),
+		AttemptedAt: time.Now().UTC(),
 		UserAgent:   c.GetHeader("User-Agent"),
 	})
 
@@ -261,7 +261,7 @@ func MultiUserLoginHandler(c *gin.Context) {
 		IPAddress:   ip,
 		Username:    req.Username,
 		Success:     true,
-		AttemptedAt: time.Now(),
+		AttemptedAt: time.Now().UTC(),
 		UserAgent:   c.GetHeader("User-Agent"),
 	})
 
@@ -270,8 +270,8 @@ func MultiUserLoginHandler(c *gin.Context) {
 		"user_id":  user.ID.String(),
 		"username": user.Username,
 		"is_admin": user.IsAdmin,
-		"exp":      time.Now().Add(sessionTimeout).Unix(),
-		"iat":      time.Now().Unix(),
+		"exp":      time.Now().UTC().Add(sessionTimeout).Unix(),
+		"iat":      time.Now().UTC().Unix(),
 	})
 
 	tokenString, err := token.SignedString(jwtSecret)
@@ -290,7 +290,7 @@ func MultiUserLoginHandler(c *gin.Context) {
 	database.DB.Create(&database.UserSession{
 		UserID:    user.ID,
 		TokenHash: string(sessionHash),
-		ExpiresAt: time.Now().Add(sessionTimeout),
+		ExpiresAt: time.Now().UTC().Add(sessionTimeout),
 		UserAgent: c.GetHeader("User-Agent"),
 		IPAddress: ip,
 	})

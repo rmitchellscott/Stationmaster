@@ -492,7 +492,7 @@ func UpdatePluginInstanceHandler(c *gin.Context) {
 				ID:               uuid.New(),
 				PluginInstanceID: unifiedInstance.ID,
 				Priority:         999, // High priority for immediate processing
-				ScheduledFor:     time.Now(),
+				ScheduledFor:     time.Now().UTC(),
 				Status:           "pending",
 				IndependentRender: true, // Plugin updates are independent renders
 			}
@@ -596,7 +596,7 @@ func ForceRefreshPluginInstanceHandler(c *gin.Context) {
 				ID:               uuid.New(),
 				PluginInstanceID: unifiedInstance.ID,
 				Priority:         999, // High priority for force refresh
-				ScheduledFor:     time.Now(),
+				ScheduledFor:     time.Now().UTC(),
 				Status:           "pending",
 				IndependentRender: isDaily, // Daily rates: independent, interval rates: reschedule from now
 			}
@@ -892,8 +892,8 @@ func CreatePluginDefinitionHandler(c *gin.Context) {
 		EnableDarkMode:     &req.EnableDarkMode,
 		IsPublished:        false,
 		IsActive:           true,
-		CreatedAt:          time.Now(),
-		UpdatedAt:          time.Now(),
+		CreatedAt:          time.Now().UTC(),
+		UpdatedAt:          time.Now().UTC(),
 	}
 
 	if err := db.Create(&pluginDefinition).Error; err != nil {
@@ -1029,7 +1029,7 @@ func UpdatePluginDefinitionHandler(c *gin.Context) {
 	pluginDefinition.SampleData = sampleDataJSON
 	pluginDefinition.RemoveBleedMargin = &req.RemoveBleedMargin
 	pluginDefinition.EnableDarkMode = &req.EnableDarkMode
-	pluginDefinition.UpdatedAt = time.Now()
+	pluginDefinition.UpdatedAt = time.Now().UTC()
 
 	// Increment schema version if form fields changed
 	if formFieldsChanged {
@@ -1048,7 +1048,7 @@ func UpdatePluginDefinitionHandler(c *gin.Context) {
 			Where("plugin_definition_id = ?", pluginDefinition.ID).
 			Updates(map[string]interface{}{
 				"needs_config_update": true,
-				"updated_at": time.Now(),
+				"updated_at": time.Now().UTC(),
 			})
 		
 		if result.Error != nil {
@@ -1304,7 +1304,7 @@ func TestPluginDefinitionHandler(c *gin.Context) {
 	}
 
 	// Generate instance ID for preview
-	instanceID := fmt.Sprintf("preview_%d", time.Now().Unix())
+	instanceID := fmt.Sprintf("preview_%d", time.Now().UTC().Unix())
 
 	// Determine what data to use for rendering
 	var templateData map[string]interface{}
@@ -1348,7 +1348,7 @@ func TestPluginDefinitionHandler(c *gin.Context) {
 	
 	// Add system information - Unix timestamp
 	systemData := map[string]interface{}{
-		"timestamp_utc": time.Now().Unix(),
+		"timestamp_utc": time.Now().UTC().Unix(),
 	}
 	trmnlData["system"] = systemData
 	
@@ -1366,7 +1366,7 @@ func TestPluginDefinitionHandler(c *gin.Context) {
 			// Parse timezone and calculate UTC offset
 			loc, err := time.LoadLocation(user.Timezone)
 			if err == nil {
-				_, offset := time.Now().In(loc).Zone()
+				_, offset := time.Now().UTC().In(loc).Zone()
 				utcOffset = int64(offset)
 			}
 		}

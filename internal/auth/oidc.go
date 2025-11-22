@@ -452,7 +452,7 @@ func handleOIDCMultiUserAuth(c *gin.Context, username, email, name, subject stri
 	}
 
 	// Always update last login for OIDC authentication
-	now := time.Now()
+	now := time.Now().UTC()
 	updates["last_login"] = &now
 
 	if len(updates) > 0 {
@@ -484,8 +484,8 @@ func handleOIDCMultiUserAuth(c *gin.Context, username, email, name, subject stri
 		"username":    user.Username,
 		"email":       user.Email,
 		"is_admin":    user.IsAdmin,
-		"exp":         time.Now().Add(sessionTimeout).Unix(),
-		"iat":         time.Now().Unix(),
+		"exp":         time.Now().UTC().Add(sessionTimeout).Unix(),
+		"iat":         time.Now().UTC().Unix(),
 		"iss":         "stationmaster",
 		"aud":         "stationmaster-web",
 		"auth_method": "oidc",

@@ -54,7 +54,7 @@ func (s *Service) AddClient(deviceID, userID uuid.UUID, w http.ResponseWriter) *
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Headers", "Cache-Control")
 
-	clientID := fmt.Sprintf("%s-%s-%d", deviceID.String(), userID.String(), time.Now().UnixNano())
+	clientID := fmt.Sprintf("%s-%s-%d", deviceID.String(), userID.String(), time.Now().UTC().UnixNano())
 
 	client := &Client{
 		ID:       clientID,

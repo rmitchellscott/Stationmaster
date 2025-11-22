@@ -95,7 +95,7 @@ func SetupHandler(c *gin.Context) {
 // DisplayHandler handles display requests from TRMNL devices
 // GET /api/display with headers for device authentication and status
 func DisplayHandler(c *gin.Context) {
-	startTime := time.Now()
+	startTime := time.Now().UTC()
 
 	logging.DebugWithComponent(logging.ComponentAPIDisplay, "Request received", "client_ip", c.ClientIP(), "method", c.Request.Method, "path", c.Request.URL.Path)
 	
@@ -295,7 +295,7 @@ func DisplayHandler(c *gin.Context) {
 		"user_id", func() string { if device.UserID != nil { return device.UserID.String() } else { return "nil" } }(), 
 		"claimed", device.IsClaimed)
 	
-	activeItems, err := playlistService.GetActivePlaylistItemsForTime(device.ID, time.Now())
+	activeItems, err := playlistService.GetActivePlaylistItemsForTime(device.ID, time.Now().UTC())
 	if err != nil {
 		logging.Debug("[/api/display] No playlist items found for device (this is normal for unclaimed devices)", "mac_address", device.MacAddress, "error", err)
 		// For unclaimed devices or devices without playlists, use empty activeItems slice
@@ -644,7 +644,7 @@ func DeviceImageHandler(c *gin.Context) {
 
 	// Get current playlist items
 	playlistService := database.NewPlaylistService(db)
-	activeItems, err := playlistService.GetActivePlaylistItemsForTime(device.ID, time.Now())
+	activeItems, err := playlistService.GetActivePlaylistItemsForTime(device.ID, time.Now().UTC())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get playlist items"})
 		return
@@ -1034,7 +1034,7 @@ func FirmwareUpdateCompleteHandler(c *gin.Context) {
 // CurrentScreenHandler handles current screen requests without advancing playlist
 // GET /api/current_screen with Access-Token header only
 func CurrentScreenHandler(c *gin.Context) {
-	startTime := time.Now()
+	startTime := time.Now().UTC()
 
 	logging.Debug("[/api/current_screen] Request received", "client_ip", c.ClientIP(), "method", c.Request.Method, "path", c.Request.URL.Path)
 
@@ -1064,7 +1064,7 @@ func CurrentScreenHandler(c *gin.Context) {
 
 	// Get current playlist items for this device
 	playlistService := database.NewPlaylistService(db)
-	activeItems, err := playlistService.GetActivePlaylistItemsForTime(device.ID, time.Now())
+	activeItems, err := playlistService.GetActivePlaylistItemsForTime(device.ID, time.Now().UTC())
 	if err != nil {
 		logging.Debug("[/api/current_screen] No playlist items found", "mac_address", device.MacAddress, "error", err)
 		activeItems = []database.PlaylistItem{}
@@ -1117,7 +1117,7 @@ func CurrentScreenHandler(c *gin.Context) {
 
 		// For unclaimed devices (status 202), provide setup image
 		imageURL := getImageURLForDevice(device)
-		filename := time.Now().Format("2006-01-02T15:04:05")
+		filename := time.Now().UTC().Format("2006-01-02T15:04:05")
 
 		if status == 202 {
 			imageURL = "https://usetrmnl.com/images/setup/setup-logo.bmp"
@@ -1169,8 +1169,8 @@ func isInSleepPeriod(device *database.Device, userTimezone string) bool {
 	}
 
 	// Get current time in device's timezone
-	now := time.Now().In(loc)
-	
+	now := time.Now().UTC().In(loc)
+
 	// Parse sleep start and end times
 	startTime, err := parseSleepTime(device.SleepStartTime, now)
 	if err != nil {
@@ -1205,8 +1205,8 @@ func calculateSecondsUntilSleepEnd(device *database.Device, userTimezone string)
 	}
 
 	// Get current time in device's timezone
-	now := time.Now().In(loc)
-	
+	now := time.Now().UTC().In(loc)
+
 	// Parse sleep end time
 	endTime, err := parseSleepTime(device.SleepEndTime, now)
 	if err != nil {
@@ -1282,8 +1282,8 @@ func isInFirmwareUpdatePeriod(device *database.Device, userTimezone string) bool
 	}
 
 	// Get current time in device's timezone
-	now := time.Now().In(loc)
-	
+	now := time.Now().UTC().In(loc)
+
 	// Parse firmware update start and end times
 	startTime, err := parseSleepTime(device.FirmwareUpdateStartTime, now)
 	if err != nil {

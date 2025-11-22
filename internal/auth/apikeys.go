@@ -54,7 +54,7 @@ func CreateAPIKeyHandler(c *gin.Context) {
 	var expiresAt *time.Time
 	if req.ExpiresAt != nil {
 		expiry := time.Unix(*req.ExpiresAt, 0)
-		if expiry.Before(time.Now()) {
+		if expiry.Before(time.Now().UTC()) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Expiration time must be in the future"})
 			return
 		}

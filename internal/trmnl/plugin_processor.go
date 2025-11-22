@@ -36,7 +36,7 @@ func generateRandomString(length int) string {
 	bytes := make([]byte, length/2)
 	if _, err := rand.Read(bytes); err != nil {
 		// Fallback to timestamp-based randomness if crypto/rand fails
-		return fmt.Sprintf("%x", time.Now().UnixNano())[:length]
+		return fmt.Sprintf("%x", time.Now().UTC().UnixNano())[:length]
 	}
 	return hex.EncodeToString(bytes)[:length]
 }
@@ -213,7 +213,7 @@ func (pp *PluginProcessor) processUnifiedPluginInstance(device *database.Device,
 			// Return error response but don't fail the whole request
 			response = gin.H{
 				"image_url": getImageURLForDevice(device),
-				"filename":  fmt.Sprintf("error_%s", time.Now().Format("20060102150405")),
+				"filename":  fmt.Sprintf("error_%s", time.Now().UTC().Format("20060102150405")),
 			}
 		} else {
 			// Since plugin doesn't require processing, we can use the response directly
@@ -464,7 +464,7 @@ func (pp *PluginProcessor) processActivePlugins(device *database.Device, activeI
 	logging.Warn("[PLUGIN] All playlist items unavailable", "items_tried", len(activeItems))
 	return gin.H{
 		"image_url": getImageURLForDevice(device),
-		"filename":  fmt.Sprintf("all_failed_%s", time.Now().Format("20060102150405")),
+		"filename":  fmt.Sprintf("all_failed_%s", time.Now().UTC().Format("20060102150405")),
 	}, &activeItems[0], fmt.Errorf("all playlist items unavailable")
 }
 
@@ -499,7 +499,7 @@ func (pp *PluginProcessor) processCurrentPlugin(device *database.Device, activeI
 		
 		return gin.H{
 			"image_url": getImageURLForDevice(device),
-			"filename":  fmt.Sprintf("no_plugin_%s", time.Now().Format("20060102150405")),
+			"filename":  fmt.Sprintf("no_plugin_%s", time.Now().UTC().Format("20060102150405")),
 		}, fmt.Errorf("%s", errorMsg)
 	}
 
@@ -516,7 +516,7 @@ func (pp *PluginProcessor) processCurrentPlugin(device *database.Device, activeI
 		// Return error response
 		response = gin.H{
 			"image_url": getImageURLForDevice(device),
-			"filename":  fmt.Sprintf("error_%s", time.Now().Format("20060102150405")),
+			"filename":  fmt.Sprintf("error_%s", time.Now().UTC().Format("20060102150405")),
 		}
 		return response, err
 	}
@@ -529,7 +529,7 @@ func (pp *PluginProcessor) processCurrentPlugin(device *database.Device, activeI
 		// doesn't manage playlist state. Return an error image instead.
 		return gin.H{
 			"image_url": getImageURLForDevice(device),
-			"filename":  fmt.Sprintf("skipped_current_%s", time.Now().Format("20060102150405")),
+			"filename":  fmt.Sprintf("skipped_current_%s", time.Now().UTC().Format("20060102150405")),
 		}, fmt.Errorf("current playlist item requires skipping due to missing pre-rendered content")
 	}
 

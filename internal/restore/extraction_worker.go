@@ -148,7 +148,7 @@ func (w *ExtractionWorker) processJob(job database.RestoreExtractionJob) {
 		cancel()
 	}()
 
-	now := time.Now()
+	now := time.Now().UTC()
 	job.Status = "extracting"
 	job.StartedAt = &now
 	job.Progress = 0
@@ -207,7 +207,7 @@ func (w *ExtractionWorker) processJob(job database.RestoreExtractionJob) {
 	}
 
 	// Mark as completed
-	completedAt := time.Now()
+	completedAt := time.Now().UTC()
 	job.Status = "completed"
 	job.Progress = 100
 	job.StatusMessage = "Extraction completed"
@@ -319,7 +319,7 @@ func (w *ExtractionWorker) extractTarGz(ctx context.Context, archivePath, destDi
 }
 
 func (w *ExtractionWorker) failJob(job database.RestoreExtractionJob, errorMsg string) {
-	now := time.Now()
+	now := time.Now().UTC()
 	job.Status = "failed"
 	job.ErrorMessage = errorMsg
 	job.CompletedAt = &now
@@ -406,7 +406,7 @@ func CreateCompletedExtractionJob(db *gorm.DB, adminUserID, restoreUploadID uuid
 	}
 
 	// Update job with final path and timestamps
-	now := time.Now()
+	now := time.Now().UTC()
 	job.ExtractedPath = finalExtractionDir
 	job.StartedAt = &now
 	job.CompletedAt = &now
@@ -486,7 +486,7 @@ func CleanupExtractionJob(db *gorm.DB, jobID uuid.UUID, adminUserID uuid.UUID) e
 // CleanupExpiredExtractions removes old extraction jobs and their files
 func CleanupExpiredExtractions(db *gorm.DB) error {
 	// Find extraction jobs older than 24 hours
-	cutoff := time.Now().Add(-24 * time.Hour)
+	cutoff := time.Now().UTC().Add(-24 * time.Hour)
 	var oldJobs []database.RestoreExtractionJob
 	if err := db.Where("created_at < ?", cutoff).Find(&oldJobs).Error; err != nil {
 		return err

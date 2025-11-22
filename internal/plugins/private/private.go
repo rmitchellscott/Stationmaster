@@ -134,7 +134,7 @@ func (p *PrivatePlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespon
 			pollingCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			
-			pollStartTime := time.Now()
+			pollStartTime := time.Now().UTC()
 			polledResult, err := poller.PollData(pollingCtx, p.definition, formFieldValues)
 			pollDuration := time.Since(pollStartTime)
 			
@@ -154,7 +154,7 @@ func (p *PrivatePlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespon
 					PluginInstanceID: instanceID,
 					MergedData:       mergedDataJSON,
 					RawData:          rawDataJSON,
-					PolledAt:         time.Now(),
+					PolledAt:         time.Now().UTC(),
 					PollDuration:     pollDuration,
 					Success:          true,
 					Errors:           errorsJSON,
@@ -178,7 +178,7 @@ func (p *PrivatePlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespon
 					PluginInstanceID: instanceID,
 					MergedData:       []byte("{}"),
 					RawData:          []byte("{}"),
-					PolledAt:         time.Now(),
+					PolledAt:         time.Now().UTC(),
 					PollDuration:     pollDuration,
 					Success:          false,
 					Errors:           errorsJSON,
@@ -303,7 +303,7 @@ func (p *PrivatePlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespon
 	
 	// Generate filename
 	filename := fmt.Sprintf("private_plugin_%s_%dx%d.png",
-		time.Now().Format("20060102_150405"),
+		time.Now().UTC().Format("20060102_150405"),
 		ctx.Device.DeviceModel.ScreenWidth,
 		ctx.Device.DeviceModel.ScreenHeight)
 	

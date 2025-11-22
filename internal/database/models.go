@@ -485,7 +485,7 @@ func (dl *DeviceLog) BeforeCreate(tx *gorm.DB) error {
 		dl.ID = uuid.New()
 	}
 	if dl.Timestamp.IsZero() {
-		dl.Timestamp = time.Now()
+		dl.Timestamp = time.Now().UTC()
 	}
 	return nil
 }

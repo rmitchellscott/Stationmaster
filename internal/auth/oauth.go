@@ -328,7 +328,7 @@ func storeUserOAuthToken(userID, provider string, token *oauth2.Token, scopes []
 			"access_token":  token.AccessToken,
 			"refresh_token": token.RefreshToken,
 			"scopes":        string(scopesJSON),
-			"updated_at":    time.Now(),
+			"updated_at":    time.Now().UTC(),
 		}).
 		FirstOrCreate(oauthToken)
 	

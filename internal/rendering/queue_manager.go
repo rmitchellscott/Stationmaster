@@ -62,7 +62,7 @@ func (qm *QueueManager) ScheduleImmediateRenderWithOptions(ctx context.Context, 
 			ID:               uuid.New(),
 			PluginInstanceID: pluginInstanceID,
 			Priority:         100,
-			ScheduledFor:     time.Now(),
+			ScheduledFor:     time.Now().UTC(),
 			Attempts:         0,
 			Context:          ctx,
 		}
@@ -72,7 +72,7 @@ func (qm *QueueManager) ScheduleImmediateRenderWithOptions(ctx context.Context, 
 			ID:               job.ID,
 			PluginInstanceID: pluginInstanceID,
 			Priority:         100,
-			ScheduledFor:     time.Now(),
+			ScheduledFor:     time.Now().UTC(),
 			Status:           "pending",
 			IndependentRender: false, // Normal immediate jobs should reschedule
 		}
@@ -93,7 +93,7 @@ func (qm *QueueManager) ScheduleImmediateRenderWithOptions(ctx context.Context, 
 	}
 	
 	// Fallback to regular database scheduling
-	return qm.ScheduleRender(ctx, pluginInstanceID, 100, time.Now())
+	return qm.ScheduleRender(ctx, pluginInstanceID, 100, time.Now().UTC())
 }
 
 // ScheduleInitialRenders schedules initial render jobs for all active plugin instances
@@ -159,7 +159,7 @@ func (qm *QueueManager) ScheduleInitialRenders(ctx context.Context) error {
 			continue
 		}
 
-		now := time.Now()
+		now := time.Now().UTC()
 		refreshInterval := time.Duration(pluginInstance.RefreshInterval) * time.Second
 		nextDue := contentResult.LastRender.Add(refreshInterval)
 		
@@ -206,7 +206,7 @@ func (qm *QueueManager) UpdateRefreshInterval(ctx context.Context, pluginInstanc
 	}
 
 	// Schedule a new job with the updated interval
-	nextRender := time.Now().Add(time.Duration(newInterval) * time.Second)
+	nextRender := time.Now().UTC().Add(time.Duration(newInterval) * time.Second)
 	return qm.ScheduleRender(ctx, pluginInstanceID, 0, nextRender)
 }
 
@@ -263,7 +263,7 @@ func (qm *QueueManager) GetQueueStats(ctx context.Context) (map[string]interface
 	// Get recent failed jobs count (last 24 hours)
 	var recentFailedCount int64
 	err = qm.db.WithContext(ctx).Model(&database.RenderQueue{}).
-		Where("status = ? AND updated_at > ?", "failed", time.Now().Add(-24*time.Hour)).
+		Where("status = ? AND updated_at > ?", "failed", time.Now().UTC().Add(-24*time.Hour)).
 		Count(&recentFailedCount).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to get recent failed count: %w", err)
@@ -290,7 +290,7 @@ func (qm *QueueManager) RetryFailedJobs(ctx context.Context, maxAttempts int) er
 	logging.Info("[QUEUE_MANAGER] Retrying failed jobs", "job_count", len(failedJobs))
 
 	// Schedule retry in 5 minutes
-	retryTime := time.Now().Add(5 * time.Minute)
+	retryTime := time.Now().UTC().Add(5 * time.Minute)
 	
 	for _, job := range failedJobs {
 		err = qm.db.WithContext(ctx).Model(&job).Updates(database.RenderQueue{
@@ -308,7 +308,7 @@ func (qm *QueueManager) RetryFailedJobs(ctx context.Context, maxAttempts int) er
 
 // CleanupOldJobs removes old completed and failed jobs
 func (qm *QueueManager) CleanupOldJobs(ctx context.Context, maxAge time.Duration) error {
-	cutoff := time.Now().Add(-maxAge)
+	cutoff := time.Now().UTC().Add(-maxAge)
 	
 	result := qm.db.WithContext(ctx).
 		Where("status IN ? AND updated_at < ?", []string{"completed", "failed", "cancelled"}, cutoff).

@@ -124,7 +124,7 @@ func (wrl *WebhookRateLimiter) allowRequest(userKey string, rateLimit int) bool 
 	wrl.mutex.Lock()
 	defer wrl.mutex.Unlock()
 
-	now := time.Now()
+	now := time.Now().UTC()
 	windowSize := time.Hour
 
 	userLimit, exists := wrl.userLimits[userKey]
@@ -197,7 +197,7 @@ func (wrl *WebhookRateLimiter) cleanup() {
 	wrl.mutex.Lock()
 	defer wrl.mutex.Unlock()
 
-	now := time.Now()
+	now := time.Now().UTC()
 	for userKey, userLimit := range wrl.userLimits {
 		if now.Sub(userLimit.WindowStart) >= userLimit.WindowSize {
 			delete(wrl.userLimits, userKey)

@@ -69,7 +69,7 @@ func (s *APIKeyService) GenerateAPIKey(userID uuid.UUID, name string, expiresAt 
 		KeyPrefix: apiKey[:22], // Store first 22 chars for display (stationmaster_ + 8 chars)
 		IsActive:  true,
 		ExpiresAt: expiresAt,
-		CreatedAt: time.Now(),
+		CreatedAt: time.Now().UTC(),
 	}
 
 	if err := s.db.Create(apiKeyRecord).Error; err != nil {
@@ -89,14 +89,14 @@ func (s *APIKeyService) ValidateAPIKey(apiKey string) (*User, error) {
 	// Find all active API keys and check each one
 	var apiKeys []APIKey
 	if err := s.db.Where("is_active = ? AND (expires_at IS NULL OR expires_at > ?)",
-		true, time.Now()).Find(&apiKeys).Error; err != nil {
+		true, time.Now().UTC()).Find(&apiKeys).Error; err != nil {
 		return nil, fmt.Errorf("failed to query API keys: %w", err)
 	}
 
 	for _, key := range apiKeys {
 		if err := bcrypt.CompareHashAndPassword([]byte(key.KeyHash), []byte(apiKey)); err == nil {
 			// Update last used timestamp
-			s.db.Model(&key).Update("last_used", time.Now())
+			s.db.Model(&key).Update("last_used", time.Now().UTC())
 
 			// Get and return the user
 			var user User
@@ -124,7 +124,7 @@ func (s *APIKeyService) ValidateAPIKeyConstantTime(providedKey string) (*User, e
 	}
 
 	var apiKeys []APIKey
-	query := s.db.Where("is_active = ? AND (expires_at IS NULL OR expires_at > ?)", true, time.Now())
+	query := s.db.Where("is_active = ? AND (expires_at IS NULL OR expires_at > ?)", true, time.Now().UTC())
 	if prefix != "" {
 		query = query.Where("key_prefix = ?", prefix)
 	}
@@ -143,7 +143,7 @@ func (s *APIKeyService) ValidateAPIKeyConstantTime(providedKey string) (*User, e
 				validKey = true
 
 				// Update last used timestamp
-				s.db.Model(&key).Update("last_used", time.Now())
+				s.db.Model(&key).Update("last_used", time.Now().UTC())
 
 				// Get the user
 				var user User
@@ -174,7 +174,7 @@ func (s *APIKeyService) GetUserAPIKeys(userID uuid.UUID) ([]APIKey, error) {
 func (s *APIKeyService) GetActiveUserAPIKeys(userID uuid.UUID) ([]APIKey, error) {
 	var apiKeys []APIKey
 	if err := s.db.Where("user_id = ? AND is_active = ? AND (expires_at IS NULL OR expires_at > ?)",
-		userID, true, time.Now()).Order("created_at DESC").Find(&apiKeys).Error; err != nil {
+		userID, true, time.Now().UTC()).Order("created_at DESC").Find(&apiKeys).Error; err != nil {
 		return nil, err
 	}
 	return apiKeys, nil
@@ -197,7 +197,7 @@ func (s *APIKeyService) UpdateAPIKeyName(keyID uuid.UUID, userID uuid.UUID, newN
 
 // CleanupExpiredAPIKeys removes expired API keys
 func (s *APIKeyService) CleanupExpiredAPIKeys() error {
-	return s.db.Where("expires_at < ?", time.Now()).Delete(&APIKey{}).Error
+	return s.db.Where("expires_at < ?", time.Now().UTC()).Delete(&APIKey{}).Error
 }
 
 // GetAPIKeyStats returns API key statistics
@@ -214,21 +214,21 @@ func (s *APIKeyService) GetAPIKeyStats() (map[string]interface{}, error) {
 	// Active API keys
 	var activeCount int64
 	if err := s.db.Model(&APIKey{}).Where("is_active = ? AND (expires_at IS NULL OR expires_at > ?)",
-		true, time.Now()).Count(&activeCount).Error; err != nil {
+		true, time.Now().UTC()).Count(&activeCount).Error; err != nil {
 		return nil, err
 	}
 	stats["active"] = activeCount
 
 	// Expired API keys
 	var expiredCount int64
-	if err := s.db.Model(&APIKey{}).Where("expires_at < ?", time.Now()).Count(&expiredCount).Error; err != nil {
+	if err := s.db.Model(&APIKey{}).Where("expires_at < ?", time.Now().UTC()).Count(&expiredCount).Error; err != nil {
 		return nil, err
 	}
 	stats["expired"] = expiredCount
 
 	// Recently used API keys (last 24 hours)
 	var recentlyUsedCount int64
-	if err := s.db.Model(&APIKey{}).Where("last_used > ?", time.Now().Add(-24*time.Hour)).Count(&recentlyUsedCount).Error; err != nil {
+	if err := s.db.Model(&APIKey{}).Where("last_used > ?", time.Now().UTC().Add(-24*time.Hour)).Count(&recentlyUsedCount).Error; err != nil {
 		return nil, err
 	}
 	stats["recently_used"] = recentlyUsedCount
@@ -288,7 +288,7 @@ func (s *APIKeyService) CreateAPIKeyFromValue(userID uuid.UUID, name string, api
 		KeyPrefix: keyPrefix,
 		IsActive:  true,
 		ExpiresAt: expiresAt,
-		CreatedAt: time.Now(),
+		CreatedAt: time.Now().UTC(),
 	}
 
 	if err := s.db.Create(apiKeyRecord).Error; err != nil {

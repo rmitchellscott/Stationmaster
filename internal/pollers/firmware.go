@@ -228,7 +228,7 @@ func (p *FirmwarePoller) discoverFirmwareVersion(ctx context.Context, versionInf
 		IsDownloaded:     false,
 		DownloadStatus:   "pending",
 		DownloadProgress: 0,
-		ReleasedAt:       time.Now(), // Set to now since we don't get this from API
+		ReleasedAt:       time.Now().UTC(), // Set to now since we don't get this from API
 	}
 
 	if err := p.db.Create(&firmwareVersion).Error; err != nil {
@@ -283,7 +283,7 @@ func (p *FirmwarePoller) processFirmwareVersion(ctx context.Context, versionInfo
 		IsDownloaded:     false,
 		DownloadStatus:   "pending",
 		DownloadProgress: 0,
-		ReleasedAt:       time.Now(), // Set to now since we don't get this from API
+		ReleasedAt:       time.Now().UTC(), // Set to now since we don't get this from API
 	}
 
 	if err := p.db.Create(&firmwareVersion).Error; err != nil {

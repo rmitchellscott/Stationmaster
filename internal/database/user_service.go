@@ -68,8 +68,8 @@ func (s *UserService) CreateUser(username, email, password string, isAdmin bool,
 		Timezone:  userTimezone,
 		IsAdmin:   isAdmin,
 		IsActive:  true,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
 	}
 
 	if err := s.db.Create(user).Error; err != nil {
@@ -95,7 +95,7 @@ func (s *UserService) AuthenticateUser(username, password string) (*User, error)
 	}
 
 	// Update last login
-	now := time.Now()
+	now := time.Now().UTC()
 	user.LastLogin = &now
 	s.db.Save(&user)
 
@@ -111,7 +111,7 @@ func (s *UserService) UpdateUserPassword(userID uuid.UUID, newPassword string) e
 
 	return s.db.Model(&User{}).Where("id = ?", userID).Updates(map[string]interface{}{
 		"password":            string(hashedPassword),
-		"updated_at":          time.Now(),
+		"updated_at":          time.Now().UTC(),
 		"reset_token":         nil,
 		"reset_token_expires": nil,
 	}).Error
@@ -132,12 +132,12 @@ func (s *UserService) GeneratePasswordResetToken(email string) (string, error) {
 	token := fmt.Sprintf("%x", tokenBytes)
 
 	// Set token expiration (24 hours from now)
-	expires := time.Now().Add(24 * time.Hour)
+	expires := time.Now().UTC().Add(24 * time.Hour)
 
 	if err := s.db.Model(&user).Updates(map[string]interface{}{
 		"reset_token":         token,
 		"reset_token_expires": expires,
-		"updated_at":          time.Now(),
+		"updated_at":          time.Now().UTC(),
 	}).Error; err != nil {
 		return "", fmt.Errorf("failed to save reset token: %w", err)
 	}
@@ -149,7 +149,7 @@ func (s *UserService) GeneratePasswordResetToken(email string) (string, error) {
 func (s *UserService) ValidatePasswordResetToken(token string) (*User, error) {
 	var user User
 	if err := s.db.Where("reset_token = ? AND reset_token_expires > ? AND is_active = ?",
-		token, time.Now(), true).First(&user).Error; err != nil {
+		token, time.Now().UTC(), true).First(&user).Error; err != nil {
 		return nil, errors.New("invalid or expired reset token")
 	}
 
@@ -176,7 +176,7 @@ func (s *UserService) GetAllUsers() ([]User, error) {
 
 // UpdateUserSettings updates user-specific settings
 func (s *UserService) UpdateUserSettings(userID uuid.UUID, settings map[string]interface{}) error {
-	settings["updated_at"] = time.Now()
+	settings["updated_at"] = time.Now().UTC()
 	return s.db.Model(&User{}).Where("id = ?", userID).Updates(settings).Error
 }
 
@@ -184,7 +184,7 @@ func (s *UserService) UpdateUserSettings(userID uuid.UUID, settings map[string]i
 func (s *UserService) DeactivateUser(userID uuid.UUID) error {
 	return s.db.Model(&User{}).Where("id = ?", userID).Updates(map[string]interface{}{
 		"is_active":  false,
-		"updated_at": time.Now(),
+		"updated_at": time.Now().UTC(),
 	}).Error
 }
 
@@ -192,7 +192,7 @@ func (s *UserService) DeactivateUser(userID uuid.UUID) error {
 func (s *UserService) ActivateUser(userID uuid.UUID) error {
 	return s.db.Model(&User{}).Where("id = ?", userID).Updates(map[string]interface{}{
 		"is_active":  true,
-		"updated_at": time.Now(),
+		"updated_at": time.Now().UTC(),
 	}).Error
 }
 
@@ -200,7 +200,7 @@ func (s *UserService) ActivateUser(userID uuid.UUID) error {
 func (s *UserService) SetUserAdmin(userID uuid.UUID, isAdmin bool) error {
 	return s.db.Model(&User{}).Where("id = ?", userID).Updates(map[string]interface{}{
 		"is_admin":   isAdmin,
-		"updated_at": time.Now(),
+		"updated_at": time.Now().UTC(),
 	}).Error
 }
 
@@ -217,7 +217,7 @@ func (s *UserService) GetUserStats(userID uuid.UUID) (map[string]interface{}, er
 
 	// Count active sessions
 	var sessionCount int64
-	if err := s.db.Model(&UserSession{}).Where("user_id = ? AND expires_at > ?", userID, time.Now()).Count(&sessionCount).Error; err != nil {
+	if err := s.db.Model(&UserSession{}).Where("user_id = ? AND expires_at > ?", userID, time.Now().UTC()).Count(&sessionCount).Error; err != nil {
 		return nil, err
 	}
 	stats["active_sessions"] = sessionCount
@@ -229,18 +229,18 @@ func (s *UserService) GetUserStats(userID uuid.UUID) (map[string]interface{}, er
 func (s *UserService) CompleteOnboarding(userID uuid.UUID) error {
 	return s.db.Model(&User{}).Where("id = ?", userID).Updates(map[string]interface{}{
 		"onboarding_completed": true,
-		"updated_at":           time.Now(),
+		"updated_at":           time.Now().UTC(),
 	}).Error
 }
 
 // CleanupExpiredSessions removes expired sessions
 func (s *UserService) CleanupExpiredSessions() error {
-	return s.db.Where("expires_at < ?", time.Now()).Delete(&UserSession{}).Error
+	return s.db.Where("expires_at < ?", time.Now().UTC()).Delete(&UserSession{}).Error
 }
 
 // CleanupExpiredResetTokens removes expired reset tokens
 func (s *UserService) CleanupExpiredResetTokens() error {
-	return s.db.Model(&User{}).Where("reset_token_expires < ?", time.Now()).Updates(map[string]interface{}{
+	return s.db.Model(&User{}).Where("reset_token_expires < ?", time.Now().UTC()).Updates(map[string]interface{}{
 		"reset_token":         nil,
 		"reset_token_expires": nil,
 	}).Error

@@ -87,7 +87,7 @@ func GetSystemStatusHandler(c *gin.Context) {
 
 	// Count active sessions for dashboard
 	var activeSessions int64
-	database.DB.Model(&database.UserSession{}).Where("expires_at > ?", time.Now()).Count(&activeSessions)
+	database.DB.Model(&database.UserSession{}).Where("expires_at > ?", time.Now().UTC()).Count(&activeSessions)
 
 	c.JSON(http.StatusOK, gin.H{
 		"database": gin.H{
@@ -455,7 +455,7 @@ func UploadRestoreFileHandler(c *gin.Context) {
 		FilePath:    uploadPath,
 		FileSize:    size,
 		Status:      "uploaded",
-		ExpiresAt:   time.Now().Add(24 * time.Hour),
+		ExpiresAt:   time.Now().UTC().Add(24 * time.Hour),
 	}
 
 	if err := database.DB.Create(&restoreUpload).Error; err != nil {

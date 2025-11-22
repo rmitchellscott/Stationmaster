@@ -255,7 +255,7 @@ func (p *ScreenshotPlugin) Process(ctx plugins.PluginContext) (plugins.PluginRes
 
 	// Generate filename
 	filename := fmt.Sprintf("screenshot_%s_%dx%d.png",
-		time.Now().Format("20060102_150405"),
+		time.Now().UTC().Format("20060102_150405"),
 		ctx.Device.DeviceModel.ScreenWidth,
 		ctx.Device.DeviceModel.ScreenHeight)
 

@@ -168,7 +168,7 @@ func (p *ModelPoller) processDeviceModel(ctx context.Context, modelInfo DeviceMo
 		Where("bit_depth = ?", int(modelInfo.BitDepth)).
 		First(&existingModel).Error
 
-	now := time.Now()
+	now := time.Now().UTC()
 	
 	if err == nil {
 		// Exact model exists, just update last seen time

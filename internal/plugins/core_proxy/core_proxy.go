@@ -189,7 +189,7 @@ func (p *CoreProxyPlugin) Process(ctx plugins.PluginContext) (plugins.PluginResp
 	}
 
 	// Extract filename with fallback
-	filename := time.Now().Format("2006-01-02T15:04:05")
+	filename := time.Now().UTC().Format("2006-01-02T15:04:05")
 	if fname, ok := trmnlResponse["filename"].(string); ok && fname != "" {
 		filename = fname
 	}

@@ -99,7 +99,7 @@ func WebhookHandler(c *gin.Context) {
 		PluginInstanceID: pluginInstance.ID.String(),
 		RawData:          rawDataJSON,
 		MergeStrategy:    mergeStrategy,
-		ReceivedAt:       time.Now(),
+		ReceivedAt:       time.Now().UTC(),
 		ContentType:      contentType,
 		ContentSize:      len(bodyBytes),
 		SourceIP:         c.ClientIP(),

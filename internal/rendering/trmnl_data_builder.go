@@ -25,7 +25,7 @@ func (b *TRNMLDataBuilder) BuildTRNMLData(ctx plugins.PluginContext, instance *d
 
 	// Add system information - Unix timestamp
 	systemData := map[string]interface{}{
-		"timestamp_utc": time.Now().Unix(),
+		"timestamp_utc": time.Now().UTC().Unix(),
 	}
 	trmnlData["system"] = systemData
 
@@ -70,7 +70,7 @@ func (b *TRNMLDataBuilder) BuildTRNMLData(ctx plugins.PluginContext, instance *d
 			// Parse timezone and calculate UTC offset
 			loc, err := time.LoadLocation(ctx.User.Timezone)
 			if err == nil {
-				_, offset := time.Now().In(loc).Zone()
+				_, offset := time.Now().UTC().In(loc).Zone()
 				utcOffset = int64(offset)
 			}
 		}

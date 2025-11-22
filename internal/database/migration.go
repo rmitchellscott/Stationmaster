@@ -43,7 +43,7 @@ func MigrateToMultiUser() error {
 
 	// Create the admin user using the service method (use system timezone for server-created accounts)
 	systemTimezone := "UTC" // Default to UTC for server-created admin users
-	if tz := time.Now().Location().String(); tz != "" && tz != "Local" {
+	if tz := time.Now().UTC().Location().String(); tz != "" && tz != "Local" {
 		systemTimezone = tz
 	}
 	_, err := userService.CreateUser(username, email, password, true, systemTimezone)

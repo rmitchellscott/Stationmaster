@@ -81,7 +81,7 @@ func (p *AliasPlugin) Process(ctx plugins.PluginContext) (plugins.PluginResponse
 	}
 
 	// Generate filename with timestamp
-	filename := fmt.Sprintf("alias_%s", time.Now().Format("2006-01-02T15:04:05"))
+	filename := fmt.Sprintf("alias_%s", time.Now().UTC().Format("2006-01-02T15:04:05"))
 
 	return plugins.CreateImageResponseWithoutRefresh(imageURL, filename), nil
 }

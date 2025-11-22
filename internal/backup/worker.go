@@ -115,7 +115,7 @@ func (w *Worker) processPendingJobs() {
 }
 
 func (w *Worker) processJob(job database.BackupJob) {
-	now := time.Now()
+	now := time.Now().UTC()
 	job.Status = "running"
 	job.StartedAt = &now
 	job.Progress = 0
@@ -131,7 +131,7 @@ func (w *Worker) processJob(job database.BackupJob) {
 	}
 	defer os.RemoveAll(tempDir)
 
-	timestamp := time.Now().Format("20060102_150405")
+	timestamp := time.Now().UTC().Format("20060102_150405")
 	filename := fmt.Sprintf("stationmaster_backup_%s.tar.gz", timestamp)
 	tempBackupPath := filepath.Join(tempDir, filename)
 
@@ -183,7 +183,7 @@ func (w *Worker) processJob(job database.BackupJob) {
 		return
 	}
 
-	completedAt := time.Now()
+	completedAt := time.Now().UTC()
 
 	job.Status = "completed"
 	job.Progress = 100
@@ -196,7 +196,7 @@ func (w *Worker) processJob(job database.BackupJob) {
 }
 
 func (w *Worker) failJob(job database.BackupJob, errorMsg string) {
-	now := time.Now()
+	now := time.Now().UTC()
 	job.Status = "failed"
 	job.ErrorMessage = errorMsg
 	job.CompletedAt = &now
@@ -248,7 +248,7 @@ func GetBackupJob(db *gorm.DB, jobID uuid.UUID, adminUserID uuid.UUID) (*databas
 
 func CleanupExpiredBackups(db *gorm.DB) error {
 	var expiredJobs []database.BackupJob
-	if err := db.Where("status = ? AND completed_at < ?", "completed", time.Now().Add(-24*time.Hour)).Find(&expiredJobs).Error; err != nil {
+	if err := db.Where("status = ? AND completed_at < ?", "completed", time.Now().UTC().Add(-24*time.Hour)).Find(&expiredJobs).Error; err != nil {
 		return err
 	}
 

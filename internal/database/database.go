@@ -359,7 +359,7 @@ func SetSystemSetting(key, value string, updatedBy *uuid.UUID) error {
 		Key:       key,
 		Value:     value,
 		UpdatedBy: updatedBy,
-		UpdatedAt: time.Now(),
+		UpdatedAt: time.Now().UTC(),
 	}
 
 	return DB.Save(&setting).Error

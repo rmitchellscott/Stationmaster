@@ -563,7 +563,7 @@ func DeviceEventsHandler(c *gin.Context) {
 		currentItem, err := playlistService.GetPlaylistItemByID(*device.LastPlaylistItemID)
 		if err == nil && currentItem != nil {
 			// Get active items for context and index calculation
-			activeItems, _ := playlistService.GetActivePlaylistItemsForTime(deviceID, time.Now())
+			activeItems, _ := playlistService.GetActivePlaylistItemsForTime(deviceID, time.Now().UTC())
 			
 			// Calculate index in active items for frontend compatibility
 			currentIndex := -1
@@ -656,7 +656,7 @@ func DeviceActiveItemsHandler(c *gin.Context) {
 		}
 		queryTime = parsedTime
 	} else {
-		queryTime = time.Now()
+		queryTime = time.Now().UTC()
 	}
 
 	// Get active playlist items for the specified time
@@ -821,7 +821,7 @@ func MirrorDeviceHandler(c *gin.Context) {
 	}
 
 	// Update the target device to record the mirror relationship
-	now := time.Now()
+	now := time.Now().UTC()
 	device.MirrorSourceID = &sourceDevice.ID
 	device.MirrorSyncedAt = &now
 
@@ -897,7 +897,7 @@ func SyncMirrorHandler(c *gin.Context) {
 	}
 
 	// Update the sync timestamp
-	now := time.Now()
+	now := time.Now().UTC()
 	device.MirrorSyncedAt = &now
 
 	err = deviceService.UpdateDevice(device)

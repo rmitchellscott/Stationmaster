@@ -71,7 +71,7 @@ func (r *EmbeddedLiquidRenderer) renderWithRetry(
 	if ok {
 		conn.SetDeadline(deadline)
 	} else {
-		conn.SetDeadline(time.Now().Add(socketTimeout))
+		conn.SetDeadline(time.Now().UTC().Add(socketTimeout))
 	}
 
 	// Prepare request

@@ -163,7 +163,7 @@ func (p *MashupPlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespons
 				pollingCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 				defer cancel()
 
-				pollStartTime := time.Now()
+				pollStartTime := time.Now().UTC()
 				polledResult, pollErr := poller.PollData(pollingCtx, &child.ChildInstance.PluginDefinition, formFieldValues)
 				pollDuration := time.Since(pollStartTime)
 
@@ -183,7 +183,7 @@ func (p *MashupPlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespons
 						PluginInstanceID: childInstanceID,
 						MergedData:       mergedDataJSON,
 						RawData:          rawDataJSON,
-						PolledAt:         time.Now(),
+						PolledAt:         time.Now().UTC(),
 						PollDuration:     pollDuration,
 						Success:          true,
 						Errors:           errorsJSON,
@@ -207,7 +207,7 @@ func (p *MashupPlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespons
 						PluginInstanceID: childInstanceID,
 						MergedData:       []byte("{}"),
 						RawData:          []byte("{}"),
-						PolledAt:         time.Now(),
+						PolledAt:         time.Now().UTC(),
 						PollDuration:     pollDuration,
 						Success:          false,
 						Errors:           errorsJSON,
@@ -309,7 +309,7 @@ func (p *MashupPlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespons
 	
 	// Generate filename
 	filename := fmt.Sprintf("mashup_%s_%dx%d.png",
-		time.Now().Format("20060102_150405"),
+		time.Now().UTC().Format("20060102_150405"),
 		ctx.Device.DeviceModel.ScreenWidth,
 		ctx.Device.DeviceModel.ScreenHeight)
 	

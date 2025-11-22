@@ -1,9 +1,13 @@
 package mashup
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/color"
+	"image/png"
 	"io"
 	"net/http"
 	"os"
@@ -275,52 +279,33 @@ func (p *MashupPlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespons
 		slotConfig = []database.MashupSlotInfo{}
 	}
 	
-	// Generate mashup HTML using parallel Ruby renders for data safety and performance
-	finalHTML, err := p.renderMashupParallel(layout, childData, slotConfig, ctx)
+	// Render each slot to individual images in parallel
+	slotImages, err := p.renderMashupParallel(layout, childData, slotConfig, ctx)
 	if err != nil {
 		return plugins.CreateErrorResponse(fmt.Sprintf("Failed to render mashup: %v", err)),
 			fmt.Errorf("failed to render mashup: %w", err)
 	}
-	
-	// Create browserless renderer for HTML to image conversion
-	browserRenderer, err := rendering.NewBrowserlessRenderer()
-	if err != nil {
-		return plugins.CreateErrorResponse(fmt.Sprintf("Failed to create renderer: %v", err)),
-			fmt.Errorf("failed to create browserless renderer: %w", err)
-	}
-	defer browserRenderer.Close()
-	
-	// Render HTML to image using browserless (like private plugins do)
-	renderCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	
-	renderResult, err := browserRenderer.RenderHTMLWithResult(
-		renderCtx,
-		finalHTML,
+
+	// Composite images using darken blend mode
+	imageData, err := p.compositeDarkenImages(
+		slotImages,
 		ctx.Device.DeviceModel.ScreenWidth,
 		ctx.Device.DeviceModel.ScreenHeight,
 	)
 	if err != nil {
-		return plugins.CreateErrorResponse(fmt.Sprintf("Failed to render HTML: %v", err)),
-			fmt.Errorf("failed to render HTML to image: %w", err)
+		return plugins.CreateErrorResponse(fmt.Sprintf("Failed to composite images: %v", err)),
+			fmt.Errorf("failed to composite images: %w", err)
 	}
-	
-	imageData := renderResult.ImageData
-	flags := renderResult.Flags
-	
+
 	// Generate filename
 	filename := fmt.Sprintf("mashup_%s_%dx%d.png",
 		time.Now().UTC().Format("20060102_150405"),
 		ctx.Device.DeviceModel.ScreenWidth,
 		ctx.Device.DeviceModel.ScreenHeight)
-	
-	// Return image data response (like private plugins do)
+
+	// Return image data response
 	response := plugins.CreateImageDataResponse(imageData, filename)
-	// Add flags to response metadata if needed
-	if flags.SkipDisplay {
-		response["skip_display"] = true
-	}
-	
+
 	return response, nil
 }
 
@@ -436,49 +421,47 @@ func (p *MashupPlugin) getTemplateTypeForSlot(layout string, slotPosition string
 	return "full"
 }
 
-// renderMashupParallel renders each slot in parallel using proven Ruby renderer for performance and data safety
-func (p *MashupPlugin) renderMashupParallel(layout string, childData map[string]ChildData, slotConfig []database.MashupSlotInfo, ctx plugins.PluginContext) (string, error) {
+// renderMashupParallel renders each slot HTML, then renders N full mashup images (one per slot)
+// Returns map of slot position -> PNG image bytes for compositing
+func (p *MashupPlugin) renderMashupParallel(layout string, childData map[string]ChildData, slotConfig []database.MashupSlotInfo, ctx plugins.PluginContext) (map[string][]byte, error) {
 	logging.Info("[MASHUP] Starting parallel mashup rendering", "layout", layout, "children_count", len(childData))
-	
-	// Create a result channel and goroutine for each slot
-	type slotResult struct {
+
+	// Step 1: Render each slot's content HTML in parallel
+	type slotHTMLResult struct {
 		position string
 		html     string
 		err      error
 	}
-	
-	resultChan := make(chan slotResult, len(slotConfig))
-	
-	// Launch parallel rendering for each slot
+
+	htmlResultChan := make(chan slotHTMLResult, len(slotConfig))
+
+	// Launch parallel rendering for each slot's content
 	for _, slot := range slotConfig {
 		go func(slotInfo database.MashupSlotInfo) {
 			childInfo, exists := childData[slotInfo.Position]
-			
+
 			if !exists || !childInfo.Success {
-				// Handle missing or failed child
 				errorMsg := "No content available"
 				if exists && !childInfo.Success {
 					errorMsg = childInfo.Error
 				}
-				
+
 				errorHTML := fmt.Sprintf(`<div class="mashup-error">%s</div>`, errorMsg)
-				resultChan <- slotResult{
+				htmlResultChan <- slotHTMLResult{
 					position: slotInfo.Position,
 					html:     errorHTML,
 					err:      nil,
 				}
 				return
 			}
-			
+
 			var slotHTML string
 			var err error
-			
-			// Check if this is an external plugin slot
+
 			if childInfo.Template == "EXTERNAL_PLUGIN" {
-				// For external plugins, fetch rendered HTML from Ruby service
 				slotHTML, err = p.fetchExternalPluginSlotHTML(childInfo, slotInfo, ctx)
 				if err != nil {
-					resultChan <- slotResult{
+					htmlResultChan <- slotHTMLResult{
 						position: slotInfo.Position,
 						html:     "",
 						err:      fmt.Errorf("failed to render external plugin slot %s: %w", slotInfo.Position, err),
@@ -486,20 +469,17 @@ func (p *MashupPlugin) renderMashupParallel(layout string, childData map[string]
 					return
 				}
 			} else {
-				// For private plugins, use unified renderer (existing logic)
 				unifiedRenderer := rendering.NewUnifiedRenderer()
-				
-				// Get shared markup for this child plugin (same as private plugins do)
+
 				var sharedMarkup string
 				if childInfo.Instance != nil && childInfo.Instance.PluginDefinition.SharedMarkup != nil {
 					sharedMarkup = *childInfo.Instance.PluginDefinition.SharedMarkup
 				}
-				
-				// Render this slot's template with its isolated data context (same as private plugins)
+
 				renderOptions := rendering.PluginRenderOptions{
-					SharedMarkup:      sharedMarkup, // Include shared markup like private plugins!
+					SharedMarkup:      sharedMarkup,
 					LayoutTemplate:    childInfo.Template,
-					Data:              childInfo.Data, // Isolated data - no variable collisions!
+					Data:              childInfo.Data,
 					Width:             ctx.Device.DeviceModel.ScreenWidth,
 					Height:            ctx.Device.DeviceModel.ScreenHeight,
 					PluginName:        fmt.Sprintf("%s (slot: %s)", p.Name(), slotInfo.Position),
@@ -508,10 +488,10 @@ func (p *MashupPlugin) renderMashupParallel(layout string, childData map[string]
 					RemoveBleedMargin: false,
 					EnableDarkMode:    false,
 				}
-				
+
 				slotHTML, err = unifiedRenderer.ProcessTemplate(context.Background(), renderOptions)
 				if err != nil {
-					resultChan <- slotResult{
+					htmlResultChan <- slotHTMLResult{
 						position: slotInfo.Position,
 						html:     "",
 						err:      fmt.Errorf("failed to render private plugin slot %s: %w", slotInfo.Position, err),
@@ -519,74 +499,201 @@ func (p *MashupPlugin) renderMashupParallel(layout string, childData map[string]
 					return
 				}
 			}
-			
-			resultChan <- slotResult{
+
+			htmlResultChan <- slotHTMLResult{
 				position: slotInfo.Position,
 				html:     slotHTML,
 				err:      nil,
 			}
 		}(slot)
 	}
-	
-	// Collect results from all goroutines
+
+	// Collect slot HTML results
 	renderedSlots := make(map[string]string)
 	for i := 0; i < len(slotConfig); i++ {
-		result := <-resultChan
+		result := <-htmlResultChan
 		if result.err != nil {
-			return "", result.err
+			return nil, result.err
 		}
 		renderedSlots[result.position] = result.html
 	}
-	
-	logging.Info("[MASHUP] Parallel rendering completed", "slots_rendered", len(renderedSlots))
-	
-	// Build final mashup HTML by combining rendered slots
-	return p.buildMashupHTML(layout, renderedSlots, slotConfig, ctx), nil
+
+	logging.Info("[MASHUP] Slot HTML rendering completed", "slots_rendered", len(renderedSlots))
+
+	// Step 2: Render N full mashup images (one per slot) in parallel
+	type imageResult struct {
+		position  string
+		imageData []byte
+		err       error
+	}
+
+	imageResultChan := make(chan imageResult, len(slotConfig))
+	browserlessRenderer, err := rendering.NewBrowserlessRenderer()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create browserless renderer: %w", err)
+	}
+	defer browserlessRenderer.Close()
+
+	for _, slot := range slotConfig {
+		go func(slotInfo database.MashupSlotInfo) {
+			// Build full mashup HTML with only this slot active (others empty)
+			fullHTML := p.buildMashupHTML(layout, renderedSlots, slotConfig, ctx, slotInfo.Position)
+
+			// Render to PNG using browserless
+			imageData, err := browserlessRenderer.RenderHTML(
+				context.Background(),
+				fullHTML,
+				ctx.Device.DeviceModel.ScreenWidth,
+				ctx.Device.DeviceModel.ScreenHeight,
+			)
+
+			if err != nil {
+				imageResultChan <- imageResult{
+					position:  slotInfo.Position,
+					imageData: nil,
+					err:       fmt.Errorf("failed to render mashup image for slot %s: %w", slotInfo.Position, err),
+				}
+				return
+			}
+
+			imageResultChan <- imageResult{
+				position:  slotInfo.Position,
+				imageData: imageData,
+				err:       nil,
+			}
+		}(slot)
+	}
+
+	// Collect image results
+	slotImages := make(map[string][]byte)
+	for i := 0; i < len(slotConfig); i++ {
+		result := <-imageResultChan
+		if result.err != nil {
+			return nil, result.err
+		}
+		slotImages[result.position] = result.imageData
+	}
+
+	logging.Info("[MASHUP] Image rendering completed", "images_rendered", len(slotImages))
+
+	return slotImages, nil
 }
 
-// buildMashupHTML combines rendered slot HTML fragments into complete HTML document using shared utility
-func (p *MashupPlugin) buildMashupHTML(layout string, renderedSlots map[string]string, slotConfig []database.MashupSlotInfo, ctx plugins.PluginContext) string {
+// compositeDarkenImages combines multiple PNG images using darken blend mode
+// Each image should be the same size. Empty areas are white (255,255,255).
+// Darken blend takes the minimum value for each RGB channel, so white pixels
+// from empty slots don't affect content pixels from active slots.
+func (p *MashupPlugin) compositeDarkenImages(slotImages map[string][]byte, width, height int) ([]byte, error) {
+	logging.Info("[MASHUP] Starting image composition", "image_count", len(slotImages))
+
+	if len(slotImages) == 0 {
+		return nil, fmt.Errorf("no images to composite")
+	}
+
+	// Decode all PNG images
+	var images []image.Image
+	for pos, imgData := range slotImages {
+		img, err := png.Decode(bytes.NewReader(imgData))
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode image for slot %s: %w", pos, err)
+		}
+		images = append(images, img)
+	}
+
+	// Create output image
+	bounds := image.Rect(0, 0, width, height)
+	output := image.NewRGBA(bounds)
+
+	// Composite using darken blend: result = min(all images)
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			var minR, minG, minB uint32 = 65535, 65535, 65535
+
+			// Find minimum value for each channel across all images
+			for _, img := range images {
+				r, g, b, _ := img.At(x, y).RGBA()
+				if r < minR {
+					minR = r
+				}
+				if g < minG {
+					minG = g
+				}
+				if b < minB {
+					minB = b
+				}
+			}
+
+			// Convert from 16-bit to 8-bit and set pixel
+			output.SetRGBA(x, y, color.RGBA{
+				R: uint8(minR >> 8),
+				G: uint8(minG >> 8),
+				B: uint8(minB >> 8),
+				A: 255,
+			})
+		}
+	}
+
+	logging.Info("[MASHUP] Image composition completed")
+
+	// Encode to PNG
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, output); err != nil {
+		return nil, fmt.Errorf("failed to encode composited image: %w", err)
+	}
+
+	return buf.Bytes(), nil
+}
+
+// buildMashupHTML builds complete mashup HTML for multi-pass rendering
+// activeSlotPosition: which slot gets real content (others get empty divs for white background)
+func (p *MashupPlugin) buildMashupHTML(layout string, renderedSlots map[string]string, slotConfig []database.MashupSlotInfo, ctx plugins.PluginContext, activeSlotPosition string) string {
 	var contentBuilder strings.Builder
-	
-	// Build the mashup container content (just the inner content)
+
+	assetsManager := rendering.NewHTMLAssetsManager()
+	assetBaseURL := config.GetAssetBaseURL()
+
+	// Build the mashup container content
 	contentBuilder.WriteString(fmt.Sprintf(`<div class="environment trmnl">
 	<div class="screen">
 		<div class="mashup mashup--%s">`, layout))
-	
-	// Add each slot's rendered content
+
+	// Add each slot: real content for activeSlotPosition, empty div for others
 	for _, slot := range slotConfig {
-		renderedContent := renderedSlots[slot.Position]
-		if renderedContent == "" {
-			renderedContent = fmt.Sprintf(`<div class="mashup-empty-slot">No content for %s</div>`, slot.DisplayName)
+		var slotContent string
+
+		if slot.Position == activeSlotPosition {
+			// This is the active slot - use real rendered content
+			slotContent = renderedSlots[slot.Position]
+			if slotContent == "" {
+				slotContent = fmt.Sprintf(`<div class="mashup-empty-slot">No content for %s</div>`, slot.DisplayName)
+			}
+		} else {
+			// Inactive slot - empty div renders as white background
+			slotContent = ""
 		}
-		
-		// No extraction needed since ProcessTemplate returns just the processed content
-		
+
 		contentBuilder.WriteString(fmt.Sprintf(`
 		<div id="slot-%s" class="view %s">
 			%s
-		</div>`, slot.Position, slot.ViewClass, renderedContent))
+		</div>`, slot.Position, slot.ViewClass, slotContent))
 	}
-	
+
 	// Close the mashup structure
 	contentBuilder.WriteString(`
 		</div>
 	</div>
 </div>`)
-	
+
 	mashupContent := contentBuilder.String()
-	
-	// Use new external function to wrap mashup with TRMNL assets (no duplication!)
-	assetsManager := rendering.NewHTMLAssetsManager()
-	assetBaseURL := config.GetAssetBaseURL()
-	
+
+	// Wrap with TRMNL assets
 	return assetsManager.WrapWithTRNMLAssets(
 		mashupContent,
 		p.Name(),
 		ctx.Device.DeviceModel.ScreenWidth,
 		ctx.Device.DeviceModel.ScreenHeight,
-		false, // removeBleedMargin - TODO: Make configurable if needed
-		false, // enableDarkMode - TODO: Make configurable if needed
+		false,
+		false,
 		assetBaseURL,
 	)
 }

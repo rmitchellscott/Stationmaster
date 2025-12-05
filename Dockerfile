@@ -1,5 +1,3 @@
-FROM --platform=$BUILDPLATFORM tonistiigi/xx:1.6.1 AS xx
-
 # Frontend build
 FROM --platform=$BUILDPLATFORM node:24-alpine AS ui-builder
 WORKDIR /app
@@ -12,7 +10,6 @@ RUN cd ui && npm run build
 
 FROM --platform=$BUILDPLATFORM golang:1.24-alpine AS go-base
 WORKDIR /app
-COPY --from=xx / /
 
 # Build backend
 FROM --platform=$BUILDPLATFORM go-base AS stationmaster-builder
@@ -33,10 +30,11 @@ RUN apk add --no-cache curl bash \
 ARG VERSION=dev
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
-ARG TARGETPLATFORM
+ARG TARGETOS
+ARG TARGETARCH
 
 RUN --mount=type=cache,target=/root/.cache \
-    CGO_ENABLED=0 xx-go build \
+    CGO_ENABLED=0 GOOS="$TARGETOS" GOARCH="$TARGETARCH" go build \
     -tags production \
     -ldflags="-w -s \
         -X github.com/rmitchellscott/stationmaster/internal/version.Version=${VERSION} \

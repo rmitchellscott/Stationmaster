@@ -64,7 +64,7 @@ RUN gem install \
 # Final image
 FROM alpine:3.22
 
-ARG S6_OVERLAY_VERSION=3.2.0.2
+ARG S6_OVERLAY_VERSION=3.2.1.0
 ARG TARGETARCH
 
 # Install minimal runtime dependencies including Ruby

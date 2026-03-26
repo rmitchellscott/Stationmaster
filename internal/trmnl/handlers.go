@@ -355,16 +355,12 @@ func DisplayHandler(c *gin.Context) {
 	if device.BatteryVoltage > 0 && device.BatteryVoltage < 3.2 {
 		logging.Warn("[/api/display] Device has low battery, returning low battery image", "mac_address", device.MacAddress, "voltage", device.BatteryVoltage)
 
-		// Use relative path for low battery image URL, then convert to absolute
-		imageURL := "/images/low_battery.png"
-		if strings.HasPrefix(imageURL, "/images/") {
-			imageURL = baseURL + imageURL
-		}
+		imageURL := baseURL + statusImageURL("low_battery.png", device)
 
 		response := gin.H{
 			"status":          0,
 			"image_url":       imageURL,
-			"filename":        "low_battery",
+			"filename":        statusFilename("low_battery", device),
 			"refresh_rate":    fmt.Sprintf("%d", device.RefreshRate),
 			"update_firmware": false,
 			"firmware_url":    "",
@@ -463,8 +459,8 @@ func DisplayHandler(c *gin.Context) {
 		}
 		
 		response = gin.H{
-			"image_url":  "/images/timeout_error.png",
-			"filename":   "timeout_error",
+			"image_url":  statusImageURL("timeout_error.png", device),
+			"filename":   statusFilename("timeout_error", device),
 			"refresh_rate": fmt.Sprintf("%d", timeoutRefreshRate),
 		}
 		pluginErr = fmt.Errorf("plugin processing timeout")
@@ -502,8 +498,8 @@ func DisplayHandler(c *gin.Context) {
 		}
 		
 		response = gin.H{
-			"image_url": "/images/generic_error.png",
-			"filename": "generic_error",
+			"image_url": baseURL + statusImageURL("generic_error.png", device),
+			"filename": statusFilename("generic_error", device),
 			"refresh_rate": fmt.Sprintf("%d", errorRefreshRate),
 		}
 	} else {
@@ -530,8 +526,8 @@ func DisplayHandler(c *gin.Context) {
 		
 		// If sleep screen is enabled, override the image URL
 		if device.SleepShowScreen {
-			response["image_url"] = "/images/sleep.png"
-			response["filename"] = "sleep"
+			response["image_url"] = statusImageURL("sleep.png", device)
+			response["filename"] = statusFilename("sleep", device)
 			backgroundData.sleepScreenServed = true
 		}
 		
@@ -657,6 +653,21 @@ func LogsHandler(c *gin.Context) {
 	logging.Debug("[/api/logs] Successfully stored log entry", "log_id", deviceLog.ID, "device_id", deviceID, "log_level", level)
 
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+func statusFilename(name string, device *database.Device) string {
+	if device.DeviceModel != nil && device.DeviceModel.ScreenWidth > 800 {
+		return name + "_x"
+	}
+	return name
+}
+
+func statusImageURL(filename string, device *database.Device) string {
+	if device.DeviceModel != nil && device.DeviceModel.ScreenWidth > 800 {
+		name := strings.TrimSuffix(filename, ".png")
+		return "/images/" + name + "_x.png"
+	}
+	return "/images/" + filename
 }
 
 // getSetupImageURL returns the setup/empty-state image URL appropriate for a device model.

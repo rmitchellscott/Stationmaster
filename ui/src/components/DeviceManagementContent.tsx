@@ -139,14 +139,32 @@ interface DeviceLog {
 interface FirmwareVersion {
   id: string;
   version: string;
+  model_family: string;
+  chip_family?: string;
+  family_label?: string;
   download_url: string;
   is_latest: boolean;
+  is_stable: boolean;
   is_downloaded: boolean;
   released_at: string;
   download_status?: string;
   file_size?: number;
   release_notes?: string;
 }
+
+const deviceModelToFirmwareFamily: Record<string, string> = {
+  og_plus: "trmnl",
+  og_png: "trmnl",
+  v2: "trmnl_x",
+  og_bwry: "trmnl_4clr",
+  xteink_x4: "xteink_x4",
+  seeed_e1001: "seeed_E1001",
+  seeed_e1002: "seeed_E1002",
+  waveshare_4_26: "trmnl",
+  waveshare_7_5_bw: "trmnl",
+  waveshare_7_5_bwr: "trmnl",
+  waveshare_7_5_bwry: "trmnl",
+};
 
 // Sort types for devices table
 type DeviceSortColumn = 'name' | 'status' | 'firmware' | 'battery' | 'signal' | 'last_seen' | 'created';
@@ -250,31 +268,32 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
     return vB.patch - vA.patch;
   }, []);
 
-  // Sort firmware versions by semantic version (descending: newest first)
-  const sortedFirmwareVersions = React.useMemo(() => {
-    return [...firmwareVersions].sort((a, b) =>
-      compareSemanticVersions(a.version, b.version)
-    );
-  }, [firmwareVersions, compareSemanticVersions]);
-
-  // Filter firmware versions based on unstable checkbox
-  const filteredFirmwareVersions = React.useMemo(() => {
-    const stableVersion = sortedFirmwareVersions.find(fw => fw.is_latest);
-    if (!stableVersion) {
-      return sortedFirmwareVersions;
+  // Filter firmware versions to the device's model family, then sort
+  const deviceFirmwareFamily = React.useMemo(() => {
+    const modelName = editDevice?.device_model?.model_name;
+    if (modelName && deviceModelToFirmwareFamily[modelName]) {
+      return deviceModelToFirmwareFamily[modelName];
     }
+    return "trmnl";
+  }, [editDevice]);
 
+  const sortedFirmwareVersions = React.useMemo(() => {
+    return [...firmwareVersions]
+      .filter(fw => fw.model_family === deviceFirmwareFamily)
+      .sort((a, b) => compareSemanticVersions(a.version, b.version));
+  }, [firmwareVersions, deviceFirmwareFamily, compareSemanticVersions]);
+
+  const filteredFirmwareVersions = React.useMemo(() => {
     if (showUnstableVersions) {
       return sortedFirmwareVersions;
     }
-
-    const filtered = sortedFirmwareVersions.filter(fw => {
-      const versionComparison = compareSemanticVersions(fw.version, stableVersion.version);
-      const shouldInclude = fw.is_latest || versionComparison >= 0;
-      return shouldInclude;
-    });
-
-    return filtered;
+    const latestStable = sortedFirmwareVersions.find(fw => fw.is_latest);
+    if (!latestStable) {
+      return sortedFirmwareVersions;
+    }
+    return sortedFirmwareVersions.filter(fw =>
+      compareSemanticVersions(fw.version, latestStable.version) >= 0
+    );
   }, [sortedFirmwareVersions, showUnstableVersions, compareSemanticVersions]);
 
   // Device deletion

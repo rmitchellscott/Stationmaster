@@ -494,13 +494,17 @@ func (dl *DeviceLog) BeforeCreate(tx *gorm.DB) error {
 // FirmwareVersion represents a firmware version available for devices
 type FirmwareVersion struct {
 	ID               uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
-	Version          string    `gorm:"size:50;not null;uniqueIndex" json:"version"`
+	Version          string    `gorm:"size:50;not null;uniqueIndex:idx_version_family" json:"version"`
+	ModelFamily      string    `gorm:"size:50;not null;default:'trmnl';uniqueIndex:idx_version_family" json:"model_family"`
+	ChipFamily       string    `gorm:"size:50" json:"chip_family,omitempty"`
+	FamilyLabel      string    `gorm:"size:200" json:"family_label,omitempty"`
 	ReleaseNotes     string    `gorm:"type:text" json:"release_notes,omitempty"`
 	DownloadURL      string    `gorm:"size:1000;not null" json:"download_url"`
 	FileSize         int64     `json:"file_size,omitempty"`
 	FilePath         string    `gorm:"size:1000" json:"file_path,omitempty"` // Local storage path
 	SHA256           string    `gorm:"size:64" json:"sha256,omitempty"`
 	IsLatest         bool      `gorm:"default:false" json:"is_latest"`
+	IsStable         bool      `gorm:"default:false" json:"is_stable"`
 	IsDownloaded     bool      `gorm:"default:false" json:"is_downloaded"`
 	DownloadStatus   string    `gorm:"size:20;default:'pending'" json:"download_status"` // pending, downloading, downloaded, failed
 	DownloadProgress int       `gorm:"default:0" json:"download_progress"`               // 0-100

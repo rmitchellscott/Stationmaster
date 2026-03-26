@@ -23,7 +23,7 @@ mkdir -p "$ASSETS_DIR/images/borders"
 
 # Download CSS
 echo "Downloading CSS files..."
-curl -s "https://usetrmnl.com/css/latest/plugins.css" -o "$ASSETS_DIR/css/plugins.css"
+curl -sL "https://trmnl.com/css/latest/plugins.css" -o "$ASSETS_DIR/css/plugins.css"
 
 # Download TRMNL-specific fonts (Nico, Block, Dogica fonts)
 echo "Downloading TRMNL-specific fonts..."
@@ -38,7 +38,7 @@ FONTS_TO_DOWNLOAD=(
 
 for font in "${FONTS_TO_DOWNLOAD[@]}"; do
     echo "Downloading font: $font"
-    curl -s "https://usetrmnl.com/fonts/$font" -o "$ASSETS_DIR/fonts/$font" || echo "⚠️  Warning: Failed to download $font"
+    curl -sL "https://trmnl.com/fonts/$font" -o "$ASSETS_DIR/fonts/$font" || echo "⚠️  Warning: Failed to download $font"
 done
 
 # Automatically extract and download assets referenced in CSS/JS files
@@ -78,7 +78,7 @@ extract_and_download_relative_assets() {
                 
                 full_url="$base_url/$clean_path"
                 echo "Downloading: $full_url -> $target_subdir/$clean_path"
-                curl -s "$full_url" -o "$ASSETS_DIR/$target_subdir/$clean_path" || echo "⚠️  Warning: Failed to download $clean_path"
+                curl -sL "$full_url" -o "$ASSETS_DIR/$target_subdir/$clean_path" || echo "⚠️  Warning: Failed to download $clean_path"
             fi
         done
     done
@@ -86,21 +86,21 @@ extract_and_download_relative_assets() {
 
 # Extract various asset types from downloaded CSS/JS files using relative URLs
 echo "Extracting CSS url() references (fonts and images)..."
-extract_and_download_relative_assets "$ASSETS_DIR" 'url\([^)]*\)' "https://usetrmnl.com" "."
+extract_and_download_relative_assets "$ASSETS_DIR" 'url\([^)]*\)' "https://trmnl.com" "."
 
 echo "Extracting script src references..."  
-extract_and_download_relative_assets "$ASSETS_DIR" 'src=['"'"'"][^'"'"'"]*['"'"'"]' "https://usetrmnl.com" "."
+extract_and_download_relative_assets "$ASSETS_DIR" 'src=['"'"'"][^'"'"'"]*['"'"'"]' "https://trmnl.com" "."
 
 echo "Extracting href references..."
-extract_and_download_relative_assets "$ASSETS_DIR" 'href=['"'"'"][^'"'"'"]*['"'"'"]' "https://usetrmnl.com" "."
+extract_and_download_relative_assets "$ASSETS_DIR" 'href=['"'"'"][^'"'"'"]*['"'"'"]' "https://trmnl.com" "."
 
 # Download main JS files
 echo "Downloading JavaScript files..."
-curl -s "https://usetrmnl.com/js/latest/plugins.js" -o "$ASSETS_DIR/js/plugins.js"
+curl -sL "https://trmnl.com/js/latest/plugins.js" -o "$ASSETS_DIR/js/plugins.js"
 
 # Parse TRMNL framework page to extract asset URLs dynamically
 echo "Parsing TRMNL framework page for asset URLs..."
-FRAMEWORK_HTML=$(curl -s "https://usetrmnl.com/framework")
+FRAMEWORK_HTML=$(curl -sL "https://trmnl.com/framework")
 
 # Extract asset URLs and download with stable names
 echo "Extracting and downloading JavaScript assets..."
@@ -115,9 +115,9 @@ echo "$FRAMEWORK_HTML" | grep -o '/assets/plugin[^"]*\.js' | sort | uniq | while
         base_name=$(echo "$asset_path" | rev | cut -d'/' -f1 | rev)
     fi
     
-    full_url="https://usetrmnl.com$asset_path"
+    full_url="https://trmnl.com$asset_path"
     echo "Downloading $full_url -> $base_name"
-    curl -s "$full_url" -o "$ASSETS_DIR/js/$base_name"
+    curl -sL "$full_url" -o "$ASSETS_DIR/js/$base_name"
 done
 
 # Extract plugin-render assets  
@@ -130,15 +130,15 @@ echo "$FRAMEWORK_HTML" | grep -o '/assets/plugin-render/[^"]*\.js' | sort | uniq
         base_name="$filename"
     fi
     
-    full_url="https://usetrmnl.com$asset_path"
+    full_url="https://trmnl.com$asset_path"
     echo "Downloading $full_url -> $base_name"
-    curl -s "$full_url" -o "$ASSETS_DIR/plugin-render/$base_name"
+    curl -sL "$full_url" -o "$ASSETS_DIR/plugin-render/$base_name"
 done
 
 # Download Google Fonts Inter
 echo "Downloading Google Fonts Inter..."
 # First get the CSS which contains the font URLs
-FONT_CSS=$(curl -s "https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap")
+FONT_CSS=$(curl -sL "https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap")
 echo "$FONT_CSS" > "$ASSETS_DIR/fonts/inter.css"
 
 # Extract and download font files
@@ -147,7 +147,7 @@ echo "$FONT_CSS" | grep -o 'url([^)]*' | sed 's/url(//' | while read -r font_url
         # Get the filename from the URL (last part after /)
         font_file=$(echo "$font_url" | rev | cut -d'/' -f1 | rev)
         echo "Downloading font: $font_file"
-        curl -s "$font_url" -o "$ASSETS_DIR/fonts/$font_file"
+        curl -sL "$font_url" -o "$ASSETS_DIR/fonts/$font_file"
         
         # Update the CSS to use local paths
         sed -i.bak "s|$font_url|/assets/trmnl/fonts/$font_file|g" "$ASSETS_DIR/fonts/inter.css"

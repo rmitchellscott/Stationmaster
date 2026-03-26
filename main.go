@@ -35,7 +35,7 @@ import (
 	_ "github.com/rmitchellscott/stationmaster/internal/plugins/mashup"  // Register mashup plugin factory
 	"github.com/rmitchellscott/stationmaster/internal/pollers"
 	"github.com/rmitchellscott/stationmaster/internal/rendering"
-	"github.com/rmitchellscott/stationmaster/internal/services"
+
 	"github.com/rmitchellscott/stationmaster/internal/sse"
 	"github.com/rmitchellscott/stationmaster/internal/trmnl"
 
@@ -170,34 +170,10 @@ func main() {
 	firmwarePoller := pollers.NewFirmwarePoller(db)
 	modelPoller := pollers.NewModelPoller(db)
 
-	// Sync firmware versions from S3 bucket on startup
-	logging.Info("[STARTUP] Syncing firmware versions from S3 bucket")
-	s3FirmwareList, err := services.FetchS3FirmwareList(context.Background())
-	if err != nil {
-		logging.Warn("[STARTUP] Failed to fetch firmware list from S3, continuing anyway", "error", err)
-	} else {
-		firmwareService := database.NewFirmwareService(db)
-		firmwareData := make([]struct {
-			Version     string
-			DownloadURL string
-			ReleasedAt  time.Time
-			FileSize    int64
-			ETag        string
-		}, len(s3FirmwareList))
-
-		for i, fw := range s3FirmwareList {
-			firmwareData[i].Version = fw.Version
-			firmwareData[i].DownloadURL = fw.DownloadURL
-			firmwareData[i].ReleasedAt = fw.ReleasedAt
-			firmwareData[i].FileSize = fw.FileSize
-			firmwareData[i].ETag = fw.ETag
-		}
-
-		if err := firmwareService.SyncFirmwareVersionsFromS3(firmwareData); err != nil {
-			logging.Warn("[STARTUP] Failed to sync firmware versions from S3", "error", err)
-		} else {
-			logging.Info("[STARTUP] Successfully synced firmware versions from S3", "count", len(s3FirmwareList))
-		}
+	// Discover firmware versions from manifest on startup
+	logging.Info("[STARTUP] Discovering firmware versions from manifest")
+	if err := firmwarePoller.DiscoverFirmware(context.Background()); err != nil {
+		logging.Warn("[STARTUP] Failed to discover firmware versions, continuing anyway", "error", err)
 	}
 
 	// Create render poller for pre-rendering plugin content
@@ -332,16 +308,22 @@ func main() {
 	// Public firmware downloads (no authentication required)
 	// Custom handler to serve firmware files - supports both proxy and download modes
 	router.GET("/files/firmware/*filepath", func(c *gin.Context) {
-		filepath := c.Param("filepath")
-		// Remove leading slash from filepath
-		if strings.HasPrefix(filepath, "/") {
-			filepath = filepath[1:]
+		fwPath := c.Param("filepath")
+		if strings.HasPrefix(fwPath, "/") {
+			fwPath = fwPath[1:]
 		}
 
-		// Extract version from filename (e.g., "firmware_1.6.5.bin" -> "1.6.5")
+		// Parse path: "{family}/firmware_{version}.bin" or "firmware_{version}.bin" (legacy OG)
+		family := "trmnl"
+		filename := fwPath
+		if idx := strings.LastIndex(fwPath, "/"); idx >= 0 {
+			family = fwPath[:idx]
+			filename = fwPath[idx+1:]
+		}
+
 		version := ""
-		if strings.HasPrefix(filepath, "firmware_") && strings.HasSuffix(filepath, ".bin") {
-			version = strings.TrimPrefix(filepath, "firmware_")
+		if strings.HasPrefix(filename, "firmware_") && strings.HasSuffix(filename, ".bin") {
+			version = strings.TrimPrefix(filename, "firmware_")
 			version = strings.TrimSuffix(version, ".bin")
 		}
 
@@ -350,18 +332,20 @@ func main() {
 			return
 		}
 
-		// Check firmware mode
 		firmwareMode := config.Get("FIRMWARE_MODE", "proxy")
-		
+
 		if firmwareMode == "proxy" {
-			// Proxy mode - forward to TRMNL API
 			db := database.GetDB()
 			firmwareService := database.NewFirmwareService(db)
-			
-			fwVersion, err := firmwareService.GetFirmwareVersionByVersion(version)
-			if err != nil {
-				c.JSON(http.StatusNotFound, gin.H{"error": "Firmware version not found"})
-				return
+
+			fwVersion, err := firmwareService.GetLatestFirmwareVersionForFamily(family)
+			if err != nil || fwVersion.Version != version {
+				fwVersion2, err2 := firmwareService.GetFirmwareVersionByVersion(version)
+				if err2 != nil {
+					c.JSON(http.StatusNotFound, gin.H{"error": "Firmware version not found"})
+					return
+				}
+				fwVersion = fwVersion2
 			}
 
 			if fwVersion.DownloadURL == "" {
@@ -369,19 +353,15 @@ func main() {
 				return
 			}
 
-			// Create HTTP client for proxying
-			client := &http.Client{
-				Timeout: 5 * time.Minute, // Allow time for large firmware downloads
-			}
+			logging.Info("[FIRMWARE PROXY] Proxying firmware", "family", family, "version", version, "url", fwVersion.DownloadURL)
 
-			// Create request to TRMNL API
+			client := &http.Client{Timeout: 5 * time.Minute}
 			req, err := http.NewRequest("GET", fwVersion.DownloadURL, nil)
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to proxy firmware request"})
 				return
 			}
 
-			// Make request to TRMNL
 			resp, err := client.Do(req)
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch firmware from upstream"})
@@ -389,32 +369,24 @@ func main() {
 			}
 			defer resp.Body.Close()
 
-			// Check response status
 			if resp.StatusCode != http.StatusOK {
 				c.JSON(http.StatusBadGateway, gin.H{"error": "Upstream firmware server error"})
 				return
 			}
 
-			// Set response headers
 			c.Header("Content-Type", "application/octet-stream")
-			c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filepath))
+			c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
 			if contentLength := resp.Header.Get("Content-Length"); contentLength != "" {
 				c.Header("Content-Length", contentLength)
 			}
 
-			// Stream the response from TRMNL to client
 			c.Status(http.StatusOK)
-			_, err = io.Copy(c.Writer, resp.Body)
-			if err != nil {
-				// Log error but can't return JSON at this point since we've started streaming
-				logging.Error("[FIRMWARE PROXY] Failed to stream firmware", "version", version, "error", err)
-				return
+			if _, err = io.Copy(c.Writer, resp.Body); err != nil {
+				logging.Error("[FIRMWARE PROXY] Failed to stream firmware", "family", family, "version", version, "error", err)
 			}
 		} else {
-			// Download mode - serve local file
 			storageDir := config.Get("FIRMWARE_STORAGE_DIR", "/data/firmware")
-			filePath := storageDir + "/" + filepath
-			c.File(filePath)
+			c.File(storageDir + "/" + fwPath)
 		}
 	})
 

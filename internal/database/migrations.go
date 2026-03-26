@@ -1030,6 +1030,21 @@ func RunMigrations(logPrefix string) error {
 				return nil
 			},
 		},
+		{
+			ID: "20260326_firmware_versions_model_family_index",
+			Migrate: func(tx *gorm.DB) error {
+				if tx.Migrator().HasIndex(&FirmwareVersion{}, "idx_firmware_versions_version") {
+					logging.Info("[MIGRATION] Dropping old unique index on firmware_versions.version")
+					if err := tx.Exec("DROP INDEX IF EXISTS idx_firmware_versions_version").Error; err != nil {
+						return fmt.Errorf("failed to drop old index: %w", err)
+					}
+				}
+				return nil
+			},
+			Rollback: func(tx *gorm.DB) error {
+				return tx.Exec("CREATE UNIQUE INDEX idx_firmware_versions_version ON firmware_versions (version)").Error
+			},
+		},
 	}
 
 	// Create migrator with our migrations

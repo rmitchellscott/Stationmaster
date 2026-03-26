@@ -5,11 +5,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -19,26 +21,49 @@ import (
 	"github.com/rmitchellscott/stationmaster/internal/logging"
 )
 
-// FirmwarePoller polls for firmware updates
+const s3BaseURL = "https://trmnl-fw.s3.us-east-2.amazonaws.com"
+const defaultManifestURL = "https://trmnl.com/firmware/releases.json"
+
 type FirmwarePoller struct {
 	*BasePoller
 	db           *gorm.DB
-	apiURL       string
+	manifestURL  string
+	s3BucketURL  string
 	storageDir   string
 	firmwareMode string
 }
 
-// FirmwareVersionInfo represents firmware version information from the API
-type FirmwareVersionInfo struct {
-	Version    string `json:"version"`
-	URL        string `json:"url"`
-	MergedPath string `json:"merged_path"`
+type FirmwareManifestEntry struct {
+	ChipFamily string   `json:"chipFamily"`
+	Label      string   `json:"label"`
+	Versions   []string `json:"versions"`
 }
 
-// NewFirmwarePoller creates a new firmware poller
+type s3ListResult struct {
+	XMLName  xml.Name  `xml:"ListBucketResult"`
+	Contents []s3Entry `xml:"Contents"`
+}
+
+type s3Entry struct {
+	Key          string    `xml:"Key"`
+	LastModified time.Time `xml:"LastModified"`
+	Size         int64     `xml:"Size"`
+}
+
+type discoveredVersion struct {
+	Family      string
+	Version     string
+	RawVersion  string
+	DownloadURL string
+	ReleasedAt  time.Time
+	FileSize    int64
+	IsStable    bool
+	ChipFamily  string
+	Label       string
+}
+
 func NewFirmwarePoller(db *gorm.DB) *FirmwarePoller {
-	// Get configuration from environment variables
-	interval := 6 * time.Hour // Default 6 hours
+	interval := 6 * time.Hour
 	if envInterval := config.Get("FIRMWARE_POLLER_INTERVAL", ""); envInterval != "" {
 		if d, err := time.ParseDuration(envInterval); err == nil {
 			interval = d
@@ -46,11 +71,14 @@ func NewFirmwarePoller(db *gorm.DB) *FirmwarePoller {
 	}
 
 	enabled := config.Get("FIRMWARE_POLLER", "true") != "false"
-	apiURL := config.Get("TRMNL_FIRMWARE_API_URL", "https://usetrmnl.com/api/firmware/latest")
+	manifestURL := config.Get("TRMNL_FIRMWARE_MANIFEST_URL", defaultManifestURL)
+	if legacy := config.Get("TRMNL_FIRMWARE_API_URL", ""); legacy != "" && config.Get("TRMNL_FIRMWARE_MANIFEST_URL", "") == "" {
+		manifestURL = legacy
+	}
 	storageDir := config.Get("FIRMWARE_STORAGE_DIR", "/data/firmware")
 	firmwareMode := config.Get("FIRMWARE_MODE", "proxy")
 
-	config := PollerConfig{
+	pollerConfig := PollerConfig{
 		Name:       "firmware",
 		Interval:   interval,
 		Enabled:    enabled,
@@ -61,125 +89,179 @@ func NewFirmwarePoller(db *gorm.DB) *FirmwarePoller {
 
 	poller := &FirmwarePoller{
 		db:           db,
-		apiURL:       apiURL,
+		manifestURL:  manifestURL,
+		s3BucketURL:  s3BaseURL,
 		storageDir:   storageDir,
 		firmwareMode: firmwareMode,
 	}
 
-	poller.BasePoller = NewBasePoller(config, poller.poll)
+	poller.BasePoller = NewBasePoller(pollerConfig, poller.poll)
 	return poller
 }
 
-// ExecutePoll executes a single poll operation (for manual triggering)
 func (p *FirmwarePoller) ExecutePoll(ctx context.Context) error {
 	return p.poll(ctx)
 }
 
-// DiscoverFirmware discovers firmware versions and creates database entries without downloading
 func (p *FirmwarePoller) DiscoverFirmware(ctx context.Context) error {
 	logging.Info("[FIRMWARE DISCOVERY] Starting firmware discovery")
 
-	// Ensure storage directory exists
 	if err := os.MkdirAll(p.storageDir, 0755); err != nil {
 		return fmt.Errorf("failed to create storage directory: %w", err)
 	}
 
-	// Fetch latest firmware information from API
-	versionInfo, err := p.fetchLatestFirmwareVersion(ctx)
+	versions, err := p.discoverAllVersions(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to fetch latest firmware version: %w", err)
+		return fmt.Errorf("failed to discover firmware versions: %w", err)
 	}
 
-	logging.Info("[FIRMWARE DISCOVERY] Found firmware version", "version", versionInfo.Version)
-
-	// Process the version - create database entry but don't download yet
-	if err := p.discoverFirmwareVersion(ctx, *versionInfo); err != nil {
-		return fmt.Errorf("error discovering version %s: %w", versionInfo.Version, err)
+	created := 0
+	for _, v := range versions {
+		if err := p.upsertFirmwareVersion(ctx, v); err != nil {
+			logging.Error("[FIRMWARE DISCOVERY] Error upserting version", "family", v.Family, "version", v.Version, "error", err)
+			continue
+		}
+		created++
 	}
 
-	logging.Info("[FIRMWARE DISCOVERY] Firmware discovery completed")
+	logging.Info("[FIRMWARE DISCOVERY] Firmware discovery completed", "versions", created)
 	return nil
 }
 
-// StartPendingDownloads starts downloads for firmware versions with pending status
 func (p *FirmwarePoller) StartPendingDownloads(ctx context.Context) error {
-	logging.Info("[FIRMWARE DOWNLOADS] Starting pending downloads")
-	
-	// Skip downloads in proxy mode
 	if p.firmwareMode != "download" {
-		logging.Info("[FIRMWARE DOWNLOADS] Proxy mode enabled, skipping file downloads")
 		return nil
 	}
 
-	// Get all pending firmware versions
-	var pendingVersions []database.FirmwareVersion
-	if err := p.db.Where("download_status = ? OR download_status = ?", "pending", "failed").Find(&pendingVersions).Error; err != nil {
+	var pending []database.FirmwareVersion
+	if err := p.db.Where("download_status IN ?", []string{"pending", "failed"}).Find(&pending).Error; err != nil {
 		return fmt.Errorf("failed to fetch pending firmware versions: %w", err)
 	}
 
-	if len(pendingVersions) == 0 {
-		logging.Debug("[FIRMWARE DOWNLOADS] No pending downloads found")
+	if len(pending) == 0 {
 		return nil
 	}
 
-	// Check if auto-download is enabled
-	autoDownload := config.Get("FIRMWARE_AUTO_DOWNLOAD", "true") == "true"
-	if !autoDownload {
-		logging.Info("[FIRMWARE DOWNLOADS] Auto-download disabled, skipping downloads")
+	if config.Get("FIRMWARE_AUTO_DOWNLOAD", "true") != "true" {
 		return nil
 	}
 
-	// Download each pending version
-	for _, version := range pendingVersions {
-		logging.Info("[FIRMWARE DOWNLOADS] Starting download", "version", version.Version)
+	for _, version := range pending {
 		if err := p.downloadFirmwareFile(ctx, &version); err != nil {
-			logging.Error("[FIRMWARE DOWNLOADS] Failed to download version", "version", version.Version, "error", err)
-			// Continue with other downloads even if one fails
+			logging.Error("[FIRMWARE DOWNLOADS] Failed", "family", version.ModelFamily, "version", version.Version, "error", err)
 		}
 	}
-
-	logging.Info("[FIRMWARE DOWNLOADS] Completed pending downloads")
 	return nil
 }
 
-// DownloadFirmware directly downloads a specific firmware version (for retry functionality)
 func (p *FirmwarePoller) DownloadFirmware(ctx context.Context, firmware *database.FirmwareVersion) error {
 	return p.downloadFirmwareFile(ctx, firmware)
 }
 
-// poll performs the firmware polling operation
 func (p *FirmwarePoller) poll(ctx context.Context) error {
 	logging.Info("[FIRMWARE POLLER] Starting firmware update check")
 
-	// Ensure storage directory exists
 	if err := os.MkdirAll(p.storageDir, 0755); err != nil {
 		return fmt.Errorf("failed to create storage directory: %w", err)
 	}
 
-	// Fetch latest firmware information from API
-	versionInfo, err := p.fetchLatestFirmwareVersion(ctx)
+	versions, err := p.discoverAllVersions(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to fetch latest firmware version: %w", err)
+		return fmt.Errorf("failed to discover firmware versions: %w", err)
 	}
 
-	logging.Info("[FIRMWARE POLLER] Found firmware version", "version", versionInfo.Version)
+	for _, v := range versions {
+		if err := p.upsertFirmwareVersion(ctx, v); err != nil {
+			logging.Error("[FIRMWARE POLLER] Error upserting version", "family", v.Family, "version", v.Version, "error", err)
+		}
+	}
 
-	// Process the latest version
-	if err := p.processFirmwareVersion(ctx, *versionInfo); err != nil {
-		return fmt.Errorf("error processing version %s: %w", versionInfo.Version, err)
+	if p.firmwareMode == "download" && config.Get("FIRMWARE_AUTO_DOWNLOAD", "true") == "true" {
+		p.StartPendingDownloads(ctx)
 	}
 
 	logging.Info("[FIRMWARE POLLER] Firmware update check completed")
 	return nil
 }
 
-// fetchLatestFirmwareVersion fetches the latest firmware version information from the API
-func (p *FirmwarePoller) fetchLatestFirmwareVersion(ctx context.Context) (*FirmwareVersionInfo, error) {
-	client := &http.Client{
-		Timeout: 30 * time.Second,
+// discoverAllVersions merges S3 bucket listing with releases.json manifest.
+// S3 is the source of truth for what exists. releases.json marks which are stable.
+func (p *FirmwarePoller) discoverAllVersions(ctx context.Context) ([]discoveredVersion, error) {
+	// Fetch S3 listing — source of truth for available binaries
+	s3Versions, err := p.fetchS3Versions(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch S3 listing: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", p.apiURL, nil)
+	// Fetch manifest — marks stable versions and provides metadata
+	manifest, err := p.fetchManifest(ctx)
+	if err != nil {
+		logging.Warn("[FIRMWARE POLLER] Failed to fetch manifest, using S3 only", "error", err)
+		manifest = nil
+	}
+
+	// Build stable version set from manifest
+	stableSet := map[string]map[string]bool{}          // family -> version -> true
+	familyMeta := map[string]FirmwareManifestEntry{}    // family -> metadata
+	latestStable := map[string]string{}                 // family -> latest stable version
+	if manifest != nil {
+		for family, entry := range manifest {
+			stableSet[family] = map[string]bool{}
+			familyMeta[family] = entry
+			for _, v := range entry.Versions {
+				stableSet[family][cleanVersion(v)] = true
+			}
+			if len(entry.Versions) > 0 {
+				latestStable[family] = cleanVersion(entry.Versions[len(entry.Versions)-1])
+			}
+		}
+	}
+
+	// Merge: S3 versions enriched with manifest metadata
+	var results []discoveredVersion
+	latestByFamily := map[string]string{} // track latest version per family from S3
+
+	for _, sv := range s3Versions {
+		// Determine if latest in S3 (by date — s3Versions are already sorted newest first per family)
+		if _, exists := latestByFamily[sv.Family]; !exists {
+			latestByFamily[sv.Family] = sv.Version
+		}
+
+		stable := false
+		if familyStable, ok := stableSet[sv.Family]; ok {
+			stable = familyStable[sv.Version]
+		}
+
+		meta := familyMeta[sv.Family]
+
+		results = append(results, discoveredVersion{
+			Family:      sv.Family,
+			Version:     sv.Version,
+			RawVersion:  sv.RawVersion,
+			DownloadURL: sv.DownloadURL,
+			ReleasedAt:  sv.ReleasedAt,
+			FileSize:    sv.FileSize,
+			IsStable:    stable,
+			ChipFamily:  meta.ChipFamily,
+			Label:       meta.Label,
+		})
+	}
+
+	return results, nil
+}
+
+type s3Version struct {
+	Family      string
+	Version     string
+	RawVersion  string
+	DownloadURL string
+	ReleasedAt  time.Time
+	FileSize    int64
+}
+
+func (p *FirmwarePoller) fetchS3Versions(ctx context.Context) ([]s3Version, error) {
+	client := &http.Client{Timeout: 30 * time.Second}
+	req, err := http.NewRequestWithContext(ctx, "GET", p.s3BucketURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -191,135 +273,164 @@ func (p *FirmwarePoller) fetchLatestFirmwareVersion(ctx context.Context) (*Firmw
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API returned status %d", resp.StatusCode)
+		return nil, fmt.Errorf("S3 returned status %d", resp.StatusCode)
 	}
 
-	var versionInfo FirmwareVersionInfo
-	if err := json.NewDecoder(resp.Body).Decode(&versionInfo); err != nil {
-		return nil, fmt.Errorf("failed to decode API response: %w", err)
+	var listing s3ListResult
+	if err := xml.NewDecoder(resp.Body).Decode(&listing); err != nil {
+		return nil, fmt.Errorf("failed to decode S3 listing: %w", err)
 	}
 
-	return &versionInfo, nil
+	var versions []s3Version
+	for _, entry := range listing.Contents {
+		if !strings.HasSuffix(entry.Key, ".bin") || entry.Size == 0 {
+			continue
+		}
+
+		family, rawVersion := parseS3Key(entry.Key)
+		if rawVersion == "" {
+			continue
+		}
+
+		versions = append(versions, s3Version{
+			Family:      family,
+			Version:     cleanVersion(rawVersion),
+			RawVersion:  rawVersion,
+			DownloadURL: fmt.Sprintf("%s/%s", p.s3BucketURL, entry.Key),
+			ReleasedAt:  entry.LastModified,
+			FileSize:    entry.Size,
+		})
+	}
+
+	return versions, nil
 }
 
-// discoverFirmwareVersion processes a firmware version for discovery only (no downloads)
-func (p *FirmwarePoller) discoverFirmwareVersion(ctx context.Context, versionInfo FirmwareVersionInfo) error {
-	// Check if this version already exists in database
-	var existingVersion database.FirmwareVersion
-	err := p.db.Where("version = ?", versionInfo.Version).First(&existingVersion).Error
+// parseS3Key extracts family and version from S3 key.
+// "FW1.7.8.bin" -> ("trmnl", "FW1.7.8")
+// "trmnl_x/FW1.7.7.bin" -> ("trmnl_x", "FW1.7.7")
+func parseS3Key(key string) (string, string) {
+	key = strings.TrimSuffix(key, ".bin")
+	if idx := strings.LastIndex(key, "/"); idx >= 0 {
+		family := key[:idx]
+		version := key[idx+1:]
+		if version == "" {
+			return "", ""
+		}
+		return family, version
+	}
+	return "trmnl", key
+}
+
+func (p *FirmwarePoller) fetchManifest(ctx context.Context) (map[string]FirmwareManifestEntry, error) {
+	client := &http.Client{Timeout: 30 * time.Second}
+	req, err := http.NewRequestWithContext(ctx, "GET", p.manifestURL, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("manifest returned status %d", resp.StatusCode)
+	}
+
+	var manifest map[string]FirmwareManifestEntry
+	if err := json.NewDecoder(resp.Body).Decode(&manifest); err != nil {
+		return nil, fmt.Errorf("failed to decode manifest: %w", err)
+	}
+
+	return manifest, nil
+}
+
+func cleanVersion(version string) string {
+	return strings.TrimPrefix(version, "FW")
+}
+
+func (p *FirmwarePoller) upsertFirmwareVersion(ctx context.Context, v discoveredVersion) error {
+	var existing database.FirmwareVersion
+	err := p.db.Where("version = ? AND model_family = ?", v.Version, v.Family).First(&existing).Error
 
 	if err == nil {
-		// Version exists - just make sure it's marked as latest (and others aren't)
-		if !existingVersion.IsLatest {
-			return p.updateLatestVersion(versionInfo.Version)
+		changed := false
+		if existing.IsStable != v.IsStable {
+			existing.IsStable = v.IsStable
+			changed = true
 		}
-		return nil // Version exists and is properly marked
+		if existing.ChipFamily != v.ChipFamily && v.ChipFamily != "" {
+			existing.ChipFamily = v.ChipFamily
+			changed = true
+		}
+		if existing.FamilyLabel != v.Label && v.Label != "" {
+			existing.FamilyLabel = v.Label
+			changed = true
+		}
+		if existing.FileSize != v.FileSize && v.FileSize > 0 {
+			existing.FileSize = v.FileSize
+			changed = true
+		}
+		if changed {
+			return p.db.Save(&existing).Error
+		}
+		return nil
 	}
 
 	if err != gorm.ErrRecordNotFound {
 		return fmt.Errorf("database error: %w", err)
 	}
 
-	// New version, create database record with pending status
-	firmwareVersion := database.FirmwareVersion{
-		Version:          versionInfo.Version,
-		DownloadURL:      versionInfo.URL,
-		IsLatest:         true,
-		IsDownloaded:     false,
-		DownloadStatus:   "pending",
-		DownloadProgress: 0,
-		ReleasedAt:       time.Now().UTC(), // Set to now since we don't get this from API
+	fw := database.FirmwareVersion{
+		Version:        v.Version,
+		ModelFamily:    v.Family,
+		ChipFamily:     v.ChipFamily,
+		FamilyLabel:    v.Label,
+		DownloadURL:    v.DownloadURL,
+		FileSize:       v.FileSize,
+		IsLatest:       false,
+		IsStable:       v.IsStable,
+		IsDownloaded:   false,
+		DownloadStatus: "pending",
+		ReleasedAt:     v.ReleasedAt,
 	}
 
-	if err := p.db.Create(&firmwareVersion).Error; err != nil {
+	if err := p.db.Create(&fw).Error; err != nil {
 		return fmt.Errorf("failed to create firmware version: %w", err)
 	}
 
-	logging.Info("[FIRMWARE DISCOVERY] Added new firmware version", "version", versionInfo.Version, "status", "pending")
+	logging.Info("[FIRMWARE POLLER] Added firmware version", "family", v.Family, "version", v.Version, "stable", v.IsStable)
 
-	// Update latest flags (mark others as not latest)
-	if err := p.updateLatestVersion(versionInfo.Version); err != nil {
-		logging.Error("[FIRMWARE DISCOVERY] Error updating latest version flag", "error", err)
-	}
-
-	return nil
+	// Update is_latest: the most recently released stable version per family
+	return p.updateLatestForFamily(v.Family)
 }
 
-// processFirmwareVersion processes a single firmware version
-func (p *FirmwarePoller) processFirmwareVersion(ctx context.Context, versionInfo FirmwareVersionInfo) error {
-	// Check if this version already exists in database
-	var existingVersion database.FirmwareVersion
-	err := p.db.Where("version = ?", versionInfo.Version).First(&existingVersion).Error
-
-	if err == nil {
-		// Version exists - check if it's actually downloaded (only in download mode)
-		if !existingVersion.IsDownloaded && p.firmwareMode == "download" {
-			// Version exists in DB but file not downloaded - download it now
-			logging.Info("[FIRMWARE POLLER] Version exists but not downloaded, downloading now", "version", versionInfo.Version)
-			autoDownload := config.Get("FIRMWARE_AUTO_DOWNLOAD", "true") == "true"
-			if autoDownload {
-				if err := p.downloadFirmwareFile(ctx, &existingVersion); err != nil {
-					logging.Error("[FIRMWARE POLLER] Failed to download existing firmware", "version", versionInfo.Version, "error", err)
-				}
-			}
-		}
-
-		// Make sure it's marked as latest (and others aren't)
-		if !existingVersion.IsLatest {
-			return p.updateLatestVersion(versionInfo.Version)
-		}
-		return nil // Version exists and is properly handled
-	}
-
-	if err != gorm.ErrRecordNotFound {
-		return fmt.Errorf("database error: %w", err)
-	}
-
-	// New version, create database record
-	firmwareVersion := database.FirmwareVersion{
-		Version:          versionInfo.Version,
-		DownloadURL:      versionInfo.URL,
-		IsLatest:         true,
-		IsDownloaded:     false,
-		DownloadStatus:   "pending",
-		DownloadProgress: 0,
-		ReleasedAt:       time.Now().UTC(), // Set to now since we don't get this from API
-	}
-
-	if err := p.db.Create(&firmwareVersion).Error; err != nil {
-		return fmt.Errorf("failed to create firmware version: %w", err)
-	}
-
-	logging.Info("[FIRMWARE POLLER] Added new firmware version", "version", versionInfo.Version)
-
-	// Update latest flags (mark others as not latest)
-	if err := p.updateLatestVersion(versionInfo.Version); err != nil {
-		logging.Error("[FIRMWARE POLLER] Error updating latest version flag", "error", err)
-	}
-
-	// Optionally download firmware file (only in download mode)
-	autoDownload := config.Get("FIRMWARE_AUTO_DOWNLOAD", "true") == "true"
-	if autoDownload && p.firmwareMode == "download" {
-		if err := p.downloadFirmwareFile(ctx, &firmwareVersion); err != nil {
-			logging.Error("[FIRMWARE POLLER] Failed to download firmware", "version", versionInfo.Version, "error", err)
-		}
-	}
-
-	return nil
-}
-
-// updateLatestVersion ensures only one version is marked as latest
-func (p *FirmwarePoller) updateLatestVersion(latestVersion string) error {
+func (p *FirmwarePoller) updateLatestForFamily(family string) error {
 	tx := p.db.Begin()
 
-	// Clear all latest flags
-	if err := tx.Model(&database.FirmwareVersion{}).Where("1 = 1").Update("is_latest", false).Error; err != nil {
+	// Clear latest for this family
+	if err := tx.Model(&database.FirmwareVersion{}).Where("model_family = ?", family).Update("is_latest", false).Error; err != nil {
 		tx.Rollback()
 		return err
 	}
 
-	// Set the new latest version
-	if err := tx.Model(&database.FirmwareVersion{}).Where("version = ?", latestVersion).Update("is_latest", true).Error; err != nil {
+	// Find most recent stable version for this family
+	var latest database.FirmwareVersion
+	err := tx.Where("model_family = ? AND is_stable = ?", family, true).Order("released_at DESC").First(&latest).Error
+	if err == gorm.ErrRecordNotFound {
+		// No stable versions — use most recent overall
+		err = tx.Where("model_family = ?", family).Order("released_at DESC").First(&latest).Error
+	}
+	if err != nil {
+		tx.Rollback()
+		if err == gorm.ErrRecordNotFound {
+			return tx.Commit().Error
+		}
+		return err
+	}
+
+	if err := tx.Model(&database.FirmwareVersion{}).Where("id = ?", latest.ID).Update("is_latest", true).Error; err != nil {
 		tx.Rollback()
 		return err
 	}
@@ -327,15 +438,20 @@ func (p *FirmwarePoller) updateLatestVersion(latestVersion string) error {
 	return tx.Commit().Error
 }
 
-// downloadFirmwareFile downloads a firmware file to local storage with progress tracking
 func (p *FirmwarePoller) downloadFirmwareFile(ctx context.Context, firmware *database.FirmwareVersion) error {
-	filename := fmt.Sprintf("firmware_%s.bin", firmware.Version)
-	filePath := filepath.Join(p.storageDir, filename)
+	familyDir := p.storageDir
+	if firmware.ModelFamily != "" && firmware.ModelFamily != "trmnl" {
+		familyDir = filepath.Join(p.storageDir, firmware.ModelFamily)
+	}
+	if err := os.MkdirAll(familyDir, 0755); err != nil {
+		return fmt.Errorf("failed to create family directory: %w", err)
+	}
 
-	// Skip if already downloaded
+	filename := fmt.Sprintf("firmware_%s.bin", firmware.Version)
+	filePath := filepath.Join(familyDir, filename)
+
 	if firmware.IsDownloaded && firmware.FilePath != "" {
 		if _, err := os.Stat(firmware.FilePath); err == nil {
-			// Make sure status is set correctly
 			firmware.DownloadStatus = "downloaded"
 			firmware.DownloadProgress = 100
 			p.db.Save(firmware)
@@ -343,21 +459,14 @@ func (p *FirmwarePoller) downloadFirmwareFile(ctx context.Context, firmware *dat
 		}
 	}
 
-	// Set status to downloading
 	firmware.DownloadStatus = "downloading"
 	firmware.DownloadProgress = 0
 	firmware.DownloadError = ""
-	if err := p.db.Save(firmware).Error; err != nil {
-		logging.Error("[FIRMWARE POLLER] Failed to update download status", "error", err)
-	}
+	p.db.Save(firmware)
 
-	logging.Info("[FIRMWARE POLLER] Downloading firmware", "version", firmware.Version)
+	logging.Info("[FIRMWARE POLLER] Downloading firmware", "family", firmware.ModelFamily, "version", firmware.Version)
 
-	// Create HTTP client with context
-	client := &http.Client{
-		Timeout: 5 * time.Minute,
-	}
-
+	client := &http.Client{Timeout: 5 * time.Minute}
 	req, err := http.NewRequestWithContext(ctx, "GET", firmware.DownloadURL, nil)
 	if err != nil {
 		p.markDownloadFailed(firmware, fmt.Sprintf("Failed to create request: %v", err))
@@ -377,10 +486,6 @@ func (p *FirmwarePoller) downloadFirmwareFile(ctx context.Context, firmware *dat
 		return fmt.Errorf("%s", errMsg)
 	}
 
-	// Get content length for progress tracking
-	contentLength := resp.ContentLength
-
-	// Create output file
 	outFile, err := os.Create(filePath)
 	if err != nil {
 		p.markDownloadFailed(firmware, fmt.Sprintf("Failed to create file: %v", err))
@@ -388,62 +493,56 @@ func (p *FirmwarePoller) downloadFirmwareFile(ctx context.Context, firmware *dat
 	}
 	defer outFile.Close()
 
-	// Copy data while calculating SHA256 and tracking progress
 	hasher := sha256.New()
 	teeReader := io.TeeReader(resp.Body, hasher)
 
-	// Wrap reader with progress tracking
-	progressReader := &progressReader{
+	pr := &progressReader{
 		reader:       teeReader,
-		total:        contentLength,
+		total:        resp.ContentLength,
 		firmware:     firmware,
 		db:           p.db,
 		lastProgress: 0,
 	}
 
-	_, err = io.Copy(outFile, progressReader)
+	written, err := io.Copy(outFile, pr)
 	if err != nil {
-		os.Remove(filePath) // Clean up on error
+		os.Remove(filePath)
 		p.markDownloadFailed(firmware, fmt.Sprintf("Download failed: %v", err))
 		return err
 	}
 
-	// Verify checksum if provided
 	if firmware.SHA256 != "" {
-		calculatedHash := hex.EncodeToString(hasher.Sum(nil))
-		if calculatedHash != firmware.SHA256 {
-			os.Remove(filePath) // Clean up corrupted file
-			errMsg := fmt.Sprintf("Checksum mismatch: expected %s, got %s", firmware.SHA256, calculatedHash)
+		calculated := hex.EncodeToString(hasher.Sum(nil))
+		if calculated != firmware.SHA256 {
+			os.Remove(filePath)
+			errMsg := fmt.Sprintf("Checksum mismatch: expected %s, got %s", firmware.SHA256, calculated)
 			p.markDownloadFailed(firmware, errMsg)
 			return fmt.Errorf("%s", errMsg)
 		}
 	}
 
-	// Update database record - success
 	firmware.FilePath = filePath
+	firmware.FileSize = written
 	firmware.IsDownloaded = true
 	firmware.DownloadStatus = "downloaded"
 	firmware.DownloadProgress = 100
 	firmware.DownloadError = ""
+	firmware.SHA256 = hex.EncodeToString(hasher.Sum(nil))
 	if err := p.db.Save(firmware).Error; err != nil {
 		return err
 	}
 
-	logging.Info("[FIRMWARE POLLER] Successfully downloaded firmware", "version", firmware.Version, "path", filePath)
+	logging.Info("[FIRMWARE POLLER] Downloaded firmware", "family", firmware.ModelFamily, "version", firmware.Version, "path", filePath)
 	return nil
 }
 
-// markDownloadFailed updates the firmware record with failed status
 func (p *FirmwarePoller) markDownloadFailed(firmware *database.FirmwareVersion, errorMsg string) {
 	firmware.DownloadStatus = "failed"
 	firmware.DownloadError = errorMsg
 	firmware.IsDownloaded = false
-	if err := p.db.Save(firmware).Error; err != nil {
-		logging.Error("[FIRMWARE POLLER] Failed to update failed status", "error", err)
-	}
+	p.db.Save(firmware)
 }
 
-// progressReader wraps an io.Reader and tracks download progress
 type progressReader struct {
 	reader       io.Reader
 	total        int64
@@ -457,14 +556,12 @@ func (pr *progressReader) Read(p []byte) (int, error) {
 	n, err := pr.reader.Read(p)
 	pr.read += int64(n)
 
-	// Update progress every 5% to avoid too many database updates
 	if pr.total > 0 {
 		progress := int((pr.read * 100) / pr.total)
 		if progress >= pr.lastProgress+5 || progress == 100 {
 			pr.firmware.DownloadProgress = progress
 			if dbErr := pr.db.Save(pr.firmware).Error; dbErr == nil {
 				pr.lastProgress = progress
-				logging.Debug("[FIRMWARE DOWNLOAD] Progress", "version", pr.firmware.Version, "progress", progress)
 			}
 		}
 	}

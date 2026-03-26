@@ -227,13 +227,6 @@ func (r *BrowserlessRenderer) RenderHTMLWithResult(ctx context.Context, html str
 		Visible:  false,                               // Don't require visibility, just presence
 	}
 	
-	// Flag detection is now handled automatically in WrapWithTRNMLAssets - no manual injection needed
-	
-	// Add extra headers for debugging
-	req.SetExtraHTTPHeaders = map[string]string{
-		"User-Agent": "TRMNL-Debug/1.0",
-	}
-	
 	// DEBUG: Log HTML content being sent to browserless
 	logging.Browserless("HTML content analysis",
 		"html_size_chars", len(html),

@@ -357,7 +357,7 @@ func (r *BrowserlessRenderer) RenderHTMLWithResult(ctx context.Context, html str
 	}
 	
 	// Parse TRMNL flags from DOM attributes using browserless /content endpoint
-	flags, err := r.parseTRMNLFlagsFromDOM(ctx, html)
+	flags, err := r.parseTRMNLFlagsFromDOM(ctx, html, width, height)
 	if err != nil {
 		logging.Browserless("Failed to parse TRMNL flags from DOM, continuing with no flags",
 			"error", err.Error(),
@@ -426,7 +426,7 @@ func (r *BrowserlessRenderer) parseTRMNLFlagsFromHeaders(headers http.Header) Re
 }
 
 // parseTRMNLFlagsFromDOM extracts TRMNL flags by checking DOM attributes via browserless /content endpoint
-func (r *BrowserlessRenderer) parseTRMNLFlagsFromDOM(ctx context.Context, html string) (RenderFlags, error) {
+func (r *BrowserlessRenderer) parseTRMNLFlagsFromDOM(ctx context.Context, html string, width, height int) (RenderFlags, error) {
 	flags := RenderFlags{}
 	
 	logging.Browserless("Starting TRMNL flag detection via DOM content check",
@@ -440,8 +440,8 @@ func (r *BrowserlessRenderer) parseTRMNLFlagsFromDOM(ctx context.Context, html s
 			Width  int `json:"width"`
 			Height int `json:"height"`
 		}{
-			Width:  800,
-			Height: 480,
+			Width:  width,
+			Height: height,
 		},
 	}
 	

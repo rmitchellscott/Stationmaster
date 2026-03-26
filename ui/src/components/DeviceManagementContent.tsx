@@ -108,6 +108,7 @@ interface Device {
   firmware_version?: string;
   target_firmware_version?: string;
   battery_voltage?: number;
+  battery_percent?: number;
   rssi?: number;
   refresh_rate: number;
   allow_firmware_updates?: boolean;
@@ -813,19 +814,23 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
     }
   };
 
-  const getBatteryDisplay = (voltage?: number) => {
-    if (!voltage) {
+  const getBatteryDisplay = (voltage?: number, percent?: number) => {
+    const percentage = percent && percent > 0
+      ? percent
+      : voltage ? calculateBatteryPercentage(voltage) : null;
+
+    if (percentage === null) {
       return {
         icon: <Battery className="h-4 w-4 text-muted-foreground" />,
         text: "N/A",
-        tooltip: "Battery status unknown"
+        tooltip: "Battery status unknown",
+        color: ""
       };
     }
-    
-    const percentage = calculateBatteryPercentage(voltage);
+
     let icon;
     let color;
-    
+
     if (percentage > 75) {
       icon = <BatteryFull className="h-4 w-4" />;
       color = "";
@@ -839,11 +844,12 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
       icon = <BatteryWarning className="h-4 w-4 text-destructive" />;
       color = "text-destructive";
     }
-    
+
+    const tooltipDetail = voltage ? ` (${voltage.toFixed(1)}V)` : "";
     return {
       icon,
       text: `${percentage}%`,
-      tooltip: `Battery Level: ${percentage}% (${voltage.toFixed(1)}V)`,
+      tooltip: `Battery Level: ${percentage}%${tooltipDetail}`,
       color
     };
   };
@@ -1234,7 +1240,7 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
                           <TooltipTrigger asChild>
                             <div className="flex items-center gap-1">
                               {(() => {
-                                const battery = getBatteryDisplay(device.battery_voltage);
+                                const battery = getBatteryDisplay(device.battery_voltage, device.battery_percent);
                                 return (
                                   <>
                                     {battery.icon}
@@ -1247,7 +1253,7 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
                             </div>
                           </TooltipTrigger>
                           <TooltipContent>
-                            {getBatteryDisplay(device.battery_voltage).tooltip}
+                            {getBatteryDisplay(device.battery_voltage, device.battery_percent).tooltip}
                           </TooltipContent>
                         </Tooltip>
                       </TableCell>

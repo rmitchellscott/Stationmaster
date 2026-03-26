@@ -53,6 +53,14 @@ interface PrivatePlugin {
   enable_dark_mode?: boolean;
 }
 
+interface DeviceModelOption {
+  id: number;
+  model_name: string;
+  display_name: string;
+  screen_width: number;
+  screen_height: number;
+}
+
 interface PluginPreviewProps {
   plugin: PrivatePlugin;
   isOpen: boolean;
@@ -67,36 +75,38 @@ interface LayoutOption {
   height: number;
 }
 
-const layoutOptions: LayoutOption[] = [
-  {
-    id: 'full',
-    label: 'Full Screen',
-    icon: <SquareIcon className="h-4 w-4" />,
-    width: 800,
-    height: 480,
-  },
-  {
-    id: 'half_vertical',
-    label: 'Half Vertical',
-    icon: <ColumnsIcon className="h-4 w-4" />,
-    width: 400,
-    height: 480,
-  },
-  {
-    id: 'half_horizontal',
-    label: 'Half Horizontal',
-    icon: <RowsIcon className="h-4 w-4" />,
-    width: 800,
-    height: 240,
-  },
-  {
-    id: 'quadrant',
-    label: 'Quadrant',
-    icon: <Grid2x2Icon className="h-4 w-4" />,
-    width: 400,
-    height: 240,
-  },
-];
+function buildLayoutOptions(deviceWidth: number, deviceHeight: number): LayoutOption[] {
+  return [
+    {
+      id: 'full',
+      label: 'Full Screen',
+      icon: <SquareIcon className="h-4 w-4" />,
+      width: deviceWidth,
+      height: deviceHeight,
+    },
+    {
+      id: 'half_vertical',
+      label: 'Half Vertical',
+      icon: <ColumnsIcon className="h-4 w-4" />,
+      width: Math.floor(deviceWidth / 2),
+      height: deviceHeight,
+    },
+    {
+      id: 'half_horizontal',
+      label: 'Half Horizontal',
+      icon: <RowsIcon className="h-4 w-4" />,
+      width: deviceWidth,
+      height: Math.floor(deviceHeight / 2),
+    },
+    {
+      id: 'quadrant',
+      label: 'Quadrant',
+      icon: <Grid2x2Icon className="h-4 w-4" />,
+      width: Math.floor(deviceWidth / 2),
+      height: Math.floor(deviceHeight / 2),
+    },
+  ];
+}
 
 const sampleData = {
   // Sample webhook/polling data
@@ -123,7 +133,7 @@ const sampleData = {
   device: {
     name: "My TRMNL",
     width: 800,
-    height: 480
+    height: 480,
   },
   timestamp: new Date().toLocaleString()
 };
@@ -137,11 +147,36 @@ export function PluginPreview({ plugin, isOpen, onClose }: PluginPreviewProps) {
   const [activeTab, setActiveTab] = useState<'preview' | 'data'>('preview');
   const [savingSampleData, setSavingSampleData] = useState(false);
   const [sampleDataSaved, setSampleDataSaved] = useState(false);
-  
+  const [deviceModels, setDeviceModels] = useState<DeviceModelOption[]>([]);
+  const [selectedModelId, setSelectedModelId] = useState<string>('');
+
   const iframeRef = useRef<HTMLIFrameElement>(null);
+
+  // Determine active device dimensions
+  const selectedModel = deviceModels.find(m => String(m.id) === selectedModelId);
+  const deviceWidth = selectedModel?.screen_width ?? 800;
+  const deviceHeight = selectedModel?.screen_height ?? 480;
+
+  // Build layout options from active device dimensions
+  const layoutOptions = buildLayoutOptions(deviceWidth, deviceHeight);
 
   // Get the current layout option
   const currentLayout = layoutOptions.find(l => l.id === selectedLayout) || layoutOptions[0];
+
+  // Fetch device models on mount
+  useEffect(() => {
+    fetch('/api/devices/models', { credentials: 'include' })
+      .then(res => res.json())
+      .then(data => {
+        if (data.models) {
+          setDeviceModels(data.models);
+          const ogModel = data.models.find((m: DeviceModelOption) => m.model_name === 'og_plus');
+          if (ogModel) setSelectedModelId(String(ogModel.id));
+          else if (data.models.length > 0) setSelectedModelId(String(data.models[0].id));
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   // Initialize sample data from plugin when plugin changes
   useEffect(() => {
@@ -155,12 +190,12 @@ export function PluginPreview({ plugin, isOpen, onClose }: PluginPreviewProps) {
     }
   }, [plugin]);
 
-  // Generate preview when plugin, layout, or data changes
+  // Generate preview when plugin, layout, data, or device model changes
   useEffect(() => {
     if (isOpen && plugin) {
       generatePreview();
     }
-  }, [isOpen, plugin, selectedLayout, customData]);
+  }, [isOpen, plugin, selectedLayout, customData, selectedModelId]);
 
   const generatePreview = async () => {
     try {
@@ -173,6 +208,12 @@ export function PluginPreview({ plugin, isOpen, onClose }: PluginPreviewProps) {
         parsedData = JSON.parse(customData);
       } catch (e) {
         throw new Error("Invalid JSON in sample data");
+      }
+
+      // Inject current device dimensions into sample data
+      if (parsedData.device) {
+        parsedData.device.width = deviceWidth;
+        parsedData.device.height = deviceHeight;
       }
 
       // Get the appropriate template for the selected layout
@@ -210,10 +251,10 @@ export function PluginPreview({ plugin, isOpen, onClose }: PluginPreviewProps) {
         plugin: testPlugin,
         layout: selectedLayout,
         sample_data: parsedData,
-        device_width: 800,  // Always use full screen width
-        device_height: 480, // Always use full screen height
-        layout_width: currentLayout.width,   // Layout-specific dimensions for content positioning
-        layout_height: currentLayout.height, // Layout-specific dimensions for content positioning
+        device_width: deviceWidth,
+        device_height: deviceHeight,
+        layout_width: currentLayout.width,
+        layout_height: currentLayout.height,
       };
 
       const response = await fetch('/api/plugin-definitions/test', {
@@ -352,6 +393,23 @@ export function PluginPreview({ plugin, isOpen, onClose }: PluginPreviewProps) {
               </TabsList>
 
               <div className="flex items-center gap-2">
+                {deviceModels.length > 0 && (
+                  <>
+                    <Label>Device:</Label>
+                    <Select value={selectedModelId} onValueChange={setSelectedModelId}>
+                      <SelectTrigger className="w-44">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {deviceModels.map((model) => (
+                          <SelectItem key={model.id} value={String(model.id)}>
+                            {model.display_name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </>
+                )}
                 <Label>Layout:</Label>
                 <Select value={selectedLayout} onValueChange={setSelectedLayout}>
                   <SelectTrigger className="w-40">
@@ -398,7 +456,7 @@ export function PluginPreview({ plugin, isOpen, onClose }: PluginPreviewProps) {
                   <CardTitle className="flex items-center justify-between">
                     <span>{currentLayout.label} Layout Preview</span>
                     <span className="text-sm font-normal text-muted-foreground">
-                      800 × 480px (Full Screen)
+                      {deviceWidth} × {deviceHeight}px (Full Screen)
                     </span>
                   </CardTitle>
                 </CardHeader>
@@ -406,8 +464,8 @@ export function PluginPreview({ plugin, isOpen, onClose }: PluginPreviewProps) {
                   <div className="flex justify-center p-4 bg-muted/20 rounded-lg">
                     {loading ? (
                       <div className="flex items-center justify-center" style={{ 
-                        width: 600,   // Always use full screen proportions
-                        height: 360   // Maintain 800:480 aspect ratio (600 * 480/800 = 360)
+                        width: 600,
+                        height: Math.round(600 * deviceHeight / deviceWidth)
                       }}>
                         <div className="text-center">
                           <Loader2 className="h-8 w-8 animate-spin mx-auto mb-2" />
@@ -431,8 +489,8 @@ export function PluginPreview({ plugin, isOpen, onClose }: PluginPreviewProps) {
                       </div>
                     ) : (
                       <div className="flex items-center justify-center text-muted-foreground" style={{ 
-                        width: 600,   // Always use full screen proportions
-                        height: 360   // Maintain 800:480 aspect ratio (600 * 480/800 = 360)
+                        width: 600,
+                        height: Math.round(600 * deviceHeight / deviceWidth)
                       }}>
                         <div className="text-center">
                           <Eye className="h-8 w-8 mx-auto mb-2" />

@@ -8,6 +8,7 @@ interface TabMessage {
 interface DeviceUpdate {
   device_id: string
   battery_voltage?: number
+  battery_percent?: number
   rssi?: number
   firmware_version?: string
   last_seen?: string

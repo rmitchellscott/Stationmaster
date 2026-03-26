@@ -157,6 +157,11 @@ func (p *ModelPoller) processDeviceModel(ctx context.Context, modelInfo DeviceMo
 		capabilitiesJSON = string(capBytes)
 	}
 
+	mimeType := modelInfo.MimeType
+	if mimeType == "" {
+		mimeType = "image/png"
+	}
+
 	// Check if this exact model version already exists (not deleted)
 	var existingModel database.DeviceModel
 	err := p.db.Where("model_name = ? AND deleted_at IS NULL", modelName).
@@ -166,6 +171,11 @@ func (p *ModelPoller) processDeviceModel(ctx context.Context, modelInfo DeviceMo
 		Where("screen_height = ?", int(modelInfo.Height)).
 		Where("color_depth = ?", int(modelInfo.Colors)).
 		Where("bit_depth = ?", int(modelInfo.BitDepth)).
+		Where("scale_factor = ?", modelInfo.ScaleFactor).
+		Where("rotation = ?", int(modelInfo.Rotation)).
+		Where("offset_x = ?", int(modelInfo.OffsetX)).
+		Where("offset_y = ?", int(modelInfo.OffsetY)).
+		Where("mime_type = ?", mimeType).
 		First(&existingModel).Error
 
 	now := time.Now().UTC()
@@ -192,6 +202,11 @@ func (p *ModelPoller) processDeviceModel(ctx context.Context, modelInfo DeviceMo
 		ScreenHeight:  int(modelInfo.Height),
 		ColorDepth:    int(modelInfo.Colors),
 		BitDepth:      int(modelInfo.BitDepth),
+		ScaleFactor:   modelInfo.ScaleFactor,
+		Rotation:      int(modelInfo.Rotation),
+		OffsetX:       int(modelInfo.OffsetX),
+		OffsetY:       int(modelInfo.OffsetY),
+		MimeType:      mimeType,
 		HasWiFi:       hasWiFi,
 		HasBattery:    hasBattery,
 		HasButtons:    hasButtons,

@@ -69,6 +69,39 @@ func GetScaledDimensions(srcWidth, srcHeight, targetWidth, targetHeight int) (in
 	return newWidth, newHeight
 }
 
+// ResizeToFillNearestNeighbor is like ResizeToFill but uses nearest-neighbor interpolation
+// to preserve sharp edges in pixel art, text, and icons
+func ResizeToFillNearestNeighbor(img image.Image, targetWidth, targetHeight int) image.Image {
+	if img == nil {
+		return nil
+	}
+
+	bounds := img.Bounds()
+	srcWidth := bounds.Dx()
+	srcHeight := bounds.Dy()
+
+	scaleX := float64(targetWidth) / float64(srcWidth)
+	scaleY := float64(targetHeight) / float64(srcHeight)
+	scale := scaleX
+	if scaleY > scaleX {
+		scale = scaleY
+	}
+
+	newWidth := int(float64(srcWidth) * scale)
+	newHeight := int(float64(srcHeight) * scale)
+
+	resized := image.NewRGBA(image.Rect(0, 0, newWidth, newHeight))
+	xdraw.NearestNeighbor.Scale(resized, resized.Bounds(), img, img.Bounds(), xdraw.Over, nil)
+
+	canvas := image.NewRGBA(image.Rect(0, 0, targetWidth, targetHeight))
+	offsetX := (newWidth - targetWidth) / 2
+	offsetY := (newHeight - targetHeight) / 2
+	srcRect := image.Rect(offsetX, offsetY, offsetX+targetWidth, offsetY+targetHeight)
+	draw.Draw(canvas, canvas.Bounds(), resized, srcRect.Min, draw.Src)
+
+	return canvas
+}
+
 // ResizeToFill resizes an image to fill the entire target dimensions while preserving aspect ratio
 // The image will be scaled to cover the full target area and cropped if necessary
 func ResizeToFill(img image.Image, targetWidth, targetHeight int) image.Image {

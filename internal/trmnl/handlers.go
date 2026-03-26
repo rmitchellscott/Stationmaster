@@ -352,15 +352,28 @@ func DisplayHandler(c *gin.Context) {
 	// Check for firmware update AFTER device status is updated
 	firmwareUpdate := checkFirmwareUpdate(c, device, userTimezone)
 
-	// Process active plugins and generate response with 2-second timeout
+	// Process active plugins and generate response with configurable timeout
 	processor := GetPluginProcessor()
 	var response gin.H
 	var currentItem *database.PlaylistItem
 	var pluginErr error
 	var timedOut bool
-	
+
+	// Look up configurable timeout from database
+	timeoutStr, err := database.GetSystemSetting("plugin_processing_timeout_seconds")
+	if err != nil {
+		timeoutStr = "2"
+	}
+	timeoutSeconds, err := strconv.Atoi(timeoutStr)
+	if err != nil || timeoutSeconds < 1 {
+		timeoutSeconds = 2
+	}
+	if timeoutSeconds > 60 {
+		timeoutSeconds = 60
+	}
+
 	// Create timeout context for plugin processing
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSeconds)*time.Second)
 	defer cancel()
 	
 	// Channel to receive plugin processing results
@@ -392,7 +405,7 @@ func DisplayHandler(c *gin.Context) {
 	case <-ctx.Done():
 		// Timeout occurred
 		timedOut = true
-		logging.Warn("[/api/display] Plugin processing timed out after 2 seconds", "mac_address", device.MacAddress)
+		logging.Warn("[/api/display] Plugin processing timed out", "timeout_seconds", timeoutSeconds, "mac_address", device.MacAddress)
 		
 		// Create timeout error response with smart refresh rate
 		timeoutRefreshRate := device.RefreshRate

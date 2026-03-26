@@ -148,6 +148,7 @@ interface SystemStatus {
     max_api_keys_per_user: string;
     session_timeout_hours: string;
     site_url?: string;
+    plugin_processing_timeout_seconds?: string;
   };
   mode: string;
   dry_run: boolean;
@@ -354,6 +355,7 @@ export function AdminPage() {
   const [registrationEnabled, setRegistrationEnabled] = useState(false);
   const [registrationLocked, setRegistrationLocked] = useState(false);
   const [frequentRefreshesEnabled, setFrequentRefreshesEnabled] = useState(false);
+  const [pluginProcessingTimeout, setPluginProcessingTimeout] = useState(2);
   const [webhookRateLimit, setWebhookRateLimit] = useState(30);
   const [webhookMaxSizeKB, setWebhookMaxSizeKB] = useState(5);
   
@@ -689,6 +691,7 @@ export function AdminPage() {
         setRegistrationLocked(status.settings.registration_enabled_locked || false);
         setSiteUrl(status.settings.site_url || "");
         setFrequentRefreshesEnabled(status.settings.enable_frequent_refreshes === "true");
+        setPluginProcessingTimeout(parseInt(status.settings.plugin_processing_timeout_seconds) || 2);
         setWebhookRateLimit(parseInt(status.settings.webhook_rate_limit_per_hour) || 30);
         setWebhookMaxSizeKB(parseInt(status.settings.webhook_max_request_size_kb) || 5);
       }
@@ -3215,6 +3218,30 @@ export function AdminPage() {
                         </p>
                       </div>
                       
+                      <div className="space-y-2">
+                        <Label htmlFor="plugin-processing-timeout">Plugin Processing Timeout (seconds)</Label>
+                        <Input
+                          id="plugin-processing-timeout"
+                          type="number"
+                          min="1"
+                          max="60"
+                          value={pluginProcessingTimeout}
+                          onChange={(e) => setPluginProcessingTimeout(parseInt(e.target.value) || 2)}
+                          onBlur={() => {
+                            if (pluginProcessingTimeout < 1 || pluginProcessingTimeout > 60) {
+                              setError("Plugin processing timeout must be between 1 and 60 seconds");
+                              setPluginProcessingTimeout(2);
+                              return;
+                            }
+                            updateSystemSetting("plugin_processing_timeout_seconds", pluginProcessingTimeout.toString());
+                          }}
+                          className="max-w-xs"
+                        />
+                        <p className="text-sm text-muted-foreground">
+                          Maximum time allowed for plugin processing during device display requests. Devices will receive a timeout error image if exceeded.
+                        </p>
+                      </div>
+
                       <div className="flex items-center justify-between">
                         <div className="space-y-1">
                           <Label htmlFor="frequent-refreshes-enabled">

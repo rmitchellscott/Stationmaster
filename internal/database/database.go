@@ -231,6 +231,11 @@ func initializeSystemSettings() error {
 			Value:       "false",
 			Description: "Enable 1, 5, and 10 minute screen render refresh rates",
 		},
+		"plugin_processing_timeout_seconds": {
+			Key:         "plugin_processing_timeout_seconds",
+			Value:       "2",
+			Description: "Timeout in seconds for plugin processing during display requests",
+		},
 	}
 
 	for _, setting := range defaultSettings {

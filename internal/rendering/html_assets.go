@@ -211,7 +211,7 @@ func (h *HTMLAssetsManager) GenerateFlagDetectionJS() string {
 		const checkInterval = setInterval(function() {
 			checkCount++;
 			const hasSignal = document.body && document.body.hasAttribute('data-render-complete');
-			
+
 			if (hasSignal) {
 				// Check for TRMNL skip flags right before screenshot when ALL JavaScript has executed
 				if (typeof window.TRMNL_SKIP_DISPLAY !== 'undefined' && window.TRMNL_SKIP_DISPLAY) {
@@ -222,14 +222,95 @@ func (h *HTMLAssetsManager) GenerateFlagDetectionJS() string {
 					document.body.setAttribute('data-trmnl-skip-screen-generation', 'true');
 					console.log('[TRMNL] SKIP_SCREEN_GENERATION flag detected - marking for abort');
 				}
-				
+
 				clearInterval(checkInterval);
 			}
-			
+
 			if (checkCount >= 40) { // 20 seconds max
 				clearInterval(checkInterval);
 			}
 		}, 500);
+`
+}
+
+// GenerateMashupIframeCoordinationJS returns JavaScript for coordinating iframe loading in mashups
+func (h *HTMLAssetsManager) GenerateMashupIframeCoordinationJS() string {
+	return `
+		// Mashup iframe coordination: wait for all iframes to load before signaling completion
+		window.initializeMashupIframes = function() {
+			console.log('[MASHUP] Initializing iframe coordination');
+
+			const iframes = document.querySelectorAll('.mashup iframe');
+			if (iframes.length === 0) {
+				console.log('[MASHUP] No iframes found, skipping coordination');
+				return;
+			}
+
+			console.log('[MASHUP] Found ' + iframes.length + ' iframes to coordinate');
+			let loadedCount = 0;
+			let fontsLoadedCount = 0;
+			const totalIframes = iframes.length;
+
+			function checkAllIframesReady() {
+				if (loadedCount === totalIframes && fontsLoadedCount === totalIframes) {
+					console.log('[MASHUP] All iframes loaded and fonts ready - signaling completion');
+					if (document.body) {
+						document.body.setAttribute('data-render-complete', 'true');
+					}
+				}
+			}
+
+			// Set up load listener for each iframe
+			iframes.forEach(function(iframe, index) {
+				iframe.addEventListener('load', function() {
+					loadedCount++;
+					console.log('[MASHUP] Iframe ' + (index + 1) + '/' + totalIframes + ' loaded');
+
+					try {
+						const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+						const iframeWindow = iframe.contentWindow;
+
+						// Wait for fonts to load in iframe
+						if (iframeDoc.fonts) {
+							iframeDoc.fonts.ready.then(function() {
+								fontsLoadedCount++;
+								console.log('[MASHUP] Iframe ' + (index + 1) + ' fonts loaded (' + fontsLoadedCount + '/' + totalIframes + ')');
+								checkAllIframesReady();
+							}).catch(function(err) {
+								console.error('[MASHUP] Error waiting for fonts in iframe ' + (index + 1) + ':', err);
+								fontsLoadedCount++;
+								checkAllIframesReady();
+							});
+						} else {
+							console.log('[MASHUP] Iframe ' + (index + 1) + ' does not support fonts API, assuming ready');
+							fontsLoadedCount++;
+							checkAllIframesReady();
+						}
+					} catch (e) {
+						console.error('[MASHUP] Error accessing iframe ' + (index + 1) + ' content:', e);
+						fontsLoadedCount++;
+						checkAllIframesReady();
+					}
+				});
+
+				// Fallback timeout for iframes that don't load
+				setTimeout(function() {
+					if (loadedCount < totalIframes) {
+						console.log('[MASHUP] Timeout waiting for iframe ' + (index + 1) + ', forcing completion');
+						loadedCount = totalIframes;
+						fontsLoadedCount = totalIframes;
+						checkAllIframesReady();
+					}
+				}, 8000);
+			});
+		};
+
+		// Initialize iframe coordination when DOM is ready
+		if (document.readyState === 'loading') {
+			document.addEventListener('DOMContentLoaded', window.initializeMashupIframes);
+		} else {
+			window.initializeMashupIframes();
+		}
 `
 }
 
@@ -243,6 +324,7 @@ type HTMLDocumentOptions struct {
 	AdditionalJS      string
 	RemoveBleedMargin bool
 	EnableDarkMode    bool
+	IncludeBaseTag    bool // For iframes: adds <base> tag to resolve asset URLs correctly
 }
 
 // GenerateCompleteHTMLDocument creates a complete HTML document with TRMNL assets and proper structure
@@ -277,6 +359,14 @@ func (h *HTMLAssetsManager) GenerateCompleteHTMLDocument(opts HTMLDocumentOption
 	htmlBuilder.WriteString("<!DOCTYPE html>\n<html>\n<head>\n")
 	htmlBuilder.WriteString("    <meta charset=\"utf-8\">\n")
 	htmlBuilder.WriteString("    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n")
+
+	// Add base tag for iframes to resolve asset URLs correctly
+	if opts.IncludeBaseTag {
+		htmlBuilder.WriteString("    <base href=\"")
+		htmlBuilder.WriteString(assetBaseURL)
+		htmlBuilder.WriteString("/\">\n")
+	}
+
 	htmlBuilder.WriteString("    <title>")
 	htmlBuilder.WriteString(template.HTMLEscapeString(opts.Title))
 	htmlBuilder.WriteString("</title>\n")
@@ -301,6 +391,115 @@ func (h *HTMLAssetsManager) GenerateCompleteHTMLDocument(opts HTMLDocumentOption
 	htmlBuilder.WriteString("\n    </script>\n</body>\n</html>")
 	
 	return htmlBuilder.String()
+}
+
+// GenerateStandaloneChildHTML creates a complete HTML document for a child plugin in a mashup
+// This is used for iframe isolation to prevent CSS/JS collisions between plugins
+func (h *HTMLAssetsManager) GenerateStandaloneChildHTML(content string, title string, width, height int, removeBleedMargin, enableDarkMode bool, assetBaseURL string) string {
+	additionalCSS := `
+        #error {
+            display: none;
+            padding: 20px;
+            background: #fee;
+            border: 1px solid #fcc;
+            color: #c00;
+            font-family: monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+        }
+        /* Dark mode inversion CSS */
+        .screen--dark-mode {
+            filter: invert(1);
+        }
+        .screen--dark-mode .image {
+            filter: invert(1);
+        }
+        body {
+            overflow: hidden;
+        }
+    `
+
+	contentWithError := `<div id="error"></div>` + content
+
+	return h.GenerateCompleteHTMLDocument(HTMLDocumentOptions{
+		Title:             title,
+		Width:             width,
+		Height:            height,
+		Content:           contentWithError,
+		AdditionalCSS:     additionalCSS,
+		AdditionalJS:      "",
+		RemoveBleedMargin: removeBleedMargin,
+		EnableDarkMode:    enableDarkMode,
+		IncludeBaseTag:    true, // Critical for iframes: enables asset URL resolution
+	}, assetBaseURL)
+}
+
+// WrapMashupWithTRNMLAssets wraps mashup content with TRMNL assets and iframe coordination
+func (h *HTMLAssetsManager) WrapMashupWithTRNMLAssets(content string, title string, width, height int, removeBleedMargin, enableDarkMode bool, assetBaseURL string) string {
+	// Additional CSS for error handling and mashup-specific styles
+	additionalCSS := `
+        #error {
+            display: none;
+            padding: 20px;
+            background: #fee;
+            border: 1px solid #fcc;
+            color: #c00;
+            font-family: monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+        }
+        /* Dark mode inversion CSS */
+        .screen--dark-mode {
+            filter: invert(1);
+        }
+        .screen--dark-mode .image {
+            filter: invert(1);
+        }
+        .mashup-error {
+            padding: 10px;
+            background: #fee;
+            border: 1px solid #fcc;
+            color: #c00;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .mashup-empty-slot {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            background: #f5f5f5;
+            border: 2px dashed #ccc;
+            color: #999;
+        }
+        /* Iframe styling for mashups */
+        .mashup iframe {
+            border: none;
+            margin: 0;
+            padding: 0;
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+    `
+
+	// Wrap content with error div for compatibility
+	contentWithError := `<div id="error"></div>` + content
+
+	// Include iframe coordination JavaScript for mashups
+	mashupJS := h.GenerateMashupIframeCoordinationJS()
+
+	return h.GenerateCompleteHTMLDocument(HTMLDocumentOptions{
+		Title:             title,
+		Width:             width,
+		Height:            height,
+		Content:           contentWithError,
+		AdditionalCSS:     additionalCSS,
+		AdditionalJS:      mashupJS,
+		RemoveBleedMargin: removeBleedMargin,
+		EnableDarkMode:    enableDarkMode,
+		IncludeBaseTag:    false, // Parent mashup document, not in iframe
+	}, assetBaseURL)
 }
 
 // WrapWithTRNMLAssets takes processed content and wraps it with complete TRMNL HTML document
@@ -341,6 +540,15 @@ func (h *HTMLAssetsManager) WrapWithTRNMLAssets(content string, title string, wi
             border: 2px dashed #ccc;
             color: #999;
         }
+        /* Iframe styling for mashups */
+        .mashup iframe {
+            border: none;
+            margin: 0;
+            padding: 0;
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
     `
 
 	// Wrap content with error div for compatibility
@@ -355,5 +563,6 @@ func (h *HTMLAssetsManager) WrapWithTRNMLAssets(content string, title string, wi
 		AdditionalJS:      "",
 		RemoveBleedMargin: removeBleedMargin,
 		EnableDarkMode:    enableDarkMode,
+		IncludeBaseTag:    false, // Regular document, not in iframe
 	}, assetBaseURL)
 }

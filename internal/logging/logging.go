@@ -15,7 +15,7 @@ var logger *slog.Logger
 
 // Custom log levels
 const (
-	LevelBrowserless = slog.Level(-6) // More verbose than DEBUG (-4)
+	LevelRenderer = slog.Level(-6) // More verbose than DEBUG (-4)
 )
 
 // ComponentTintHandler wraps tint.Handler to format component attributes as bracketed prefixes
@@ -98,8 +98,8 @@ func setupLogger() {
 				ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
 					if a.Key == slog.LevelKey {
 						level := a.Value.Any().(slog.Level)
-						if level == LevelBrowserless {
-							return slog.Attr{Key: a.Key, Value: slog.StringValue("BROWSERLESS")}
+						if level == LevelRenderer {
+							return slog.Attr{Key: a.Key, Value: slog.StringValue("RENDERER")}
 						}
 					}
 					return a
@@ -115,8 +115,8 @@ func setupLogger() {
 // parseLogLevel converts string log level to slog.Level
 func parseLogLevel(levelStr string) slog.Level {
 	switch strings.ToUpper(levelStr) {
-	case "BROWSERLESS":
-		return LevelBrowserless
+	case "RENDERER", "BROWSERLESS":
+		return LevelRenderer
 	case "DEBUG":
 		return slog.LevelDebug
 	case "INFO":
@@ -171,11 +171,12 @@ func IsDebugEnabled() bool {
 	return logger.Enabled(nil, slog.LevelDebug)
 }
 
-// Browserless logs a message at the custom BROWSERLESS level (-6)
-// This is more verbose than DEBUG and specifically for browserless debugging
-func Browserless(msg string, args ...any) {
-	logger.Log(context.Background(), LevelBrowserless, msg, args...)
+func Renderer(msg string, args ...any) {
+	logger.Log(context.Background(), LevelRenderer, msg, args...)
 }
+
+// Browserless is an alias for Renderer for backwards compatibility with LOG_LEVEL=BROWSERLESS
+var Browserless = Renderer
 
 // Component-aware logging functions
 // These functions automatically add the component attribute for structured logging

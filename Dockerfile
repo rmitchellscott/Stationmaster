@@ -71,6 +71,11 @@ RUN apk add --no-cache \
       postgresql-client \
       tzdata \
       ruby \
+      chromium \
+      nss \
+      freetype \
+      harfbuzz \
+      font-noto \
       curl \
       xz \
     && update-ca-certificates \
@@ -100,6 +105,8 @@ RUN chmod +x ./scripts/start.sh ./scripts/liquid_server.rb
 COPY embedded_ruby/s6-rc.d/ /etc/s6-overlay/s6-rc.d/
 RUN chmod +x /etc/s6-overlay/s6-rc.d/liquid-renderer/run \
              /etc/s6-overlay/s6-rc.d/stationmaster/run
+
+ENV CHROME_PATH=/usr/bin/chromium-browser
 
 EXPOSE 8000
 ENTRYPOINT ["/init"]

@@ -283,10 +283,10 @@ func (p *MashupPlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespons
 	}
 	
 	// Create browserless renderer for HTML to image conversion
-	browserRenderer, err := rendering.NewBrowserlessRenderer()
+	browserRenderer, err := rendering.NewChromeRenderer()
 	if err != nil {
 		return plugins.CreateErrorResponse(fmt.Sprintf("Failed to create renderer: %v", err)),
-			fmt.Errorf("failed to create browserless renderer: %w", err)
+			fmt.Errorf("failed to create chrome renderer: %w", err)
 	}
 	defer browserRenderer.Close()
 	

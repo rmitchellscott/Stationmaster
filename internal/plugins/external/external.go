@@ -158,10 +158,10 @@ func (p *ExternalPlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespo
 	)
 	
 	// Create browserless renderer
-	browserRenderer, err := rendering.NewBrowserlessRenderer()
+	browserRenderer, err := rendering.NewChromeRenderer()
 	if err != nil {
 		return plugins.CreateErrorResponse(fmt.Sprintf("Failed to create renderer: %v", err)),
-			fmt.Errorf("failed to create browserless renderer: %w", err)
+			fmt.Errorf("failed to create chrome renderer: %w", err)
 	}
 	defer browserRenderer.Close()
 	

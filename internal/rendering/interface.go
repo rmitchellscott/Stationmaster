@@ -48,3 +48,13 @@ type RenderResult struct {
 	Width     int    `json:"width"`
 	Height    int    `json:"height"`
 }
+
+type RenderFlags struct {
+	SkipScreenGeneration bool `json:"skip_screen_generation"`
+	SkipDisplay          bool `json:"skip_display"`
+}
+
+type RenderHTMLResult struct {
+	ImageData []byte      `json:"image_data"`
+	Flags     RenderFlags `json:"flags"`
+}

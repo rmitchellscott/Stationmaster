@@ -1460,16 +1460,15 @@ func TestPluginDefinitionHandler(c *gin.Context) {
 		return
 	}
 
-	// Convert HTML to image using BrowserlessRenderer
-	browserRenderer, err := rendering.DefaultBrowserlessRenderer()
+	chromeRenderer, err := rendering.DefaultChromeRenderer()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to create renderer: %v", err)})
 		return
 	}
-	defer browserRenderer.Close()
+	defer chromeRenderer.Close()
 
 	ctx := context.Background()
-	imageData, err := browserRenderer.RenderHTML(ctx, renderedHTML, req.DeviceWidth, req.DeviceHeight)
+	imageData, err := chromeRenderer.RenderHTML(ctx, renderedHTML, req.DeviceWidth, req.DeviceHeight)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to render image: %v", err)})
 		return

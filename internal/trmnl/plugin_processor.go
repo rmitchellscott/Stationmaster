@@ -28,7 +28,7 @@ type PluginProcessor struct {
 	queueManager        *rendering.QueueManager
 	pluginService       *database.UnifiedPluginService
 	pluginFactory       *plugins.UnifiedPluginFactory
-	browserlessRenderer *rendering.BrowserlessRenderer
+	chromeRenderer *rendering.ChromeRenderer
 }
 
 // generateRandomString creates a cryptographically secure random string
@@ -106,20 +106,19 @@ func NewPluginProcessor(db *gorm.DB) (*PluginProcessor, error) {
 	pluginService := database.NewUnifiedPluginService(db)
 	pluginFactory := plugins.NewUnifiedPluginFactory(db)
 
-	// Initialize browserless renderer (optional dependency)
-	browserlessRenderer, err := rendering.NewBrowserlessRenderer()
+	chromeRenderer, err := rendering.NewChromeRenderer()
 	if err != nil {
-		logging.Warn("[PLUGIN_PROCESSOR] Browserless renderer not available", "error", err)
-		browserlessRenderer = nil
+		logging.Warn("[PLUGIN_PROCESSOR] Chrome renderer not available", "error", err)
+		chromeRenderer = nil
 	}
 
 	return &PluginProcessor{
-		imageStorage:        imageStorage,
-		db:                  db,
-		queueManager:        queueManager,
-		pluginService:       pluginService,
-		pluginFactory:       pluginFactory,
-		browserlessRenderer: browserlessRenderer,
+		imageStorage:   imageStorage,
+		db:             db,
+		queueManager:   queueManager,
+		pluginService:  pluginService,
+		pluginFactory:  pluginFactory,
+		chromeRenderer: chromeRenderer,
 	}, nil
 }
 
@@ -224,50 +223,45 @@ func (pp *PluginProcessor) processUnifiedPluginInstance(device *database.Device,
 	return response, pluginErr
 }
 
-// renderHTMLToImage converts HTML content to an image using browserless
 func (pp *PluginProcessor) renderHTMLToImage(htmlContent string, device *database.Device) ([]byte, error) {
 	if device.DeviceModel == nil {
 		return nil, fmt.Errorf("device model not available")
 	}
-	
-	// Check if browserless renderer is available
-	if pp.browserlessRenderer == nil {
-		// Return error image SVG when browserless is not available
+
+	if pp.chromeRenderer == nil {
 		errorSVG := fmt.Sprintf(`
 			<svg width="%d" height="%d" xmlns="http://www.w3.org/2000/svg">
 				<rect width="100%%" height="100%%" fill="#fee"/>
-				<text x="50%%" y="45%%" text-anchor="middle" dominant-baseline="middle" 
+				<text x="50%%" y="45%%" text-anchor="middle" dominant-baseline="middle"
 					  font-family="Arial, sans-serif" font-size="14" fill="#c33">
-					Browserless Service Unavailable
+					Chrome Renderer Unavailable
 				</text>
-				<text x="50%%" y="55%%" text-anchor="middle" dominant-baseline="middle" 
+				<text x="50%%" y="55%%" text-anchor="middle" dominant-baseline="middle"
 					  font-family="Arial, sans-serif" font-size="12" fill="#666">
-					Configure BROWSERLESS_URL to render HTML
+					Install chromium or set CHROME_REMOTE_URL
 				</text>
 			</svg>
 		`, device.DeviceModel.ScreenWidth, device.DeviceModel.ScreenHeight)
 		return []byte(errorSVG), nil
 	}
-	
-	// Use browserless to render HTML to PNG
+
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	
-	imageData, err := pp.browserlessRenderer.RenderHTML(ctx, htmlContent, device.DeviceModel.ScreenWidth, device.DeviceModel.ScreenHeight)
+
+	imageData, err := pp.chromeRenderer.RenderHTML(ctx, htmlContent, device.DeviceModel.ScreenWidth, device.DeviceModel.ScreenHeight)
 	if err != nil {
-		logging.Error("[PLUGIN_PROCESSOR] Browserless rendering failed", "error", err)
-		
-		// Return error image SVG when browserless fails
+		logging.Error("[PLUGIN_PROCESSOR] Chrome rendering failed", "error", err)
+
 		errorSVG := fmt.Sprintf(`
 			<svg width="%d" height="%d" xmlns="http://www.w3.org/2000/svg">
 				<rect width="100%%" height="100%%" fill="#fee"/>
-				<text x="50%%" y="45%%" text-anchor="middle" dominant-baseline="middle" 
+				<text x="50%%" y="45%%" text-anchor="middle" dominant-baseline="middle"
 					  font-family="Arial, sans-serif" font-size="14" fill="#c33">
 					HTML Rendering Failed
 				</text>
-				<text x="50%%" y="55%%" text-anchor="middle" dominant-baseline="middle" 
+				<text x="50%%" y="55%%" text-anchor="middle" dominant-baseline="middle"
 					  font-family="Arial, sans-serif" font-size="12" fill="#666">
-					Check browserless service status
+					Check Chrome renderer status
 				</text>
 			</svg>
 		`, device.DeviceModel.ScreenWidth, device.DeviceModel.ScreenHeight)

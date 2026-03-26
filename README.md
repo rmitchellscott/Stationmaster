@@ -179,7 +179,8 @@ npm run dev
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `BROWSERLESS_URL` | `http://localhost:3000` | Browserless screenshot service URL |
+| `CHROME_REMOTE_URL` | _(empty = embedded)_ | WebSocket URL for remote Chrome (e.g. `ws://chromium:9222`). Omit to use embedded chromium. |
+| `CHROME_PATH` | _(auto-detected)_ | Path to local chromium binary for embedded mode |
 | `ASSET_BASE_URL` | `http://stationmaster:8000` | Base URL for assets in HTML rendering |
 | `RENDERED_IMAGES_PATH` | - | Override path for rendered images storage |
 | `RENDERED_IMAGES_URL` | - | Override URL for rendered images |

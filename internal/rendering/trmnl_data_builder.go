@@ -41,10 +41,10 @@ func (b *TRNMLDataBuilder) BuildTRNMLData(ctx plugins.PluginContext, instance *d
 			deviceData["height"] = ctx.Device.DeviceModel.ScreenHeight
 		}
 
-		// Add battery information if available
-		if ctx.Device.BatteryVoltage > 0 {
-			batteryPercentage := plugins.BatteryVoltageToPercentage(ctx.Device.BatteryVoltage)
-			deviceData["percent_charged"] = batteryPercentage
+		if ctx.Device.BatteryPercent > 0 {
+			deviceData["percent_charged"] = float64(ctx.Device.BatteryPercent)
+		} else if ctx.Device.BatteryVoltage > 0 {
+			deviceData["percent_charged"] = plugins.BatteryVoltageToPercentage(ctx.Device.BatteryVoltage)
 		}
 
 		// Add WiFi information if available  

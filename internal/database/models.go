@@ -237,6 +237,7 @@ type Device struct {
 	FirmwareVersion         string     `gorm:"size:50" json:"firmware_version,omitempty"`
 	TargetFirmwareVersion   string     `gorm:"size:50" json:"target_firmware_version,omitempty"`
 	BatteryVoltage          float64    `json:"battery_voltage,omitempty"`
+	BatteryPercent          int        `json:"battery_percent,omitempty"`
 	RSSI                    int        `json:"rssi,omitempty"`
 	RefreshRate             int        `gorm:"default:1800" json:"refresh_rate"` // seconds
 	AllowFirmwareUpdates    bool       `gorm:"default:false" json:"allow_firmware_updates"`
@@ -530,9 +531,14 @@ type DeviceModel struct {
 	HasBattery     bool       `gorm:"default:true" json:"has_battery"`
 	HasButtons     int        `gorm:"default:0" json:"has_buttons"`            // Number of buttons
 	Capabilities   string     `gorm:"type:text" json:"capabilities,omitempty"` // JSON array of capabilities
+	ScaleFactor    float64    `gorm:"default:1.0" json:"scale_factor"`
+	Rotation       int        `gorm:"default:0" json:"rotation"`
+	OffsetX        int        `gorm:"default:0" json:"offset_x"`
+	OffsetY        int        `gorm:"default:0" json:"offset_y"`
+	MimeType       string     `gorm:"size:50;default:'image/png'" json:"mime_type"`
 	MinFirmware    string     `gorm:"size:50" json:"min_firmware,omitempty"`
 	IsActive       bool       `gorm:"default:true" json:"is_active"`
-	ApiLastSeenAt  *time.Time `json:"api_last_seen_at,omitempty"` // Track when last seen in API
+	ApiLastSeenAt  *time.Time `json:"api_last_seen_at,omitempty"`
 	CreatedAt      time.Time  `json:"created_at"`
 	UpdatedAt      time.Time  `json:"updated_at"`
 	DeletedAt      *time.Time `gorm:"index" json:"deleted_at,omitempty"` // Soft delete

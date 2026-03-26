@@ -78,7 +78,7 @@ export function DeviceSelector({
   }
 
   const DeviceInfo = ({ device, compact = false }: { device: Device; compact?: boolean }) => {
-    const battery = getBatteryDisplay(device.battery_voltage);
+    const battery = getBatteryDisplay(device.battery_voltage, device.battery_percent);
     const signal = getSignalDisplay(device.rssi);
     
     return (

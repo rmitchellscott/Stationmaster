@@ -18,6 +18,7 @@ export interface Device {
   is_claimed: boolean;
   firmware_version?: string;
   battery_voltage?: number;
+  battery_percent?: number;
   rssi?: number;
   refresh_rate: number;
   last_seen?: string;
@@ -78,19 +79,23 @@ export const getSignalQuality = (rssi: number): { quality: string; strength: num
   return { quality: "Very Poor", strength: 1, color: "text-destructive" };
 };
 
-export const getBatteryDisplay = (voltage?: number) => {
-  if (!voltage) {
+export const getBatteryDisplay = (voltage?: number, percent?: number) => {
+  const percentage = percent && percent > 0
+    ? percent
+    : voltage ? calculateBatteryPercentage(voltage) : null;
+
+  if (percentage === null) {
     return {
       icon: <Battery className="h-4 w-4 text-muted-foreground" />,
       text: "N/A",
-      tooltip: "Battery status unknown"
+      tooltip: "Battery status unknown",
+      color: ""
     };
   }
-  
-  const percentage = calculateBatteryPercentage(voltage);
+
   let icon;
   let color;
-  
+
   if (percentage > 75) {
     icon = <BatteryFull className="h-4 w-4" />;
     color = "";
@@ -104,11 +109,12 @@ export const getBatteryDisplay = (voltage?: number) => {
     icon = <BatteryWarning className="h-4 w-4 text-destructive" />;
     color = "text-destructive";
   }
-  
+
+  const tooltipDetail = voltage ? ` (${voltage.toFixed(1)}V)` : "";
   return {
     icon,
     text: `${percentage}%`,
-    tooltip: `Battery Level: ${percentage}% (${voltage.toFixed(1)}V)`,
+    tooltip: `Battery Level: ${percentage}%${tooltipDetail}`,
     color
   };
 };

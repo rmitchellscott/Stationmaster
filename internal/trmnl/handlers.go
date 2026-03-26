@@ -669,7 +669,6 @@ func statusImageURL(filename string, device *database.Device) string {
 	}
 	return "/images/" + filename
 }
-
 // getSetupImageURL returns the setup/empty-state image URL appropriate for a device model.
 // The TRMNL X (1872x1404) and original TRMNL (800x480) use the same external setup image
 // since the firmware handles display scaling. Override via SETUP_IMAGE_URL env var.

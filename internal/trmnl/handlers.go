@@ -367,6 +367,7 @@ func DisplayHandler(c *gin.Context) {
 			"reset_firmware":        false,
 			"maximum_compatibility": device.MaximumCompatibility,
 			"touchbar_mode":         device.TouchbarMode,
+			"temperature_profile":   device.TemperatureProfile,
 		}
 
 		if logging.IsDebugEnabled() {
@@ -540,6 +541,7 @@ func DisplayHandler(c *gin.Context) {
 	response["reset_firmware"] = firmwareUpdate.ResetFirmware
 	response["maximum_compatibility"] = device.MaximumCompatibility
 	response["touchbar_mode"] = device.TouchbarMode
+	response["temperature_profile"] = device.TemperatureProfile
 
 	// Convert relative image URLs to absolute URLs (final step before response)
 	if response != nil {

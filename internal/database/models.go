@@ -255,6 +255,7 @@ type Device struct {
 	FirmwareUpdateEndTime   string     `gorm:"size:5;default:'23:59'" json:"firmware_update_end_time"`
 	MaximumCompatibility    bool       `gorm:"default:false" json:"maximum_compatibility"`
 	TouchbarMode            string     `gorm:"size:10;default:'tap'" json:"touchbar_mode"`
+	TemperatureProfile      string     `gorm:"size:10;default:'default'" json:"temperature_profile"`
 	CreatedAt               time.Time  `json:"created_at"`
 	UpdatedAt               time.Time  `json:"updated_at"`
 

@@ -138,15 +138,15 @@ func (p *CoreProxyPlugin) Process(ctx plugins.PluginContext) (plugins.PluginResp
 			fmt.Errorf("failed to create request: %w", err)
 	}
 
-	// Set headers that TRMNL expects
 	req.Header.Set("ID", deviceMac)
 	req.Header.Set("Access-Token", accessToken)
 
-	// Forward device status headers if available from our local device
 	if ctx.Device.FirmwareVersion != "" {
 		req.Header.Set("Fw-Version", ctx.Device.FirmwareVersion)
 	}
-	if ctx.Device.BatteryVoltage > 0 {
+	if ctx.Device.BatteryPercent > 0 {
+		req.Header.Set("Percent-Charged", fmt.Sprintf("%d", ctx.Device.BatteryPercent))
+	} else if ctx.Device.BatteryVoltage > 0 {
 		req.Header.Set("Battery-Voltage", fmt.Sprintf("%.2f", ctx.Device.BatteryVoltage))
 	}
 	if ctx.Device.RSSI != 0 {
@@ -154,6 +154,11 @@ func (p *CoreProxyPlugin) Process(ctx plugins.PluginContext) (plugins.PluginResp
 	}
 	if ctx.Device.RefreshRate > 0 {
 		req.Header.Set("Refresh-Rate", fmt.Sprintf("%d", ctx.Device.RefreshRate))
+	}
+	if ctx.Device.DeviceModel != nil {
+		req.Header.Set("Model", firmwareModelName(ctx.Device.DeviceModel.ModelName))
+		req.Header.Set("Width", fmt.Sprintf("%d", ctx.Device.DeviceModel.ScreenWidth))
+		req.Header.Set("Height", fmt.Sprintf("%d", ctx.Device.DeviceModel.ScreenHeight))
 	}
 
 	// Make request to TRMNL
@@ -217,7 +222,17 @@ func (p *CoreProxyPlugin) Process(ctx plugins.PluginContext) (plugins.PluginResp
 	}
 }
 
-// Register the plugin when this package is imported
+func firmwareModelName(dbModelName string) string {
+	reverseMap := map[string]string{
+		"og_plus": "og",
+		"v2":      "x",
+	}
+	if fw, ok := reverseMap[dbModelName]; ok {
+		return fw
+	}
+	return dbModelName
+}
+
 func init() {
 	plugins.Register(&CoreProxyPlugin{})
 }

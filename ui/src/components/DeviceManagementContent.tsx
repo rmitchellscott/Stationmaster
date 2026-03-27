@@ -123,6 +123,8 @@ interface Device {
   sleep_show_screen?: boolean;
   firmware_update_start_time?: string;
   firmware_update_end_time?: string;
+  maximum_compatibility?: boolean;
+  touchbar_mode?: string;
   created_at: string;
   updated_at: string;
   device_model?: DeviceModel;
@@ -240,6 +242,8 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
     firmware_update_start_time: "00:00",
     firmware_update_end_time: "23:59",
     target_firmware_version: "latest",
+    maximum_compatibility: false,
+    touchbar_mode: "tap",
   };
 
   type DeviceSettingsState = typeof deviceSettingsDefaults;
@@ -248,6 +252,10 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
   const updateSetting = <K extends keyof DeviceSettingsState>(key: K, value: DeviceSettingsState[K]) => {
     setEditSettings(prev => ({ ...prev, [key]: value }));
   };
+
+  // Display settings
+  const [editMaxCompatibility, setEditMaxCompatibility] = useState(false);
+  const [editTouchbarMode, setEditTouchbarMode] = useState("tap");
 
   // Firmware versions for dropdown
   const [firmwareVersions, setFirmwareVersions] = useState<FirmwareVersion[]>([]);
@@ -698,6 +706,8 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
         firmware_update_start_time: device.firmware_update_start_time || "00:00",
         firmware_update_end_time: device.firmware_update_end_time || "23:59",
         target_firmware_version: device.target_firmware_version || "latest",
+        maximum_compatibility: device.maximum_compatibility ?? false,
+        touchbar_mode: device.touchbar_mode || "tap",
       };
       setEditSettings(settings);
       setOriginalSettings(settings);
@@ -1772,6 +1782,82 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
                         </div>
                         <p className="text-xs text-muted-foreground mt-1">
                           Share this 6-digit ID with others who want to mirror this device
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Display Settings */}
+                <div>
+                  <Label className="text-sm font-medium">Display</Label>
+                  <div className="mt-2 space-y-3">
+                    <div className="flex items-center space-x-2">
+                      <Switch
+                        id="edit-max-compatibility"
+                        checked={editMaxCompatibility}
+                        onCheckedChange={setEditMaxCompatibility}
+                      />
+                      <Label htmlFor="edit-max-compatibility">
+                        Maximum Compatibility
+                      </Label>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Forces full display refresh. Use if you see ghosting or artifacts.
+                    </p>
+
+                    {editDevice?.device_model?.model_name === "v2" && (
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-touchbar-mode">Touchbar Mode</Label>
+                        <Select value={editTouchbarMode} onValueChange={setEditTouchbarMode}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="tap">Tap</SelectItem>
+                            <SelectItem value="slide">Slide</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <p className="text-sm text-muted-foreground">
+                          Tap: individual touch zones. Slide: swipe gestures.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Display Settings */}
+                <div>
+                  <Label className="text-sm font-medium">Display</Label>
+                  <div className="mt-2 space-y-3">
+                    <div className="flex items-center space-x-2">
+                      <Switch
+                        id="edit-max-compatibility"
+                        checked={editSettings.maximum_compatibility}
+                        onCheckedChange={(v) => updateSetting("maximum_compatibility", v)}
+                      />
+                      <Label htmlFor="edit-max-compatibility">
+                        Maximum Compatibility
+                      </Label>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Forces full display refresh. Use if you see ghosting or artifacts.
+                    </p>
+
+                    {editDevice?.device_model?.model_name === "v2" && (
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-touchbar-mode">Touchbar Mode</Label>
+                        <Select value={editSettings.touchbar_mode} onValueChange={(v) => updateSetting("touchbar_mode", v)}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="tap">Tap</SelectItem>
+                            <SelectItem value="slide">Slide</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <p className="text-sm text-muted-foreground">
+                          Tap: individual touch zones. Slide: swipe gestures.
                         </p>
                       </div>
                     )}

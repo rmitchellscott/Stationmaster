@@ -358,13 +358,15 @@ func DisplayHandler(c *gin.Context) {
 		imageURL := baseURL + statusImageURL("low_battery.png", device)
 
 		response := gin.H{
-			"status":          0,
-			"image_url":       imageURL,
-			"filename":        statusFilename("low_battery", device),
-			"refresh_rate":    fmt.Sprintf("%d", device.RefreshRate),
-			"update_firmware": false,
-			"firmware_url":    "",
-			"reset_firmware":  false,
+			"status":                0,
+			"image_url":             imageURL,
+			"filename":              statusFilename("low_battery", device),
+			"refresh_rate":          fmt.Sprintf("%d", device.RefreshRate),
+			"update_firmware":       false,
+			"firmware_url":          "",
+			"reset_firmware":        false,
+			"maximum_compatibility": device.MaximumCompatibility,
+			"touchbar_mode":         device.TouchbarMode,
 		}
 
 		if logging.IsDebugEnabled() {
@@ -533,10 +535,11 @@ func DisplayHandler(c *gin.Context) {
 		
 	}
 
-	// Always add firmware update info to response
 	response["update_firmware"] = firmwareUpdate.UpdateFirmware
 	response["firmware_url"] = firmwareUpdate.FirmwareURL
 	response["reset_firmware"] = firmwareUpdate.ResetFirmware
+	response["maximum_compatibility"] = device.MaximumCompatibility
+	response["touchbar_mode"] = device.TouchbarMode
 
 	// Convert relative image URLs to absolute URLs (final step before response)
 	if response != nil {

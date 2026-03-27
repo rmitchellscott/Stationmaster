@@ -125,6 +125,7 @@ interface Device {
   firmware_update_end_time?: string;
   maximum_compatibility?: boolean;
   touchbar_mode?: string;
+  temperature_profile?: string;
   created_at: string;
   updated_at: string;
   device_model?: DeviceModel;
@@ -244,6 +245,7 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
     target_firmware_version: "latest",
     maximum_compatibility: false,
     touchbar_mode: "tap",
+    temperature_profile: "default",
   };
 
   type DeviceSettingsState = typeof deviceSettingsDefaults;
@@ -254,8 +256,6 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
   };
 
   // Display settings
-  const [editMaxCompatibility, setEditMaxCompatibility] = useState(false);
-  const [editTouchbarMode, setEditTouchbarMode] = useState("tap");
 
   // Firmware versions for dropdown
   const [firmwareVersions, setFirmwareVersions] = useState<FirmwareVersion[]>([]);
@@ -708,6 +708,7 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
         target_firmware_version: device.target_firmware_version || "latest",
         maximum_compatibility: device.maximum_compatibility ?? false,
         touchbar_mode: device.touchbar_mode || "tap",
+        temperature_profile: device.temperature_profile || "default",
       };
       setEditSettings(settings);
       setOriginalSettings(settings);
@@ -1795,44 +1796,6 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
                     <div className="flex items-center space-x-2">
                       <Switch
                         id="edit-max-compatibility"
-                        checked={editMaxCompatibility}
-                        onCheckedChange={setEditMaxCompatibility}
-                      />
-                      <Label htmlFor="edit-max-compatibility">
-                        Maximum Compatibility
-                      </Label>
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      Forces full display refresh. Use if you see ghosting or artifacts.
-                    </p>
-
-                    {editDevice?.device_model?.model_name === "v2" && (
-                      <div className="space-y-2">
-                        <Label htmlFor="edit-touchbar-mode">Touchbar Mode</Label>
-                        <Select value={editTouchbarMode} onValueChange={setEditTouchbarMode}>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="tap">Tap</SelectItem>
-                            <SelectItem value="slide">Slide</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <p className="text-sm text-muted-foreground">
-                          Tap: individual touch zones. Slide: swipe gestures.
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Display Settings */}
-                <div>
-                  <Label className="text-sm font-medium">Display</Label>
-                  <div className="mt-2 space-y-3">
-                    <div className="flex items-center space-x-2">
-                      <Switch
-                        id="edit-max-compatibility"
                         checked={editSettings.maximum_compatibility}
                         onCheckedChange={(v) => updateSetting("maximum_compatibility", v)}
                       />
@@ -1861,6 +1824,23 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
                         </p>
                       </div>
                     )}
+
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-temperature-profile">Temperature Profile</Label>
+                      <Select value={editSettings.temperature_profile} onValueChange={(v) => updateSetting("temperature_profile", v)}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="default">Default</SelectItem>
+                          <SelectItem value="a">A</SelectItem>
+                          <SelectItem value="b">B</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-sm text-muted-foreground">
+                        Adjusts display waveform. Change only if images appear washed out.
+                      </p>
+                    </div>
                   </div>
                 </div>
 

@@ -423,35 +423,33 @@ func (w *RenderWorker) renderForDevice(ctx context.Context, pluginInstance datab
 					"error", err, "plugin_instance_id", pluginInstance.ID)
 			}
 
-			// Save processed image data to disk with simplified device-specific naming
-			randomString := generateRandomString(10)
-			filename := fmt.Sprintf("%s_%s_%s.png",
-				pluginInstance.ID, device.ID, randomString)
-			imagePath = filepath.Join(w.renderedDir, filename)
+			if contentChanged {
+				randomString := generateRandomString(10)
+				filename := fmt.Sprintf("%s_%s_%s.png",
+					pluginInstance.ID, device.ID, randomString)
+				imagePath = filepath.Join(w.renderedDir, filename)
 
-			// Write file with better error handling
-			err = os.WriteFile(imagePath, processedImageData, 0644)
-			if err != nil {
-				return false, fmt.Errorf("failed to save image plugin image: %w", err)
+				err = os.WriteFile(imagePath, processedImageData, 0644)
+				if err != nil {
+					return false, fmt.Errorf("failed to save image plugin image: %w", err)
+				}
+
+				if _, err := os.Stat(imagePath); os.IsNotExist(err) {
+					return false, fmt.Errorf("image file was not created successfully: %s", imagePath)
+				} else if err != nil {
+					logging.Warn("[RENDER_WORKER] File verification failed", "path", imagePath, "error", err)
+				}
+
+				fileInfo, err := os.Stat(imagePath)
+				if err != nil {
+					logging.Warn("[RENDER_WORKER] Could not get file size", "path", imagePath, "error", err)
+					fileSize = int64(len(processedImageData))
+				} else {
+					fileSize = fileInfo.Size()
+				}
+
+				logging.Debug("[RENDER_WORKER] Successfully wrote image file", "path", imagePath, "size", fileSize)
 			}
-
-			// Verify file was actually written and is accessible
-			if _, err := os.Stat(imagePath); os.IsNotExist(err) {
-				return false, fmt.Errorf("image file was not created successfully: %s", imagePath)
-			} else if err != nil {
-				logging.Warn("[RENDER_WORKER] File verification failed", "path", imagePath, "error", err)
-			}
-
-			// Get final file size
-			fileInfo, err := os.Stat(imagePath)
-			if err != nil {
-				logging.Warn("[RENDER_WORKER] Could not get file size", "path", imagePath, "error", err)
-				fileSize = int64(len(processedImageData)) // Use expected size
-			} else {
-				fileSize = fileInfo.Size()
-			}
-
-			logging.Debug("[RENDER_WORKER] Successfully wrote image file", "path", imagePath, "size", fileSize)
 		} else {
 			// Fallback to URL reference for backward compatibility
 			imageURL, ok := plugins.GetImageURL(response)

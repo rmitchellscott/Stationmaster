@@ -570,8 +570,9 @@ func ForceRefreshPluginInstanceHandler(c *gin.Context) {
 	var unifiedInstance database.PluginInstance
 	err := db.Preload("PluginDefinition").Where("id = ? AND user_id = ?", instanceID, userID).First(&unifiedInstance).Error
 	if err == nil {
-		// For unified instances, clear any pre-rendered content first
+		// For unified instances, clear any pre-rendered content and cached polling data
 		db.Where("plugin_instance_id = ?", unifiedInstance.ID).Delete(&database.RenderedContent{})
+		db.Where("plugin_instance_id = ?", unifiedInstance.ID.String()).Delete(&database.PrivatePluginPollingData{})
 
 		// Check if this plugin requires processing (rendering)
 		if unifiedInstance.PluginDefinition.RequiresProcessing {
@@ -1058,7 +1059,7 @@ func UpdatePluginDefinitionHandler(c *gin.Context) {
 		}
 	}
 
-	// Schedule renders for all instances of this updated plugin definition
+	// Clear cached data and schedule renders for all instances of this updated plugin definition
 	unifiedPluginService := database.NewUnifiedPluginService(db)
 	instances, err := unifiedPluginService.GetPluginInstancesByDefinition(pluginDefinition.ID)
 	if err != nil {
@@ -1067,9 +1068,11 @@ func UpdatePluginDefinitionHandler(c *gin.Context) {
 		instanceIDs := make([]uuid.UUID, len(instances))
 		for i, instance := range instances {
 			instanceIDs[i] = instance.ID
+			db.Where("plugin_instance_id = ?", instance.ID.String()).Delete(&database.PrivatePluginPollingData{})
+			db.Where("plugin_instance_id = ?", instance.ID).Delete(&database.RenderedContent{})
 		}
 		ScheduleRenderForInstances(instanceIDs)
-		logging.Info("[PLUGIN_UPDATE] Scheduled renders for plugin instances", "plugin_id", pluginDefinition.ID, "instance_count", len(instances))
+		logging.Info("[PLUGIN_UPDATE] Cleared cached data and scheduled renders for plugin instances", "plugin_id", pluginDefinition.ID, "instance_count", len(instances))
 	}
 
 	c.JSON(http.StatusOK, gin.H{"plugin_definition": pluginDefinition})

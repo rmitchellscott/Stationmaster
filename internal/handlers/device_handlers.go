@@ -168,6 +168,9 @@ var deviceSettingsFields = map[string]string{
 	"firmware_update_start_time": "firmware_update_start_time",
 	"firmware_update_end_time":   "firmware_update_end_time",
 	"target_firmware_version":    "target_firmware_version",
+	"maximum_compatibility":      "maximum_compatibility",
+	"touchbar_mode":              "touchbar_mode",
+	"temperature_profile":        "temperature_profile",
 }
 
 var timeFields = map[string]string{

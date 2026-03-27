@@ -270,6 +270,10 @@ func (ds *DeviceService) GetDeviceByAPIKey(apiKey string) (*Device, error) {
 	return &device, nil
 }
 
+func (ds *DeviceService) UpdateDeviceFields(deviceID uuid.UUID, updates map[string]interface{}) error {
+	return ds.db.Model(&Device{}).Where("id = ?", deviceID).Updates(updates).Error
+}
+
 // UpdateDevice updates a device
 func (ds *DeviceService) UpdateDevice(device *Device) error {
 	logging.Debug("[DEVICE UPDATE] Updating device", "device_id", device.ID)

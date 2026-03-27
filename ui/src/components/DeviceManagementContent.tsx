@@ -204,25 +204,31 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
 
   // Device editing
   const [editDevice, setEditDevice] = useState<Device | null>(null);
-  const [editDeviceName, setEditDeviceName] = useState("");
-  const [editRefreshRate, setEditRefreshRate] = useState("");
-  const [editAllowFirmwareUpdates, setEditAllowFirmwareUpdates] = useState(true);
   const [editModelName, setEditModelName] = useState<string>("");
-  const [editIsShareable, setEditIsShareable] = useState(false);
   const [deviceModels, setDeviceModels] = useState<DeviceModel[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [editDialogError, setEditDialogError] = useState<string | null>(null);
 
-  // Sleep mode settings
-  const [editSleepEnabled, setEditSleepEnabled] = useState(false);
-  const [editSleepStartTime, setEditSleepStartTime] = useState("");
-  const [editSleepEndTime, setEditSleepEndTime] = useState("");
-  const [editSleepShowScreen, setEditSleepShowScreen] = useState(true);
+  const deviceSettingsDefaults = {
+    name: "",
+    refresh_rate: "1800",
+    allow_firmware_updates: true,
+    is_shareable: false,
+    sleep_enabled: false,
+    sleep_start_time: "22:00",
+    sleep_end_time: "06:00",
+    sleep_show_screen: true,
+    firmware_update_start_time: "00:00",
+    firmware_update_end_time: "23:59",
+    target_firmware_version: "latest",
+  };
 
-  // Firmware update schedule settings
-  const [editFirmwareUpdateStartTime, setEditFirmwareUpdateStartTime] = useState("00:00");
-  const [editFirmwareUpdateEndTime, setEditFirmwareUpdateEndTime] = useState("23:59");
-  const [editTargetFirmwareVersion, setEditTargetFirmwareVersion] = useState<string>("latest");
+  type DeviceSettingsState = typeof deviceSettingsDefaults;
+  const [editSettings, setEditSettings] = useState<DeviceSettingsState>(deviceSettingsDefaults);
+
+  const updateSetting = <K extends keyof DeviceSettingsState>(key: K, value: DeviceSettingsState[K]) => {
+    setEditSettings(prev => ({ ...prev, [key]: value }));
+  };
 
   // Firmware versions for dropdown
   const [firmwareVersions, setFirmwareVersions] = useState<FirmwareVersion[]>([]);
@@ -537,12 +543,12 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
   };
 
   const updateDevice = async () => {
-    if (!editDevice || !editDeviceName.trim()) {
+    if (!editDevice || !editSettings.name.trim()) {
       setEditDialogError("Please fill in all fields");
       return;
     }
 
-    const refreshRate = parseInt(editRefreshRate);
+    const refreshRate = parseInt(editSettings.refresh_rate);
     if (isNaN(refreshRate) || refreshRate < 60 || refreshRate > 86400) {
       setEditDialogError("Refresh rate must be between 60 and 86400 seconds");
       return;
@@ -552,17 +558,9 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
       setEditDialogError(null);
 
       const requestBody: any = {
-        name: editDeviceName.trim(),
+        ...editSettings,
+        name: editSettings.name.trim(),
         refresh_rate: refreshRate,
-        allow_firmware_updates: editAllowFirmwareUpdates,
-        is_shareable: editIsShareable,
-        sleep_enabled: editSleepEnabled,
-        sleep_start_time: editSleepStartTime,
-        sleep_end_time: editSleepEndTime,
-        sleep_show_screen: editSleepShowScreen,
-        firmware_update_start_time: editFirmwareUpdateStartTime,
-        firmware_update_end_time: editFirmwareUpdateEndTime,
-        target_firmware_version: editTargetFirmwareVersion,
       };
 
 
@@ -616,9 +614,9 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
         },
         credentials: "include",
         body: JSON.stringify({
-          name: editDeviceName.trim(),
-          refresh_rate: parseInt(editRefreshRate),
-          allow_firmware_updates: editAllowFirmwareUpdates,
+          name: editSettings.name.trim(),
+          refresh_rate: parseInt(editSettings.refresh_rate),
+          allow_firmware_updates: editSettings.allow_firmware_updates,
           clear_model_override: true,
         }),
       });
@@ -667,22 +665,22 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
   const openEditDialog = (device: Device) => {
     try {
       setEditDevice(device);
-      setEditDeviceName(device.name || "");
-      setEditRefreshRate(device.refresh_rate.toString());
-      setEditAllowFirmwareUpdates(device.allow_firmware_updates ?? true);
       setEditModelName(device.device_model?.model_name || "none");
-      setEditIsShareable(device.is_shareable ?? false);
-      
-      // Initialize sleep mode settings
-      setEditSleepEnabled(device.sleep_enabled ?? false);
-      setEditSleepStartTime(device.sleep_start_time || "22:00");
-      setEditSleepEndTime(device.sleep_end_time || "06:00");
-      setEditSleepShowScreen(device.sleep_show_screen ?? true);
-      
-      // Initialize firmware update schedule settings
-      setEditFirmwareUpdateStartTime(device.firmware_update_start_time || "00:00");
-      setEditFirmwareUpdateEndTime(device.firmware_update_end_time || "23:59");
-      setEditTargetFirmwareVersion(device.target_firmware_version || "latest");
+      const settings: DeviceSettingsState = {
+        name: device.name || "",
+        refresh_rate: device.refresh_rate.toString(),
+        allow_firmware_updates: device.allow_firmware_updates ?? true,
+        is_shareable: device.is_shareable ?? false,
+        sleep_enabled: device.sleep_enabled ?? false,
+        sleep_start_time: device.sleep_start_time || "22:00",
+        sleep_end_time: device.sleep_end_time || "06:00",
+        sleep_show_screen: device.sleep_show_screen ?? true,
+        firmware_update_start_time: device.firmware_update_start_time || "00:00",
+        firmware_update_end_time: device.firmware_update_end_time || "23:59",
+        target_firmware_version: device.target_firmware_version || "latest",
+      };
+      setEditSettings(settings);
+      setOriginalSettings(settings);
 
       // Clear any previous dialog errors
       setEditDialogError(null);
@@ -706,21 +704,13 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
     }
   };
 
+  const [originalSettings, setOriginalSettings] = useState<DeviceSettingsState>(deviceSettingsDefaults);
+
   const hasDeviceChanges = () => {
     if (!editDevice) return false;
     return (
-      editDeviceName.trim() !== (editDevice.name || "") ||
-      editRefreshRate !== editDevice.refresh_rate.toString() ||
-      editAllowFirmwareUpdates !== (editDevice.allow_firmware_updates ?? true) ||
-      editModelName !== (editDevice.device_model?.model_name || "none") ||
-      editIsShareable !== (editDevice.is_shareable ?? false) ||
-      editSleepEnabled !== (editDevice.sleep_enabled ?? false) ||
-      editSleepStartTime !== (editDevice.sleep_start_time || "22:00") ||
-      editSleepEndTime !== (editDevice.sleep_end_time || "06:00") ||
-      editSleepShowScreen !== (editDevice.sleep_show_screen ?? true) ||
-      editFirmwareUpdateStartTime !== (editDevice.firmware_update_start_time || "00:00") ||
-      editFirmwareUpdateEndTime !== (editDevice.firmware_update_end_time || "23:59") ||
-      editTargetFirmwareVersion !== (editDevice.target_firmware_version || "latest")
+      JSON.stringify(editSettings) !== JSON.stringify(originalSettings) ||
+      editModelName !== (editDevice.device_model?.model_name || "none")
     );
   };
 
@@ -1557,8 +1547,8 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
                 <Label htmlFor="edit-device-name">Device Name</Label>
                 <Input
                   id="edit-device-name"
-                  value={editDeviceName}
-                  onChange={(e) => setEditDeviceName(e.target.value)}
+                  value={editSettings.name}
+                  onChange={(e) => updateSetting("name", e.target.value)}
                   placeholder="e.g., Kitchen Display"
                   className="mt-2"
                 />
@@ -1576,8 +1566,8 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
                   type="number"
                   min="60"
                   max="86400"
-                  value={editRefreshRate}
-                  onChange={(e) => setEditRefreshRate(e.target.value)}
+                  value={editSettings.refresh_rate}
+                  onChange={(e) => updateSetting("refresh_rate", e.target.value)}
                   className="mt-2"
                 />
                 <p className="text-sm text-muted-foreground mt-1">
@@ -1588,8 +1578,8 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
                 <div className="flex items-center space-x-2">
                   <Switch
                     id="edit-allow-firmware-updates"
-                    checked={editAllowFirmwareUpdates}
-                    onCheckedChange={setEditAllowFirmwareUpdates}
+                    checked={editSettings.allow_firmware_updates}
+                    onCheckedChange={(v) => updateSetting("allow_firmware_updates", v)}
                   />
                   <Label htmlFor="edit-allow-firmware-updates">
                     Allow automatic firmware updates
@@ -1599,7 +1589,7 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
                   When enabled, device will automatically update to the latest firmware
                 </p>
 
-                {editAllowFirmwareUpdates && (
+                {editSettings.allow_firmware_updates && (
                   <div className="mt-3 pl-6 border-l-2 border-border space-y-3">
                     <div>
                       <Label className="text-sm font-medium">Firmware Update Schedule</Label>
@@ -1613,8 +1603,8 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
                         <Input
                           id="edit-firmware-start-time"
                           type="time"
-                          value={editFirmwareUpdateStartTime}
-                          onChange={(e) => setEditFirmwareUpdateStartTime(e.target.value)}
+                          value={editSettings.firmware_update_start_time}
+                          onChange={(e) => updateSetting("firmware_update_start_time", e.target.value)}
                           className="mt-1"
                         />
                       </div>
@@ -1623,8 +1613,8 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
                         <Input
                           id="edit-firmware-end-time"
                           type="time"
-                          value={editFirmwareUpdateEndTime}
-                          onChange={(e) => setEditFirmwareUpdateEndTime(e.target.value)}
+                          value={editSettings.firmware_update_end_time}
+                          onChange={(e) => updateSetting("firmware_update_end_time", e.target.value)}
                           className="mt-1"
                         />
                       </div>
@@ -1632,8 +1622,8 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
                     <div>
                       <Label htmlFor="edit-target-firmware" className="text-sm">Target Firmware Version</Label>
                       <Select
-                        value={editTargetFirmwareVersion}
-                        onValueChange={setEditTargetFirmwareVersion}
+                        value={editSettings.target_firmware_version}
+                        onValueChange={(v) => updateSetting("target_firmware_version", v)}
                       >
                         <SelectTrigger id="edit-target-firmware" className="mt-1">
                           <SelectValue placeholder="Stable (Auto)" />
@@ -1676,8 +1666,8 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
                     <div className="flex items-center space-x-2">
                       <Switch
                         id="edit-sleep-enabled"
-                        checked={editSleepEnabled}
-                        onCheckedChange={setEditSleepEnabled}
+                        checked={editSettings.sleep_enabled}
+                        onCheckedChange={(v) => updateSetting("sleep_enabled", v)}
                       />
                       <Label htmlFor="edit-sleep-enabled">
                         Enable sleep mode
@@ -1687,7 +1677,7 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
                       Reduce screen refreshes during inactive periods to save battery
                     </p>
 
-                    {editSleepEnabled && (
+                    {editSettings.sleep_enabled && (
                       <div className="space-y-3 pl-6 border-l-2 border-border">
                         <div className="grid grid-cols-2 gap-3">
                           <div>
@@ -1695,8 +1685,8 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
                             <Input
                               id="edit-sleep-start-time"
                               type="time"
-                              value={editSleepStartTime}
-                              onChange={(e) => setEditSleepStartTime(e.target.value)}
+                              value={editSettings.sleep_start_time}
+                              onChange={(e) => updateSetting("sleep_start_time", e.target.value)}
                               className="mt-1"
                             />
                           </div>
@@ -1705,8 +1695,8 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
                             <Input
                               id="edit-sleep-end-time"
                               type="time"
-                              value={editSleepEndTime}
-                              onChange={(e) => setEditSleepEndTime(e.target.value)}
+                              value={editSettings.sleep_end_time}
+                              onChange={(e) => updateSetting("sleep_end_time", e.target.value)}
                               className="mt-1"
                             />
                           </div>
@@ -1715,8 +1705,8 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
                         <div className="flex items-center space-x-2">
                           <Switch
                             id="edit-sleep-show-screen"
-                            checked={editSleepShowScreen}
-                            onCheckedChange={setEditSleepShowScreen}
+                            checked={editSettings.sleep_show_screen}
+                            onCheckedChange={(v) => updateSetting("sleep_show_screen", v)}
                           />
                           <Label htmlFor="edit-sleep-show-screen" className="text-sm">
                             Show sleep screen
@@ -1739,8 +1729,8 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
                     <div className="flex items-center space-x-2">
                       <Switch
                         id="edit-is-shareable"
-                        checked={editIsShareable}
-                        onCheckedChange={setEditIsShareable}
+                        checked={editSettings.is_shareable}
+                        onCheckedChange={(v) => updateSetting("is_shareable", v)}
                       />
                       <Label htmlFor="edit-is-shareable">
                         Shareable
@@ -1749,7 +1739,7 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
                     <p className="text-sm text-muted-foreground mt-1">
                       Allow other devices to mirror this device's playlist
                     </p>
-                    {editIsShareable && editDevice && (
+                    {editSettings.is_shareable && editDevice && (
                       <div className="mt-3 p-3 bg-muted/50 rounded-md">
                         <Label className="text-xs text-muted-foreground">Device ID for Mirroring</Label>
                         <div className="mt-1 font-mono text-lg font-bold text-primary">
@@ -1954,7 +1944,7 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
             </Button>
             <Button
               onClick={updateDevice}
-              disabled={!editDeviceName.trim() || !hasDeviceChanges()}
+              disabled={!editSettings.name.trim() || !hasDeviceChanges()}
             >
               Update Device
             </Button>

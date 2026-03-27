@@ -154,88 +154,57 @@ func GetDeviceHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"device": device})
 }
 
-// UpdateDeviceHandler updates a device
-type UpdateDeviceRequest struct {
-	Name                    string  `json:"name"`
-	RefreshRate             int     `json:"refresh_rate"`
-	IsActive                *bool   `json:"is_active"`
-	AllowFirmwareUpdates    *bool   `json:"allow_firmware_updates"`
-	DeviceModelID           *uint   `json:"device_model_id"`
-	ClearModelOverride      *bool   `json:"clear_model_override"`
-	IsShareable             *bool   `json:"is_shareable"`
-	SleepEnabled            *bool   `json:"sleep_enabled"`
-	SleepStartTime          string  `json:"sleep_start_time"`
-	SleepEndTime            string  `json:"sleep_end_time"`
-	SleepShowScreen         *bool   `json:"sleep_show_screen"`
-	FirmwareUpdateStartTime string  `json:"firmware_update_start_time"`
-	FirmwareUpdateEndTime   string  `json:"firmware_update_end_time"`
-	TargetFirmwareVersion   *string `json:"target_firmware_version"`
+// To add a new device setting: add the field to Device in models.go, then add a line here.
+var deviceSettingsFields = map[string]string{
+	"name":                      "name",
+	"refresh_rate":              "refresh_rate",
+	"is_active":                 "is_active",
+	"allow_firmware_updates":    "allow_firmware_updates",
+	"is_shareable":              "is_shareable",
+	"sleep_enabled":             "sleep_enabled",
+	"sleep_start_time":          "sleep_start_time",
+	"sleep_end_time":            "sleep_end_time",
+	"sleep_show_screen":         "sleep_show_screen",
+	"firmware_update_start_time": "firmware_update_start_time",
+	"firmware_update_end_time":   "firmware_update_end_time",
+	"target_firmware_version":    "target_firmware_version",
 }
 
-func (req *UpdateDeviceRequest) ApplyTo(device *database.Device) error {
-	if req.Name != "" {
-		device.Name = req.Name
-	}
-	if req.RefreshRate > 0 {
-		device.RefreshRate = req.RefreshRate
-	}
-	if req.IsActive != nil {
-		device.IsActive = *req.IsActive
-	}
-	if req.AllowFirmwareUpdates != nil {
-		device.AllowFirmwareUpdates = *req.AllowFirmwareUpdates
-	}
-	if req.IsShareable != nil {
-		device.IsShareable = *req.IsShareable
-	}
-	if req.SleepEnabled != nil {
-		device.SleepEnabled = *req.SleepEnabled
-	}
-	if req.SleepShowScreen != nil {
-		device.SleepShowScreen = *req.SleepShowScreen
-	}
+var timeFields = map[string]string{
+	"sleep_start_time":          "",
+	"sleep_end_time":            "",
+	"firmware_update_start_time": "00:00",
+	"firmware_update_end_time":   "23:59",
+}
 
-	if req.SleepStartTime != "" {
-		if err := validateTimeFormat(req.SleepStartTime); err != nil {
-			return fmt.Errorf("invalid sleep start time format: %w", err)
+func buildDeviceUpdates(raw map[string]interface{}) (map[string]interface{}, error) {
+	updates := map[string]interface{}{}
+
+	for jsonKey, dbCol := range deviceSettingsFields {
+		val, exists := raw[jsonKey]
+		if !exists {
+			if defaultVal, isTime := timeFields[jsonKey]; isTime {
+				updates[dbCol] = defaultVal
+			}
+			continue
 		}
-		device.SleepStartTime = req.SleepStartTime
-	} else {
-		device.SleepStartTime = ""
-	}
 
-	if req.SleepEndTime != "" {
-		if err := validateTimeFormat(req.SleepEndTime); err != nil {
-			return fmt.Errorf("invalid sleep end time format: %w", err)
+		if _, isTime := timeFields[jsonKey]; isTime {
+			if s, ok := val.(string); ok && s != "" {
+				if err := validateTimeFormat(s); err != nil {
+					return nil, fmt.Errorf("invalid %s format: %w", jsonKey, err)
+				}
+				updates[dbCol] = s
+			} else {
+				updates[dbCol] = timeFields[jsonKey]
+			}
+			continue
 		}
-		device.SleepEndTime = req.SleepEndTime
-	} else {
-		device.SleepEndTime = ""
+
+		updates[dbCol] = val
 	}
 
-	if req.FirmwareUpdateStartTime != "" {
-		if err := validateTimeFormat(req.FirmwareUpdateStartTime); err != nil {
-			return fmt.Errorf("invalid firmware start time format: %w", err)
-		}
-		device.FirmwareUpdateStartTime = req.FirmwareUpdateStartTime
-	} else {
-		device.FirmwareUpdateStartTime = "00:00"
-	}
-
-	if req.FirmwareUpdateEndTime != "" {
-		if err := validateTimeFormat(req.FirmwareUpdateEndTime); err != nil {
-			return fmt.Errorf("invalid firmware end time format: %w", err)
-		}
-		device.FirmwareUpdateEndTime = req.FirmwareUpdateEndTime
-	} else {
-		device.FirmwareUpdateEndTime = "23:59"
-	}
-
-	if req.TargetFirmwareVersion != nil {
-		device.TargetFirmwareVersion = *req.TargetFirmwareVersion
-	}
-
-	return nil
+	return updates, nil
 }
 
 func UpdateDeviceHandler(c *gin.Context) {
@@ -252,9 +221,8 @@ func UpdateDeviceHandler(c *gin.Context) {
 		return
 	}
 
-	var req UpdateDeviceRequest
-
-	if err := c.ShouldBindJSON(&req); err != nil {
+	var raw map[string]interface{}
+	if err := c.ShouldBindJSON(&raw); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -273,55 +241,65 @@ func UpdateDeviceHandler(c *gin.Context) {
 		return
 	}
 
-	if req.IsShareable != nil && !*req.IsShareable && device.IsShareable {
-		playlistService := database.NewPlaylistService(db)
-		if err := playlistService.ClearMirroredPlaylistsForSourceDevice(device.ID); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to clear mirrored devices"})
-			return
-		}
-	}
-
-	if req.ClearModelOverride != nil && *req.ClearModelOverride {
-		device.ManualModelOverride = false
-		device.DeviceModelID = nil
-	} else if req.DeviceModelID != nil {
-		if *req.DeviceModelID != 0 {
-			if _, err := deviceService.ValidateDeviceModelByID(*req.DeviceModelID); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if val, ok := raw["is_shareable"]; ok {
+		if shareable, ok := val.(bool); ok && !shareable && device.IsShareable {
+			playlistService := database.NewPlaylistService(db)
+			if err := playlistService.ClearMirroredPlaylistsForSourceDevice(device.ID); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to clear mirrored devices"})
 				return
 			}
-			device.DeviceModelID = req.DeviceModelID
-			device.ManualModelOverride = true
-		} else {
-			device.DeviceModelID = nil
-			device.ManualModelOverride = false
 		}
 	}
 
-	if err := req.ApplyTo(device); err != nil {
+	if val, ok := raw["clear_model_override"]; ok {
+		if clear, ok := val.(bool); ok && clear {
+			device.ManualModelOverride = false
+			device.DeviceModelID = nil
+			deviceService.UpdateDevice(device)
+		}
+		delete(raw, "clear_model_override")
+	} else if val, ok := raw["device_model_id"]; ok {
+		if modelIDFloat, ok := val.(float64); ok {
+			modelID := uint(modelIDFloat)
+			if modelID != 0 {
+				if _, err := deviceService.ValidateDeviceModelByID(modelID); err != nil {
+					c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+					return
+				}
+				device.DeviceModelID = &modelID
+				device.ManualModelOverride = true
+			} else {
+				device.DeviceModelID = nil
+				device.ManualModelOverride = false
+			}
+			deviceService.UpdateDevice(device)
+		}
+		delete(raw, "device_model_id")
+	}
+
+	updates, err := buildDeviceUpdates(raw)
+	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	err = deviceService.UpdateDevice(device)
-	if err != nil {
-		logging.Error("[DEVICE UPDATE] Failed to update device", "device_id", device.ID, "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update device"})
-		return
+	if len(updates) > 0 {
+		if err := deviceService.UpdateDeviceFields(deviceID, updates); err != nil {
+			logging.Error("[DEVICE UPDATE] Failed to update device", "device_id", device.ID, "error", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update device"})
+			return
+		}
 	}
 
+	device, _ = deviceService.GetDeviceByID(deviceID)
+
 	// Broadcast device settings update via SSE if sleep settings changed
-	if req.SleepEnabled != nil || req.SleepStartTime != "" || req.SleepEndTime != "" || req.SleepShowScreen != nil {
-		// Get user timezone for sleep calculation
+	if _, hasSleep := raw["sleep_enabled"]; hasSleep {
 		userTimezone := "UTC"
 		if user.Timezone != "" {
 			userTimezone = user.Timezone
 		}
-		
-		// Check if device is currently in sleep period
 		currentlySleeping := trmnl.IsInSleepPeriod(device, userTimezone)
-		
-		// Send updated sleep config via SSE
 		sseService := sse.GetSSEService()
 		sseService.BroadcastToDevice(device.ID, sse.Event{
 			Type: "device_settings_updated",

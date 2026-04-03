@@ -129,14 +129,19 @@ func (r *UnifiedRenderer) generateHTMLStructure(content string, opts PluginRende
 		EnableDarkMode:    opts.EnableDarkMode,
 	})
 
-	viewClass, mashupClass := layoutToViewClass(opts.Layout)
-
 	var inner string
-	if mashupClass != "" {
-		inner = fmt.Sprintf(`<div class="mashup %s"><div class="view %s">%s</div></div>`,
-			mashupClass, viewClass, content)
+	if slots := mashupSlots(opts.Layout); slots > 0 {
+		viewClass, mashupClass := layoutToViewClass(opts.Layout)
+		var slotBuilder strings.Builder
+		slotBuilder.WriteString(fmt.Sprintf(`<div class="mashup %s">`, mashupClass))
+		slotBuilder.WriteString(fmt.Sprintf(`<div class="view %s">%s</div>`, viewClass, content))
+		for i := 1; i < slots; i++ {
+			slotBuilder.WriteString(fmt.Sprintf(`<div class="view %s"></div>`, viewClass))
+		}
+		slotBuilder.WriteString(`</div>`)
+		inner = slotBuilder.String()
 	} else {
-		inner = fmt.Sprintf(`<div class="view %s">%s</div>`, viewClass, content)
+		inner = fmt.Sprintf(`<div class="view view--full">%s</div>`, content)
 	}
 
 	wrappedContent := fmt.Sprintf(`<div id="plugin-%s" class="environment trmnl">
@@ -158,6 +163,17 @@ func layoutToViewClass(layout string) (string, string) {
 		return "view--quadrant", "mashup--2x2"
 	default:
 		return "view--full", ""
+	}
+}
+
+func mashupSlots(layout string) int {
+	switch layout {
+	case "half_vertical", "half_horizontal":
+		return 2
+	case "quadrant":
+		return 4
+	default:
+		return 0
 	}
 }
 

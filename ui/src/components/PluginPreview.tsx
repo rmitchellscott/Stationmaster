@@ -66,6 +66,7 @@ interface PluginPreviewProps {
   plugin: PrivatePlugin;
   isOpen: boolean;
   onClose: () => void;
+  defaultLayout?: string;
 }
 
 interface LayoutOption {
@@ -139,8 +140,8 @@ const sampleData = {
   timestamp: new Date().toLocaleString()
 };
 
-export function PluginPreview({ plugin, isOpen, onClose }: PluginPreviewProps) {
-  const [selectedLayout, setSelectedLayout] = useState<string>('full');
+export function PluginPreview({ plugin, isOpen, onClose, defaultLayout }: PluginPreviewProps) {
+  const [selectedLayout, setSelectedLayout] = useState<string>(defaultLayout || 'full');
   const [customData, setCustomData] = useState(JSON.stringify(sampleData, null, 2));
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -183,7 +184,10 @@ export function PluginPreview({ plugin, isOpen, onClose }: PluginPreviewProps) {
       .catch(() => {});
   }, []);
 
-  // Initialize sample data from plugin when plugin changes
+  useEffect(() => {
+    if (defaultLayout) setSelectedLayout(defaultLayout);
+  }, [defaultLayout, isOpen]);
+
   useEffect(() => {
     if (plugin) {
       if (plugin.sample_data) {

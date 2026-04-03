@@ -16,17 +16,13 @@ func NewHTMLAssetsManager() *HTMLAssetsManager {
 
 // GenerateTRNMLHeadScripts returns TRMNL scripts to be loaded in the document head
 func (h *HTMLAssetsManager) GenerateTRNMLHeadScripts(assetBaseURL string) string {
-	return fmt.Sprintf(`<!-- TRMNL Scripts for core functionality, filters, and rendering -->
+	return fmt.Sprintf(`<!-- TRMNL Framework v3 scripts -->
     <link rel="stylesheet" href="%s/assets/trmnl/fonts/inter.css">
     <link rel="stylesheet" href="%s/assets/trmnl/css/plugins.css">
     <script src="%s/assets/trmnl/js/plugins.js"></script>
-    <script src="%s/assets/trmnl/js/plugin.js"></script>
-    <script src="%s/assets/trmnl/js/plugin_legacy.js"></script>
-    <script src="%s/assets/trmnl/js/plugin_demo.js"></script>
-    <script src="%s/assets/trmnl/plugin-render/plugins_legacy.js"></script>
     <script src="%s/assets/trmnl/plugin-render/dithering.js"></script>
-    <script src="%s/assets/trmnl/plugin-render/asset.js"></script>`, 
-		assetBaseURL, assetBaseURL, assetBaseURL, assetBaseURL, assetBaseURL, assetBaseURL, assetBaseURL, assetBaseURL, assetBaseURL)
+    <script src="%s/assets/trmnl/plugin-render/asset-deduplication.js"></script>`,
+		assetBaseURL, assetBaseURL, assetBaseURL, assetBaseURL, assetBaseURL)
 }
 
 // GenerateSharedJavaScript returns exact working JavaScript from private plugin backup

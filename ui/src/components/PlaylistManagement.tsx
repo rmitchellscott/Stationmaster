@@ -646,9 +646,9 @@ function SortableTableRow({
           item.duration_override ? formatDuration(item.duration_override) : "Default"
         )}
       </TableCell>
-      <TableCell className="hidden lg:table-cell">
-        <div className="text-sm">
-          {item.is_sleep_mode 
+      <TableCell className="hidden lg:table-cell max-w-[200px]">
+        <div className="text-sm truncate">
+          {item.is_sleep_mode
             ? item.sleep_schedule_text || 'Always active'
             : formatScheduleSummary(item.schedules || [], userTimezone)}
         </div>
@@ -1585,8 +1585,8 @@ export function PlaylistManagement({ selectedDeviceId, devices, onUpdate }: Play
                   <TableHead className="hidden md:table-cell">Status</TableHead>
                   <TableHead className="hidden lg:table-cell">Importance</TableHead>
                   <TableHead className="hidden lg:table-cell">Duration</TableHead>
-                  <TableHead className="hidden lg:table-cell">Schedules</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead className="hidden lg:table-cell max-w-[200px]">Schedules</TableHead>
+                  <TableHead className="text-right w-[130px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <DndContext

@@ -1045,6 +1045,41 @@ func RunMigrations(logPrefix string) error {
 				return tx.Exec("CREATE UNIQUE INDEX idx_firmware_versions_version ON firmware_versions (version)").Error
 			},
 		},
+		{
+			ID: "20260403_render_queue_preview_support",
+			Migrate: func(tx *gorm.DB) error {
+				if err := tx.Exec("ALTER TABLE render_queues DROP CONSTRAINT IF EXISTS fk_render_queues_plugin_instance").Error; err != nil {
+					return err
+				}
+				if err := tx.Exec("ALTER TABLE render_queues ALTER COLUMN plugin_instance_id DROP NOT NULL").Error; err != nil {
+					return err
+				}
+				if !tx.Migrator().HasColumn(&RenderQueue{}, "is_preview") {
+					if err := tx.Exec("ALTER TABLE render_queues ADD COLUMN is_preview BOOLEAN DEFAULT false").Error; err != nil {
+						return err
+					}
+				}
+				if !tx.Migrator().HasColumn(&RenderQueue{}, "preview_data") {
+					if err := tx.Exec("ALTER TABLE render_queues ADD COLUMN preview_data JSONB").Error; err != nil {
+						return err
+					}
+				}
+				if !tx.Migrator().HasColumn(&RenderQueue{}, "preview_image_path") {
+					if err := tx.Exec("ALTER TABLE render_queues ADD COLUMN preview_image_path VARCHAR(1000)").Error; err != nil {
+						return err
+					}
+				}
+				logging.Info("[MIGRATION] Added preview render support to render_queues")
+				return nil
+			},
+			Rollback: func(tx *gorm.DB) error {
+				tx.Exec("ALTER TABLE render_queues DROP COLUMN IF EXISTS preview_image_path")
+				tx.Exec("ALTER TABLE render_queues DROP COLUMN IF EXISTS preview_data")
+				tx.Exec("ALTER TABLE render_queues DROP COLUMN IF EXISTS is_preview")
+				tx.Exec("ALTER TABLE render_queues ALTER COLUMN plugin_instance_id SET NOT NULL")
+				return nil
+			},
+		},
 	}
 
 	// Create migrator with our migrations

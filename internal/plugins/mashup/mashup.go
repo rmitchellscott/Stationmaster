@@ -12,6 +12,7 @@ import (
 
 	"github.com/rmitchellscott/stationmaster/internal/config"
 	"github.com/rmitchellscott/stationmaster/internal/database"
+	"github.com/rmitchellscott/stationmaster/internal/imageprocessing"
 	"github.com/rmitchellscott/stationmaster/internal/logging"
 	"github.com/rmitchellscott/stationmaster/internal/plugins"
 	"github.com/rmitchellscott/stationmaster/internal/plugins/private"
@@ -294,21 +295,35 @@ func (p *MashupPlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespons
 	renderCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	
+	renderWidth, renderHeight := rendering.RenderDimensions(
+		ctx.Device.DeviceModel.ScreenWidth,
+		ctx.Device.DeviceModel.ScreenHeight,
+		ctx.Device.ScreenOrientation,
+	)
+
 	renderResult, err := browserRenderer.RenderHTMLWithResult(
 		renderCtx,
 		finalHTML,
-		ctx.Device.DeviceModel.ScreenWidth,
-		ctx.Device.DeviceModel.ScreenHeight,
+		renderWidth,
+		renderHeight,
 	)
 	if err != nil {
 		return plugins.CreateErrorResponse(fmt.Sprintf("Failed to render HTML: %v", err)),
 			fmt.Errorf("failed to render HTML to image: %w", err)
 	}
-	
+
 	imageData := renderResult.ImageData
 	flags := renderResult.Flags
-	
-	// Generate filename
+
+	if rotation := rendering.ImageRotation(ctx.Device.DeviceModel.ScreenWidth, ctx.Device.DeviceModel.ScreenHeight, ctx.Device.ScreenOrientation); rotation != "none" {
+		rotated, rotErr := imageprocessing.RotatePNGBytes(imageData, rotation)
+		if rotErr != nil {
+			return plugins.CreateErrorResponse(fmt.Sprintf("Failed to rotate image: %v", rotErr)),
+				fmt.Errorf("failed to rotate image: %w", rotErr)
+		}
+		imageData = rotated
+	}
+
 	filename := fmt.Sprintf("mashup_%s_%dx%d.png",
 		time.Now().UTC().Format("20060102_150405"),
 		ctx.Device.DeviceModel.ScreenWidth,
@@ -496,17 +511,25 @@ func (p *MashupPlugin) renderMashupParallel(layout string, childData map[string]
 				}
 				
 				// Render this slot's template with its isolated data context (same as private plugins)
+				slotWidth, slotHeight := rendering.RenderDimensions(
+					ctx.Device.DeviceModel.ScreenWidth,
+					ctx.Device.DeviceModel.ScreenHeight,
+					ctx.Device.ScreenOrientation,
+				)
 				renderOptions := rendering.PluginRenderOptions{
 					SharedMarkup:      sharedMarkup, // Include shared markup like private plugins!
 					LayoutTemplate:    childInfo.Template,
 					Data:              childInfo.Data, // Isolated data - no variable collisions!
-					Width:             ctx.Device.DeviceModel.ScreenWidth,
-					Height:            ctx.Device.DeviceModel.ScreenHeight,
+					Width:             slotWidth,
+					Height:            slotHeight,
 					PluginName:        fmt.Sprintf("%s (slot: %s)", p.Name(), slotInfo.Position),
 					InstanceID:        fmt.Sprintf("%s-%s", p.instance.ID.String(), slotInfo.Position),
 					InstanceName:      fmt.Sprintf("%s-%s", p.Name(), slotInfo.Position),
 					RemoveBleedMargin: false,
 					EnableDarkMode:    false,
+					DeviceModelName:   ctx.Device.DeviceModel.ModelName,
+					BitDepth:          ctx.Device.DeviceModel.BitDepth,
+					ScreenOrientation: ctx.Device.ScreenOrientation,
 				}
 				
 				slotHTML, err = unifiedRenderer.ProcessTemplate(context.Background(), renderOptions)
@@ -548,10 +571,17 @@ func (p *MashupPlugin) renderMashupParallel(layout string, childData map[string]
 func (p *MashupPlugin) buildMashupHTML(layout string, renderedSlots map[string]string, slotConfig []database.MashupSlotInfo, ctx plugins.PluginContext) string {
 	var contentBuilder strings.Builder
 	
-	// Build the mashup container content (just the inner content)
+	screenClasses := rendering.BuildScreenClasses(rendering.ScreenClassOptions{
+		ModelName:         ctx.Device.DeviceModel.ModelName,
+		BitDepth:          ctx.Device.DeviceModel.BitDepth,
+		ScreenWidth:       ctx.Device.DeviceModel.ScreenWidth,
+		ScreenHeight:      ctx.Device.DeviceModel.ScreenHeight,
+		ScreenOrientation: ctx.Device.ScreenOrientation,
+	})
+
 	contentBuilder.WriteString(fmt.Sprintf(`<div class="environment trmnl">
-	<div class="screen">
-		<div class="mashup mashup--%s">`, layout))
+	<div class="%s">
+		<div class="mashup mashup--%s">`, screenClasses, layout))
 	
 	// Add each slot's rendered content
 	for _, slot := range slotConfig {
@@ -580,13 +610,19 @@ func (p *MashupPlugin) buildMashupHTML(layout string, renderedSlots map[string]s
 	assetsManager := rendering.NewHTMLAssetsManager()
 	assetBaseURL := config.GetAssetBaseURL()
 	
+	mashupWidth, mashupHeight := rendering.RenderDimensions(
+		ctx.Device.DeviceModel.ScreenWidth,
+		ctx.Device.DeviceModel.ScreenHeight,
+		ctx.Device.ScreenOrientation,
+	)
+
 	return assetsManager.WrapWithTRNMLAssets(
 		mashupContent,
 		p.Name(),
-		ctx.Device.DeviceModel.ScreenWidth,
-		ctx.Device.DeviceModel.ScreenHeight,
-		false, // removeBleedMargin - TODO: Make configurable if needed
-		false, // enableDarkMode - TODO: Make configurable if needed
+		mashupWidth,
+		mashupHeight,
+		false,
+		false,
 		assetBaseURL,
 	)
 }

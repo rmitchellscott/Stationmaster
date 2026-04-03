@@ -32,7 +32,7 @@ func (qm *QueueManager) SetWorkerPool(workerPool *RenderWorkerPool) {
 func (qm *QueueManager) ScheduleRender(ctx context.Context, pluginInstanceID uuid.UUID, priority int, scheduledFor time.Time) error {
 	renderJob := database.RenderQueue{
 		ID:               uuid.New(),
-		PluginInstanceID: pluginInstanceID,
+		PluginInstanceID: &pluginInstanceID,
 		Priority:         priority,
 		ScheduledFor:     scheduledFor,
 		Status:           "pending",
@@ -70,7 +70,7 @@ func (qm *QueueManager) ScheduleImmediateRenderWithOptions(ctx context.Context, 
 		// First save to database for tracking
 		dbJob := database.RenderQueue{
 			ID:               job.ID,
-			PluginInstanceID: pluginInstanceID,
+			PluginInstanceID: &pluginInstanceID,
 			Priority:         100,
 			ScheduledFor:     time.Now().UTC(),
 			Status:           "pending",

@@ -126,6 +126,7 @@ interface Device {
   maximum_compatibility?: boolean;
   touchbar_mode?: string;
   temperature_profile?: string;
+  screen_orientation?: string;
   created_at: string;
   updated_at: string;
   device_model?: DeviceModel;
@@ -246,6 +247,7 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
     maximum_compatibility: false,
     touchbar_mode: "tap",
     temperature_profile: "default",
+    screen_orientation: "auto",
   };
 
   type DeviceSettingsState = typeof deviceSettingsDefaults;
@@ -709,6 +711,7 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
         maximum_compatibility: device.maximum_compatibility ?? false,
         touchbar_mode: device.touchbar_mode || "tap",
         temperature_profile: device.temperature_profile || "default",
+        screen_orientation: device.screen_orientation || "auto",
       };
       setEditSettings(settings);
       setOriginalSettings(settings);
@@ -1806,6 +1809,22 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
                     <p className="text-sm text-muted-foreground">
                       Forces full display refresh. Use if you see ghosting or artifacts.
                     </p>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-screen-orientation">Screen Orientation</Label>
+                      <Select value={editSettings.screen_orientation} onValueChange={(v) => updateSetting("screen_orientation", v)}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="auto">Auto</SelectItem>
+                          <SelectItem value="landscape">Landscape</SelectItem>
+                          <SelectItem value="landscape_inverted">Landscape Upside Down</SelectItem>
+                          <SelectItem value="portrait_cw">Portrait Clockwise</SelectItem>
+                          <SelectItem value="portrait_ccw">Portrait Counter-Clockwise</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
 
                     {editDevice?.device_model?.model_name === "v2" && (
                       <div className="space-y-2">

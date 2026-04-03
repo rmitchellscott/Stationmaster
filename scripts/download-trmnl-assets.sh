@@ -5,6 +5,8 @@
 
 set -e
 
+FRAMEWORK_VERSION="3.0.2"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 ASSETS_DIR="$PROJECT_ROOT/assets/trmnl"
@@ -20,10 +22,6 @@ mkdir -p "$ASSETS_DIR/plugin-render"
 mkdir -p "$ASSETS_DIR/images/layout"
 mkdir -p "$ASSETS_DIR/images/grayscale"
 mkdir -p "$ASSETS_DIR/images/borders"
-
-# Download CSS
-echo "Downloading CSS files..."
-curl -sL "https://trmnl.com/css/latest/plugins.css" -o "$ASSETS_DIR/css/plugins.css"
 
 # Download TRMNL-specific fonts (Nico, Block, Dogica fonts)
 echo "Downloading TRMNL-specific fonts..."
@@ -94,44 +92,25 @@ extract_and_download_relative_assets "$ASSETS_DIR" 'src=['"'"'"][^'"'"'"]*['"'"'
 echo "Extracting href references..."
 extract_and_download_relative_assets "$ASSETS_DIR" 'href=['"'"'"][^'"'"'"]*['"'"'"]' "https://trmnl.com" "."
 
-# Download main JS files
-echo "Downloading JavaScript files..."
-curl -sL "https://trmnl.com/js/latest/plugins.js" -o "$ASSETS_DIR/js/plugins.js"
+# Download versioned framework CSS and JS
+echo "Downloading framework v${FRAMEWORK_VERSION} files..."
+curl -sL "https://trmnl.com/css/${FRAMEWORK_VERSION}/plugins.css" -o "$ASSETS_DIR/css/plugins.css"
+curl -sL "https://trmnl.com/js/${FRAMEWORK_VERSION}/plugins.js" -o "$ASSETS_DIR/js/plugins.js"
 
-# Parse TRMNL framework page to extract asset URLs dynamically
-echo "Parsing TRMNL framework page for asset URLs..."
+# Download plugin-render utility scripts (not included in versioned bundle)
+echo "Parsing TRMNL framework page for plugin-render assets..."
 FRAMEWORK_HTML=$(curl -sL "https://trmnl.com/framework")
 
-# Extract asset URLs and download with stable names
-echo "Extracting and downloading JavaScript assets..."
-
-# Extract plugin assets (those that start with /assets/plugin-)
-echo "$FRAMEWORK_HTML" | grep -o '/assets/plugin[^"]*\.js' | sort | uniq | while read -r asset_path; do
-    # Get the base filename without hash (e.g., plugin_legacy.js from plugin_legacy-hash.js)
-    if [[ $asset_path =~ /assets/(plugin[^-]*) ]]; then
-        base_name="${BASH_REMATCH[1]}.js"
-    else
-        # Fallback: extract filename after last slash
-        base_name=$(echo "$asset_path" | rev | cut -d'/' -f1 | rev)
-    fi
-    
-    full_url="https://trmnl.com$asset_path"
-    echo "Downloading $full_url -> $base_name"
-    curl -sL "$full_url" -o "$ASSETS_DIR/js/$base_name"
-done
-
-# Extract plugin-render assets  
 echo "$FRAMEWORK_HTML" | grep -o '/assets/plugin-render/[^"]*\.js' | sort | uniq | while read -r asset_path; do
-    # Extract base name (e.g., dithering.js from dithering-hash.js)
-    filename=$(echo "$asset_path" | rev | cut -d'/' -f1 | rev)
-    if [[ $filename =~ ^([^-]+)- ]]; then
+    filename=$(basename "$asset_path")
+    if [[ $filename =~ ^([a-z-]+)-[0-9a-f] ]]; then
         base_name="${BASH_REMATCH[1]}.js"
     else
         base_name="$filename"
     fi
-    
+
     full_url="https://trmnl.com$asset_path"
-    echo "Downloading $full_url -> $base_name"
+    echo "Downloading $full_url -> plugin-render/$base_name"
     curl -sL "$full_url" -o "$ASSETS_DIR/plugin-render/$base_name"
 done
 
@@ -178,17 +157,8 @@ check_file "$ASSETS_DIR/fonts/inter.css"
 echo ""
 echo "JavaScript files:"
 check_file "$ASSETS_DIR/js/plugins.js"
-# Check for any plugin JS files that were downloaded
-ls -1 "$ASSETS_DIR/js/"plugin*.js 2>/dev/null | while read -r file; do
-    check_file "$file"
-done
-
-echo ""
-echo "Plugin-render files:"
-# Check for any plugin-render JS files that were downloaded  
-ls -1 "$ASSETS_DIR/plugin-render/"*.js 2>/dev/null | while read -r file; do
-    check_file "$file"
-done
+check_file "$ASSETS_DIR/plugin-render/dithering.js"
+check_file "$ASSETS_DIR/plugin-render/asset-deduplication.js"
 
 echo ""
 echo "Font files:"

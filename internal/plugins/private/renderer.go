@@ -21,6 +21,9 @@ type RenderOptions struct {
 	Layout            string // Layout type for proper mashup CSS structure (e.g. "full", "half_vertical", "quadrant")
 	LayoutWidth       int    // Layout-specific width for positioning
 	LayoutHeight      int    // Layout-specific height for positioning
+	DeviceModelName   string
+	BitDepth          int
+	ScreenOrientation string
 }
 
 // PrivatePluginRenderer handles HTML generation for private plugins
@@ -68,6 +71,9 @@ func (r *PrivatePluginRenderer) RenderToServerSideHTML(ctx context.Context, opts
 		Layout:            opts.Layout,
 		LayoutWidth:       opts.LayoutWidth,
 		LayoutHeight:      opts.LayoutHeight,
+		DeviceModelName:   opts.DeviceModelName,
+		BitDepth:          opts.BitDepth,
+		ScreenOrientation: opts.ScreenOrientation,
 	}
 	
 	return r.unifiedRenderer.RenderToHTML(ctx, unifiedOpts)

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	
+
 	"github.com/rmitchellscott/stationmaster/internal/config"
 )
 
@@ -23,6 +23,9 @@ type PluginRenderOptions struct {
 	Layout            string // Layout type for proper mashup CSS structure
 	LayoutWidth       int    // Layout-specific width for positioning
 	LayoutHeight      int    // Layout-specific height for positioning
+	DeviceModelName   string
+	BitDepth          int
+	ScreenOrientation string
 }
 
 // UnifiedRenderer handles template rendering using embedded Ruby renderer with TRMNL asset wrapping
@@ -116,31 +119,46 @@ func (r *UnifiedRenderer) postProcessTemplate(content string, opts PluginRenderO
 
 // generateHTMLStructure wraps processed content with TRMNL-appropriate structure
 func (r *UnifiedRenderer) generateHTMLStructure(content string, opts PluginRenderOptions) string {
-	// Build screen classes based on options
-	screenClasses := []string{"screen"}
-	if opts.RemoveBleedMargin {
-		screenClasses = append(screenClasses, "screen--no-bleed")
-	}
-	if opts.EnableDarkMode {
-		screenClasses = append(screenClasses, "screen--dark-mode")
+	screenClassStr := BuildScreenClasses(ScreenClassOptions{
+		ModelName:         opts.DeviceModelName,
+		BitDepth:          opts.BitDepth,
+		ScreenWidth:       opts.Width,
+		ScreenHeight:      opts.Height,
+		ScreenOrientation: opts.ScreenOrientation,
+		RemoveBleedMargin: opts.RemoveBleedMargin,
+		EnableDarkMode:    opts.EnableDarkMode,
+	})
+
+	viewClass, mashupClass := layoutToViewClass(opts.Layout)
+
+	var inner string
+	if mashupClass != "" {
+		inner = fmt.Sprintf(`<div class="mashup %s"><div class="view %s">%s</div></div>`,
+			mashupClass, viewClass, content)
+	} else {
+		inner = fmt.Sprintf(`<div class="view %s">%s</div>`, viewClass, content)
 	}
 
-	screenClassStr := ""
-	for i, class := range screenClasses {
-		if i > 0 {
-			screenClassStr += " "
-		}
-		screenClassStr += class
-	}
-
-	// Always wrap content with TRMNL structure including screen classes
 	wrappedContent := fmt.Sprintf(`<div id="plugin-%s" class="environment trmnl">
 		<div class="%s">
-			<div class="view view--full">%s</div>
+			%s
 		</div>
-	</div>`, opts.InstanceID, screenClassStr, content)
+	</div>`, opts.InstanceID, screenClassStr, inner)
 
 	return wrappedContent
+}
+
+func layoutToViewClass(layout string) (string, string) {
+	switch layout {
+	case "half_vertical":
+		return "view--half_vertical", "mashup--1Lx1R"
+	case "half_horizontal":
+		return "view--half_horizontal", "mashup--1Tx1B"
+	case "quadrant":
+		return "view--quadrant", "mashup--2x2"
+	default:
+		return "view--full", ""
+	}
 }
 
 // ValidateTemplate validates a liquid template using embedded renderer

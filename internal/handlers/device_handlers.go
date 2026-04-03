@@ -171,6 +171,7 @@ var deviceSettingsFields = map[string]string{
 	"maximum_compatibility":      "maximum_compatibility",
 	"touchbar_mode":              "touchbar_mode",
 	"temperature_profile":        "temperature_profile",
+	"screen_orientation":         "screen_orientation",
 }
 
 var timeFields = map[string]string{
@@ -295,6 +296,23 @@ func UpdateDeviceHandler(c *gin.Context) {
 	}
 
 	device, _ = deviceService.GetDeviceByID(deviceID)
+
+	if _, changed := raw["screen_orientation"]; changed {
+		playlistService := database.NewPlaylistService(db)
+		playlist, err := playlistService.GetDefaultPlaylistForDevice(deviceID)
+		if err == nil && playlist != nil {
+			items, err := playlistService.GetPlaylistItems(playlist.ID)
+			if err == nil {
+				var instanceIDs []uuid.UUID
+				for _, item := range items {
+					instanceIDs = append(instanceIDs, item.PluginInstanceID)
+				}
+				if len(instanceIDs) > 0 {
+					ScheduleRenderForInstances(instanceIDs)
+				}
+			}
+		}
+	}
 
 	// Broadcast device settings update via SSE if sleep settings changed
 	if _, hasSleep := raw["sleep_enabled"]; hasSleep {

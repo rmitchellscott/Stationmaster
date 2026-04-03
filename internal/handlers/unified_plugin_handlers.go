@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -20,10 +19,9 @@ import (
 	"github.com/rmitchellscott/stationmaster/internal/plugins"
 	"github.com/rmitchellscott/stationmaster/internal/plugins/external"
 	"github.com/rmitchellscott/stationmaster/internal/plugins/private"
-	"github.com/rmitchellscott/stationmaster/internal/utils"
+	"github.com/rmitchellscott/stationmaster/internal/rendering"
 	"github.com/rmitchellscott/stationmaster/internal/validation"
 	"gopkg.in/yaml.v3"
-	"github.com/rmitchellscott/stationmaster/internal/rendering"
 )
 
 // UnifiedPluginDefinition represents a plugin definition that can be system, private, or external
@@ -488,10 +486,11 @@ func UpdatePluginInstanceHandler(c *gin.Context) {
 
 		// Schedule immediate independent render for updated plugin instance if it requires processing
 		if unifiedInstance.PluginDefinition.RequiresProcessing {
+			instID := unifiedInstance.ID
 			renderJob := database.RenderQueue{
 				ID:               uuid.New(),
-				PluginInstanceID: unifiedInstance.ID,
-				Priority:         999, // High priority for immediate processing
+				PluginInstanceID: &instID,
+				Priority:         999,
 				ScheduledFor:     time.Now().UTC(),
 				Status:           "pending",
 				IndependentRender: true, // Plugin updates are independent renders
@@ -592,11 +591,11 @@ func ForceRefreshPluginInstanceHandler(c *gin.Context) {
 				}
 			}
 			
-			// Schedule an immediate render job
+			refreshID := unifiedInstance.ID
 			renderJob := database.RenderQueue{
 				ID:               uuid.New(),
-				PluginInstanceID: unifiedInstance.ID,
-				Priority:         999, // High priority for force refresh
+				PluginInstanceID: &refreshID,
+				Priority:         999,
 				ScheduledFor:     time.Now().UTC(),
 				Status:           "pending",
 				IndependentRender: isDaily, // Daily rates: independent, interval rates: reschedule from now
@@ -1272,13 +1271,16 @@ func TestPluginDefinitionHandler(c *gin.Context) {
 	}
 
 	type TestRequest struct {
-		Plugin       TestPlugin             `json:"plugin"`
-		Layout       string                 `json:"layout"`
-		SampleData   map[string]interface{} `json:"sample_data"`
-		DeviceWidth  int                    `json:"device_width"`
-		DeviceHeight int                    `json:"device_height"`
-		LayoutWidth  int                    `json:"layout_width"`  // Layout-specific dimensions for content positioning
-		LayoutHeight int                    `json:"layout_height"` // Layout-specific dimensions for content positioning
+		Plugin            TestPlugin             `json:"plugin"`
+		Layout            string                 `json:"layout"`
+		SampleData        map[string]interface{} `json:"sample_data"`
+		DeviceWidth       int                    `json:"device_width"`
+		DeviceHeight      int                    `json:"device_height"`
+		DeviceModelName   string                 `json:"device_model_name"`
+		DeviceBitDepth    int                    `json:"device_bit_depth"`
+		ScreenOrientation string                 `json:"screen_orientation"`
+		LayoutWidth       int                    `json:"layout_width"`
+		LayoutHeight      int                    `json:"layout_height"`
 	}
 
 	var req TestRequest
@@ -1287,7 +1289,6 @@ func TestPluginDefinitionHandler(c *gin.Context) {
 		return
 	}
 
-	// Select template based on layout
 	var layoutTemplate string
 	switch req.Layout {
 	case "full":
@@ -1307,185 +1308,117 @@ func TestPluginDefinitionHandler(c *gin.Context) {
 		return
 	}
 
-	// Generate instance ID for preview
-	instanceID := fmt.Sprintf("preview_%d", time.Now().UTC().Unix())
-
-	// Determine what data to use for rendering
+	// Build template data from polling or sample data
 	var templateData map[string]interface{}
-	
-	// Try to get real data via polling if configured
-	logging.Info("[TestPlugin] Plugin data strategy", "strategy", req.Plugin.DataStrategy, "has_polling_config", req.Plugin.PollingConfig != nil)
-	
 	if req.Plugin.DataStrategy == "polling" && req.Plugin.PollingConfig != nil {
-		logging.Info("[TestPlugin] Attempting to use real polling data", "plugin_name", req.Plugin.Name)
-		
-		// Log the raw polling config for debugging
-		if configBytes, err := json.Marshal(req.Plugin.PollingConfig); err == nil {
-			logging.Info("[TestPlugin] Raw polling config", "config", string(configBytes))
-		}
-		
-		// Extract form field defaults
 		formDefaults := extractFormFieldDefaults(req.Plugin.FormFields)
-		
-		// Try to get real polling data
 		realData, err := getPollingDataForPreview(req.Plugin, formDefaults)
 		if err != nil {
-			logging.Error("[TestPlugin] Failed to get polling data, falling back to sample data", "error", err)
+			logging.Warn("[TestPlugin] Polling failed, using sample data", "error", err)
 			templateData = req.SampleData
 		} else {
-			logging.Info("[TestPlugin] Successfully got real polling data", "data_keys", len(realData))
-			// Log the actual keys in the real data for debugging
-			var dataKeys []string
-			for key := range realData {
-				dataKeys = append(dataKeys, key)
-			}
-			logging.Info("[TestPlugin] Real data keys", "keys", dataKeys)
 			templateData = realData
 		}
 	} else {
-		logging.Info("[TestPlugin] Using sample data (not polling strategy or no polling config)")
 		templateData = req.SampleData
 	}
 
-	// Create TRMNL data structure to match what real plugins receive
-	trmnlData := make(map[string]interface{})
-	
-	// Add system information - Unix timestamp
-	systemData := map[string]interface{}{
-		"timestamp_utc": time.Now().UTC().Unix(),
-	}
-	trmnlData["system"] = systemData
-	
-	// Add user information if available
-	if user != nil {
-		// Calculate UTC offset in seconds
-		utcOffset := int64(0)
-		locale := "en" // Default locale
-		timezone := "UTC" // Default timezone IANA
-		timezoneFriendly := "UTC" // Default friendly name
-		
-		if user.Timezone != "" {
-			timezone = user.Timezone
-			timezoneFriendly = utils.GetTimezoneFriendlyName(user.Timezone)
-			// Parse timezone and calculate UTC offset
-			loc, err := time.LoadLocation(user.Timezone)
-			if err == nil {
-				_, offset := time.Now().UTC().In(loc).Zone()
-				utcOffset = int64(offset)
-			}
-		}
-		
-		if user.Locale != "" {
-			// Convert "en-US" to "en" format if needed
-			if len(user.Locale) >= 2 {
-				locale = user.Locale[:2]
-			}
-		}
+	// Build TRMNL data using shared builder
+	trmnlBuilder := rendering.NewTRNMLDataBuilder()
+	trmnlData := trmnlBuilder.BuildPreviewData(
+		user,
+		req.DeviceWidth, req.DeviceHeight, req.DeviceBitDepth,
+		req.DeviceModelName, req.Plugin.Name, req.Plugin.DataStrategy,
+		extractFormFieldDefaults(req.Plugin.FormFields),
+	)
 
-		// Build user full name
-		firstName := user.FirstName
-		lastName := user.LastName
-		fullName := ""
-		if firstName != "" && lastName != "" {
-			fullName = firstName + " " + lastName
-		} else if firstName != "" {
-			fullName = firstName
-		} else if lastName != "" {
-			fullName = lastName
-		} else {
-			// Fallback to username if no names available
-			fullName = user.Username
-		}
-
-		userData := map[string]interface{}{
-			"name":           fullName,
-			"first_name":     firstName,
-			"last_name":      lastName,
-			"locale":         locale,
-			"time_zone":      timezoneFriendly,
-			"time_zone_iana": timezone,
-			"utc_offset":     utcOffset,
-		}
-		
-		trmnlData["user"] = userData
-	}
-
-	// Add mock device information for preview
-	deviceData := map[string]interface{}{
-		"friendly_id":     "TEST1",
-		"width":           req.DeviceWidth,
-		"height":          req.DeviceHeight,
-		"percent_charged": 100,
-		"wifi_strength":   100,
-	}
-	trmnlData["device"] = deviceData
-
-	// Add plugin settings metadata
-	pluginSettings := map[string]interface{}{
-		"instance_name": req.Plugin.Name,
-		"strategy":      req.Plugin.DataStrategy,
-		"dark_mode":     "no",
-		"no_screen_padding": "no",
-	}
-	trmnlData["plugin_settings"] = pluginSettings
-
-	// Merge TRMNL data with template data
 	finalTemplateData := make(map[string]interface{})
-	// First add the external/polling/sample data
 	for key, value := range templateData {
 		finalTemplateData[key] = value
 	}
-	// Then add TRMNL data
 	finalTemplateData["trmnl"] = trmnlData
 
-	logging.Info("[TestPlugin] Created TRMNL context data", "user_available", user != nil, "device_width", req.DeviceWidth, "device_height", req.DeviceHeight)
-
-	// Use the private plugin renderer service
-	htmlRenderer, err := private.NewPrivatePluginRenderer(".")
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to initialize private plugin renderer: %v", err)})
-		return
+	// Serialize preview data and queue a render job
+	previewData := rendering.PreviewRenderData{
+		SharedMarkup:      req.Plugin.SharedMarkup,
+		LayoutTemplate:    layoutTemplate,
+		Layout:            req.Layout,
+		TemplateData:      finalTemplateData,
+		DeviceModelName:   req.DeviceModelName,
+		BitDepth:          req.DeviceBitDepth,
+		ScreenWidth:       req.DeviceWidth,
+		ScreenHeight:      req.DeviceHeight,
+		ScreenOrientation: req.ScreenOrientation,
+		PluginName:        req.Plugin.Name,
 	}
-	renderedHTML, err := htmlRenderer.RenderToServerSideHTML(c.Request.Context(), private.RenderOptions{
-		SharedMarkup:   req.Plugin.SharedMarkup,
-		LayoutTemplate: layoutTemplate,
-		Data:           finalTemplateData,
-		Width:          req.DeviceWidth,
-		Height:         req.DeviceHeight,
-		PluginName:     req.Plugin.Name,
-		InstanceID:     instanceID,
-		Layout:         req.Layout,         // Pass layout info for proper mashup structure
-		LayoutWidth:    req.LayoutWidth,    // Layout-specific dimensions
-		LayoutHeight:   req.LayoutHeight,   // Layout-specific dimensions
-	})
+
+	previewJSON, err := json.Marshal(previewData)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Template render error: %v", err)})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to serialize preview data"})
 		return
 	}
 
-	// Convert HTML to image using BrowserlessRenderer
-	browserRenderer, err := rendering.DefaultBrowserlessRenderer()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to create renderer: %v", err)})
-		return
-	}
-	defer browserRenderer.Close()
-
-	ctx := context.Background()
-	imageData, err := browserRenderer.RenderHTML(ctx, renderedHTML, req.DeviceWidth, req.DeviceHeight)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to render image: %v", err)})
-		return
+	db := database.GetDB()
+	jobID := uuid.New()
+	job := database.RenderQueue{
+		ID:                jobID,
+		PluginInstanceID:  nil,
+		Priority:          50,
+		ScheduledFor:      time.Now().UTC(),
+		Status:            "pending",
+		IndependentRender: true,
+		IsPreview:         true,
+		PreviewData:       previewJSON,
 	}
 
-	// Convert image data to base64 data URL
-	base64Image := base64.StdEncoding.EncodeToString(imageData)
-	previewURL := fmt.Sprintf("data:image/png;base64,%s", base64Image)
+	if err := db.Create(&job).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to queue preview render"})
+		return
+	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"success":     true,
-		"preview_url": previewURL,
-	})
+	c.JSON(http.StatusOK, gin.H{"job_id": jobID.String()})
+}
+
+// GetPreviewResultHandler polls for the result of a preview render job
+func GetPreviewResultHandler(c *gin.Context) {
+	_, ok := auth.RequireUser(c)
+	if !ok {
+		return
+	}
+
+	jobID, err := uuid.Parse(c.Param("jobId"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid job ID"})
+		return
+	}
+
+	db := database.GetDB()
+	var job database.RenderQueue
+	if err := db.Where("id = ? AND is_preview = true", jobID).First(&job).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Preview job not found"})
+		return
+	}
+
+	switch job.Status {
+	case "completed":
+		if job.PreviewImagePath == "" {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Preview image not found"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"status":      "completed",
+			"preview_url": "/static/" + job.PreviewImagePath,
+		})
+
+	case "failed":
+		c.JSON(http.StatusOK, gin.H{
+			"status": "failed",
+			"error":  job.ErrorMessage,
+		})
+
+	default:
+		c.JSON(http.StatusOK, gin.H{"status": "pending"})
+	}
 }
 
 // GetPluginInstanceSchemaDiffHandler returns schema differences for an instance that needs config updates

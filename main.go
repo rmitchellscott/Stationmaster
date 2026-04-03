@@ -546,7 +546,8 @@ func main() {
 		pluginDefs.PUT("/:id", handlers.UpdatePluginDefinitionHandler) // PUT /api/plugin-definitions/:id - update plugin definition
 		pluginDefs.DELETE("/:id", handlers.DeletePluginDefinitionHandler) // DELETE /api/plugin-definitions/:id - delete plugin definition
 		pluginDefs.POST("/validate", handlers.ValidatePluginDefinitionHandler) // POST /api/plugin-definitions/validate - validate plugin templates
-		pluginDefs.POST("/test", handlers.TestPluginDefinitionHandler) // POST /api/plugin-definitions/test - test plugin template rendering
+		pluginDefs.POST("/test", handlers.TestPluginDefinitionHandler) // POST /api/plugin-definitions/test - queue preview render
+		pluginDefs.GET("/preview/:jobId", handlers.GetPreviewResultHandler) // GET /api/plugin-definitions/preview/:jobId - poll preview result
 		pluginDefs.GET("/refresh-rate-options", handlers.GetRefreshRateOptionsHandler) // GET /api/plugin-definitions/refresh-rate-options - get available refresh rates
 		pluginDefs.POST("/validate-settings", handlers.ValidatePluginSettingsHandler) // POST /api/plugin-definitions/validate-settings - validate plugin settings
 		pluginDefs.POST("/import", handlers.ImportPluginDefinitionHandler) // POST /api/plugin-definitions/import - import TRMNL-compatible ZIP file

@@ -256,6 +256,7 @@ type Device struct {
 	MaximumCompatibility    bool       `gorm:"default:false" json:"maximum_compatibility"`
 	TouchbarMode            string     `gorm:"size:10;default:'tap'" json:"touchbar_mode"`
 	TemperatureProfile      string     `gorm:"size:10;default:'default'" json:"temperature_profile"`
+	ScreenOrientation       string     `gorm:"size:20;default:'auto'" json:"screen_orientation"`
 	CreatedAt               time.Time  `json:"created_at"`
 	UpdatedAt               time.Time  `json:"updated_at"`
 
@@ -591,17 +592,20 @@ func (rc *RenderedContent) BeforeCreate(tx *gorm.DB) error {
 // RenderQueue represents pending render jobs for plugins
 type RenderQueue struct {
 	ID           uuid.UUID  `gorm:"type:uuid;primaryKey" json:"id"`
-	
-	PluginInstanceID uuid.UUID `gorm:"type:uuid;not null;index" json:"plugin_instance_id"`
-	
+
+	PluginInstanceID *uuid.UUID `gorm:"type:uuid;index" json:"plugin_instance_id,omitempty"`
+
 	Priority         int        `gorm:"default:0;index" json:"priority"` // Higher number = higher priority
 	ScheduledFor     time.Time  `gorm:"not null;index" json:"scheduled_for"`
 	Status           string     `gorm:"size:50;default:pending;index" json:"status"` // pending, processing, completed, failed
 	IndependentRender bool       `gorm:"default:false" json:"independent_render"` // true = don't reschedule after completion
+	IsPreview        bool       `gorm:"default:false" json:"is_preview"`
+	PreviewData      datatypes.JSON  `gorm:"type:jsonb" json:"preview_data,omitempty"`
+	PreviewImagePath string     `gorm:"size:1000" json:"preview_image_path,omitempty"`
 	Attempts         int        `gorm:"default:0" json:"attempts"`
 	LastAttempt      *time.Time `json:"last_attempt,omitempty"`
 	ErrorMessage     string     `gorm:"type:text" json:"error_message,omitempty"`
-	RenderDurationMs int        `gorm:"default:0" json:"render_duration_ms"` // Render duration in milliseconds
+	RenderDurationMs int        `gorm:"default:0" json:"render_duration_ms"`
 	CreatedAt        time.Time  `json:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at"`
 

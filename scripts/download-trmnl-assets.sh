@@ -19,9 +19,7 @@ mkdir -p "$ASSETS_DIR/css"
 mkdir -p "$ASSETS_DIR/js"
 mkdir -p "$ASSETS_DIR/fonts"
 mkdir -p "$ASSETS_DIR/plugin-render"
-mkdir -p "$ASSETS_DIR/images/layout"
 mkdir -p "$ASSETS_DIR/images/grayscale"
-mkdir -p "$ASSETS_DIR/images/borders"
 
 # Download TRMNL-specific fonts (Nico, Block, Dogica fonts)
 echo "Downloading TRMNL-specific fonts..."

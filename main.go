@@ -56,7 +56,7 @@ import (
 //go:embed ui/dist/assets
 var embeddedUI embed.FS
 
-//go:embed assets/trmnl/*
+//go:embed all:assets/trmnl
 var embeddedTRNMLAssets embed.FS
 
 

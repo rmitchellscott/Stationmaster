@@ -557,7 +557,8 @@ func main() {
 		pluginDefs.POST("/debug/test-conversion", handlers.TestTRMNLConversionHandler) // POST /api/plugin-definitions/debug/test-conversion - test bidirectional TRMNL conversion
 		
 		// Mashup endpoints
-		pluginDefs.POST("/mashup", handlers.CreateMashupHandler) // POST /api/plugin-definitions/mashup - create mashup plugin
+		pluginDefs.POST("/mashup", handlers.CreateMashupHandler)      // POST /api/plugin-definitions/mashup - create mashup plugin
+		pluginDefs.PATCH("/mashup/:id", handlers.UpdateMashupHandler) // PATCH /api/plugin-definitions/mashup/:id - update mashup plugin
 		pluginDefs.GET("/mashup/layouts", handlers.GetAvailableMashupLayoutsHandler) // GET /api/plugin-definitions/mashup/layouts - get available layouts
 		pluginDefs.GET("/mashup/layouts/:layout/slots", handlers.GetMashupSlotsHandler) // GET /api/plugin-definitions/mashup/layouts/:layout/slots - get slots for layout
 	}

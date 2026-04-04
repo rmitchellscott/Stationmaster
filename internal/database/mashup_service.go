@@ -28,7 +28,7 @@ type MashupSlotInfo struct {
 }
 
 // CreateMashupDefinition creates a new mashup plugin definition
-func (s *MashupService) CreateMashupDefinition(userID uuid.UUID, name string, layout string) (*PluginDefinition, error) {
+func (s *MashupService) CreateMashupDefinition(userID uuid.UUID, name string, layout string, backdrop bool) (*PluginDefinition, error) {
 	// Generate slot metadata based on layout
 	slots, err := s.generateSlotMetadata(layout)
 	if err != nil {
@@ -54,6 +54,7 @@ func (s *MashupService) CreateMashupDefinition(userID uuid.UUID, name string, la
 		IsMashup:           true,
 		MashupLayout:       &layout,
 		MashupSlots:        slotsJSON,
+		EnableBackdrop:     &backdrop,
 		IsActive:           true,
 	}
 	
@@ -62,6 +63,26 @@ func (s *MashupService) CreateMashupDefinition(userID uuid.UUID, name string, la
 	}
 	
 	return definition, nil
+}
+
+// UpdateMashupDefinition updates an existing mashup definition's name, description, and backdrop setting
+func (s *MashupService) UpdateMashupDefinition(definitionID string, userID uuid.UUID, name string, description string, backdrop bool) error {
+	var definition PluginDefinition
+	if err := s.db.Where("id = ? AND owner_id = ? AND plugin_type = ?", definitionID, userID, "mashup").First(&definition).Error; err != nil {
+		return fmt.Errorf("mashup definition not found: %w", err)
+	}
+
+	updates := map[string]interface{}{
+		"name":            name,
+		"description":     description,
+		"enable_backdrop": backdrop,
+	}
+
+	if err := s.db.Model(&definition).Updates(updates).Error; err != nil {
+		return fmt.Errorf("failed to update mashup definition: %w", err)
+	}
+
+	return nil
 }
 
 // AssignChildren assigns child plugin instances to mashup slots

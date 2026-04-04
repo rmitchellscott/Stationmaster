@@ -13,6 +13,7 @@ type ScreenClassOptions struct {
 	ScreenOrientation string // "auto", "landscape", "landscape_inverted", "portrait_cw", "portrait_ccw"
 	RemoveBleedMargin bool
 	EnableDarkMode    bool
+	EnableBackdrop    bool
 }
 
 func BuildScreenClasses(opts ScreenClassOptions) string {
@@ -31,6 +32,9 @@ func BuildScreenClasses(opts ScreenClassOptions) string {
 	}
 	if opts.EnableDarkMode {
 		classes = append(classes, "screen--dark-mode")
+	}
+	if opts.EnableBackdrop {
+		classes = append(classes, "screen--backdrop")
 	}
 
 	return strings.Join(classes, " ")

@@ -417,6 +417,7 @@ type PluginDefinition struct {
 	// Screen options (for private plugins)
 	RemoveBleedMargin *bool          `gorm:"default:false" json:"remove_bleed_margin,omitempty"` // Nullable for backward compatibility
 	EnableDarkMode    *bool          `gorm:"default:false" json:"enable_dark_mode,omitempty"`    // Nullable for backward compatibility
+	EnableBackdrop    *bool          `gorm:"default:false" json:"enable_backdrop,omitempty"`
 	SampleData        datatypes.JSON `json:"sample_data,omitempty"`                              // JSON sample data for preview/testing
 	
 	// Schema versioning for form field changes

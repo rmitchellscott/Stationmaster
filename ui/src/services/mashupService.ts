@@ -39,6 +39,13 @@ export interface CreateMashupRequest {
   name: string;
   description?: string;
   layout: string;
+  backdrop?: boolean;
+}
+
+export interface UpdateMashupRequest {
+  name: string;
+  description?: string;
+  backdrop?: boolean;
 }
 
 export interface CreateMashupResponse {
@@ -82,6 +89,19 @@ class MashupService {
     }
 
     return response.json();
+  }
+
+  // Update existing mashup definition
+  async updateMashup(definitionId: string, request: UpdateMashupRequest): Promise<void> {
+    const response = await this.fetchWithCredentials(`${this.baseURL}/plugin-definitions/mashup/${definitionId}`, {
+      method: "PATCH",
+      body: JSON.stringify(request),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || "Failed to update mashup");
+    }
   }
 
   // Get available mashup layouts

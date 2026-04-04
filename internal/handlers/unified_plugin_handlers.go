@@ -1603,6 +1603,7 @@ func CreateMashupHandler(c *gin.Context) {
 		Name        string `json:"name" binding:"required,min=1,max=255"`
 		Description string `json:"description" binding:"max=1000"`
 		Layout      string `json:"layout" binding:"required"`
+		Backdrop    bool   `json:"backdrop"`
 	}
 
 	var req CreateMashupRequest
@@ -1629,7 +1630,7 @@ func CreateMashupHandler(c *gin.Context) {
 	mashupService := database.NewMashupService(db)
 
 	// Create mashup definition
-	definition, err := mashupService.CreateMashupDefinition(user.ID, req.Name, req.Layout)
+	definition, err := mashupService.CreateMashupDefinition(user.ID, req.Name, req.Layout, req.Backdrop)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create mashup", "details": err.Error()})
 		return
@@ -1647,6 +1648,42 @@ func CreateMashupHandler(c *gin.Context) {
 			"slots":       slots,
 		},
 	})
+}
+
+// UpdateMashupHandler updates an existing mashup plugin definition
+func UpdateMashupHandler(c *gin.Context) {
+	user, ok := auth.RequireUser(c)
+	if !ok {
+		return
+	}
+
+	definitionID := c.Param("id")
+	if definitionID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Definition ID is required"})
+		return
+	}
+
+	type UpdateMashupRequest struct {
+		Name        string `json:"name" binding:"required,min=1,max=255"`
+		Description string `json:"description" binding:"max=1000"`
+		Backdrop    bool   `json:"backdrop"`
+	}
+
+	var req UpdateMashupRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request format", "details": err.Error()})
+		return
+	}
+
+	db := database.GetDB()
+	mashupService := database.NewMashupService(db)
+
+	if err := mashupService.UpdateMashupDefinition(definitionID, user.ID, req.Name, req.Description, req.Backdrop); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update mashup", "details": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Mashup updated successfully"})
 }
 
 // GetAvailableMashupLayoutsHandler returns available mashup layouts

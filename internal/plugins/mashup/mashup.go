@@ -681,6 +681,7 @@ func (p *MashupPlugin) buildMashupHTML(layout string, renderedSlots map[string]s
 		ScreenWidth:       ctx.Device.DeviceModel.ScreenWidth,
 		ScreenHeight:      ctx.Device.DeviceModel.ScreenHeight,
 		ScreenOrientation: ctx.Device.ScreenOrientation,
+		EnableBackdrop:    p.definition.EnableBackdrop != nil && *p.definition.EnableBackdrop,
 	})
 
 	contentBuilder.WriteString(fmt.Sprintf(`<div class="environment trmnl">

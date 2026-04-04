@@ -80,20 +80,20 @@ extract_and_download_relative_assets() {
     done
 }
 
-# Extract various asset types from downloaded CSS/JS files using relative URLs
-echo "Extracting CSS url() references (fonts and images)..."
-extract_and_download_relative_assets "$ASSETS_DIR" 'url\([^)]*\)' "https://trmnl.com" "."
-
-echo "Extracting script src references..."  
-extract_and_download_relative_assets "$ASSETS_DIR" 'src=['"'"'"][^'"'"'"]*['"'"'"]' "https://trmnl.com" "."
-
-echo "Extracting href references..."
-extract_and_download_relative_assets "$ASSETS_DIR" 'href=['"'"'"][^'"'"'"]*['"'"'"]' "https://trmnl.com" "."
-
 # Download versioned framework CSS and JS
 echo "Downloading framework v${FRAMEWORK_VERSION} files..."
 curl -sL "https://trmnl.com/css/${FRAMEWORK_VERSION}/plugins.css" -o "$ASSETS_DIR/css/plugins.css"
 curl -sL "https://trmnl.com/js/${FRAMEWORK_VERSION}/plugins.js" -o "$ASSETS_DIR/js/plugins.js"
+
+# Extract various asset types from downloaded CSS/JS files using relative URLs
+echo "Extracting CSS url() references (fonts and images)..."
+extract_and_download_relative_assets "$ASSETS_DIR" 'url\([^)]*\)' "https://trmnl.com" "."
+
+echo "Extracting script src references..."
+extract_and_download_relative_assets "$ASSETS_DIR" 'src=['"'"'"][^'"'"'"]*['"'"'"]' "https://trmnl.com" "."
+
+echo "Extracting href references..."
+extract_and_download_relative_assets "$ASSETS_DIR" 'href=['"'"'"][^'"'"'"]*['"'"'"]' "https://trmnl.com" "."
 
 # Download plugin-render utility scripts (not included in versioned bundle)
 echo "Parsing TRMNL framework page for plugin-render assets..."

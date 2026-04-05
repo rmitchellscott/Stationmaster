@@ -156,18 +156,22 @@ func GetDeviceHandler(c *gin.Context) {
 
 // To add a new device setting: add the field to Device in models.go, then add a line here.
 var deviceSettingsFields = map[string]string{
-	"name":                      "name",
-	"refresh_rate":              "refresh_rate",
-	"is_active":                 "is_active",
-	"allow_firmware_updates":    "allow_firmware_updates",
-	"is_shareable":              "is_shareable",
-	"sleep_enabled":             "sleep_enabled",
-	"sleep_start_time":          "sleep_start_time",
-	"sleep_end_time":            "sleep_end_time",
-	"sleep_show_screen":         "sleep_show_screen",
+	"name":                       "name",
+	"refresh_rate":               "refresh_rate",
+	"is_active":                  "is_active",
+	"allow_firmware_updates":     "allow_firmware_updates",
+	"is_shareable":               "is_shareable",
+	"sleep_enabled":              "sleep_enabled",
+	"sleep_start_time":           "sleep_start_time",
+	"sleep_end_time":             "sleep_end_time",
+	"sleep_show_screen":          "sleep_show_screen",
 	"firmware_update_start_time": "firmware_update_start_time",
 	"firmware_update_end_time":   "firmware_update_end_time",
 	"target_firmware_version":    "target_firmware_version",
+	"maximum_compatibility":      "maximum_compatibility",
+	"touchbar_mode":              "touchbar_mode",
+	"temperature_profile":        "temperature_profile",
+	"screen_orientation":         "screen_orientation",
 }
 
 var timeFields = map[string]string{
@@ -292,6 +296,23 @@ func UpdateDeviceHandler(c *gin.Context) {
 	}
 
 	device, _ = deviceService.GetDeviceByID(deviceID)
+
+	if _, changed := raw["screen_orientation"]; changed {
+		playlistService := database.NewPlaylistService(db)
+		playlist, err := playlistService.GetDefaultPlaylistForDevice(deviceID)
+		if err == nil && playlist != nil {
+			items, err := playlistService.GetPlaylistItems(playlist.ID)
+			if err == nil {
+				var instanceIDs []uuid.UUID
+				for _, item := range items {
+					instanceIDs = append(instanceIDs, item.PluginInstanceID)
+				}
+				if len(instanceIDs) > 0 {
+					ScheduleRenderForInstances(instanceIDs)
+				}
+			}
+		}
+	}
 
 	// Broadcast device settings update via SSE if sleep settings changed
 	if _, hasSleep := raw["sleep_enabled"]; hasSleep {

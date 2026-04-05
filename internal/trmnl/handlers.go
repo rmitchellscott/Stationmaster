@@ -52,7 +52,7 @@ func SetupHandler(c *gin.Context) {
 			"status":      200,
 			"api_key":     device.APIKey,
 			"friendly_id": device.FriendlyID,
-			"image_url":   "https://usetrmnl.com/images/setup/setup-logo.bmp",
+			"image_url":   getSetupImageURL(),
 			"filename":    "empty_state",
 		}
 
@@ -80,7 +80,7 @@ func SetupHandler(c *gin.Context) {
 		"status":      200,
 		"api_key":     device.APIKey,
 		"friendly_id": device.FriendlyID,
-		"image_url":   "https://usetrmnl.com/images/setup/setup-logo.bmp",
+		"image_url":   getSetupImageURL(),
 		"filename":    "empty_state",
 	}
 
@@ -121,11 +121,12 @@ func DisplayHandler(c *gin.Context) {
 					macAddress       string
 					firmwareVersion  string
 					batteryVoltage   float64
+					batteryPercent   int
 					rssi             int
 					modelHeader      string
 					deviceID         uuid.UUID
 				}); ok {
-					err := deviceService.UpdateDeviceStatus(statusValues.macAddress, statusValues.firmwareVersion, statusValues.batteryVoltage, statusValues.rssi, statusValues.modelHeader)
+					err := deviceService.UpdateDeviceStatus(statusValues.macAddress, statusValues.firmwareVersion, statusValues.batteryVoltage, statusValues.batteryPercent, statusValues.rssi, statusValues.modelHeader)
 					if err != nil {
 						logging.Error("[BACKGROUND] Failed to update device status", "mac_address", statusValues.macAddress, "error", err)
 					}
@@ -156,6 +157,7 @@ func DisplayHandler(c *gin.Context) {
 						Data: map[string]interface{}{
 							"device_id":        refreshedDevice.ID.String(),
 							"battery_voltage":  refreshedDevice.BatteryVoltage,
+							"battery_percent":  refreshedDevice.BatteryPercent,
 							"rssi":             refreshedDevice.RSSI,
 							"firmware_version": refreshedDevice.FirmwareVersion,
 							"last_seen":        refreshedDevice.LastSeen,
@@ -174,7 +176,8 @@ func DisplayHandler(c *gin.Context) {
 	accessToken := c.GetHeader("Access-Token")
 	refreshRateStr := c.GetHeader("Refresh-Rate")
 	batteryVoltageStr := c.GetHeader("Battery-Voltage")
-	firmwareVersion := c.GetHeader("Fw-Version") // Device sends "Fw-Version" not "FW-Version"
+	batteryPercentStr := c.GetHeader("Percent-Charged")
+	firmwareVersion := c.GetHeader("Fw-Version")
 	rssiStr := c.GetHeader("Rssi")               // Device sends "Rssi" not "RSSI"
 	modelHeader := c.GetHeader("Model")          // Device model identifier (e.g., "og")
 	widthStr := c.GetHeader("Width")             // Screen width
@@ -239,11 +242,18 @@ func DisplayHandler(c *gin.Context) {
 
 	// Parse and update device status
 	var batteryVoltage float64
+	var batteryPercent int
 	var rssi int
 
 	if batteryVoltageStr != "" {
 		if bv, err := strconv.ParseFloat(batteryVoltageStr, 64); err == nil {
 			batteryVoltage = bv
+		}
+	}
+
+	if batteryPercentStr != "" {
+		if bp, err := strconv.Atoi(batteryPercentStr); err == nil {
+			batteryPercent = bp
 		}
 	}
 
@@ -253,14 +263,12 @@ func DisplayHandler(c *gin.Context) {
 		}
 	}
 
-	// Note: We still read the refresh rate header for completeness but don't use it
-	// to update the database as refresh rate is now determined by the priority logic
-
 	// Store device status values for background update (defer until after response)
 	statusValues := struct {
 		macAddress       string
 		firmwareVersion  string
 		batteryVoltage   float64
+		batteryPercent   int
 		rssi             int
 		modelHeader      string
 		deviceID         uuid.UUID
@@ -268,17 +276,18 @@ func DisplayHandler(c *gin.Context) {
 		macAddress:      device.MacAddress,
 		firmwareVersion: firmwareVersion,
 		batteryVoltage:  batteryVoltage,
+		batteryPercent:  batteryPercent,
 		rssi:            rssi,
 		modelHeader:     modelHeader,
 		deviceID:        device.ID,
 	}
 
 	// Update device struct in memory immediately with fresh values from check-in
-	// This ensures firmware update checks and low battery checks use current data
 	if firmwareVersion != "" {
 		device.FirmwareVersion = firmwareVersion
 	}
 	device.BatteryVoltage = batteryVoltage
+	device.BatteryPercent = batteryPercent
 	device.RSSI = rssi
 
 	// Capture data for background operations
@@ -286,6 +295,29 @@ func DisplayHandler(c *gin.Context) {
 	backgroundData.accessToken = accessToken
 	backgroundData.statusValues = statusValues
 
+	// If device has no DeviceModel, use Width/Height headers as fallback
+	if device.DeviceModel == nil {
+		var reportedWidth, reportedHeight int
+		if w, err := strconv.Atoi(widthStr); err == nil && w > 0 {
+			reportedWidth = w
+		}
+		if h, err := strconv.Atoi(heightStr); err == nil && h > 0 {
+			reportedHeight = h
+		}
+		if reportedWidth > 0 && reportedHeight > 0 {
+			logging.Warn("[/api/display] Device has no model in DB, using reported dimensions as fallback",
+				"mac_address", device.MacAddress, "width", reportedWidth, "height", reportedHeight, "model_header", modelHeader)
+			device.DeviceModel = &database.DeviceModel{
+				ModelName:   modelHeader,
+				DisplayName: modelHeader,
+				ScreenWidth: reportedWidth,
+				ScreenHeight: reportedHeight,
+				BitDepth:    1,
+				ColorDepth:  1,
+				IsActive:    true,
+			}
+		}
+	}
 
 	// Get current playlist items for this device
 	playlistService := database.NewPlaylistService(db)
@@ -323,20 +355,19 @@ func DisplayHandler(c *gin.Context) {
 	if device.BatteryVoltage > 0 && device.BatteryVoltage < 3.2 {
 		logging.Warn("[/api/display] Device has low battery, returning low battery image", "mac_address", device.MacAddress, "voltage", device.BatteryVoltage)
 
-		// Use relative path for low battery image URL, then convert to absolute
-		imageURL := "/images/low_battery.png"
-		if strings.HasPrefix(imageURL, "/images/") {
-			imageURL = baseURL + imageURL
-		}
+		imageURL := baseURL + statusImageURL("low_battery.png", device)
 
 		response := gin.H{
-			"status":          0,
-			"image_url":       imageURL,
-			"filename":        "low_battery",
-			"refresh_rate":    fmt.Sprintf("%d", device.RefreshRate),
-			"update_firmware": false,
-			"firmware_url":    "",
-			"reset_firmware":  false,
+			"status":                0,
+			"image_url":             imageURL,
+			"filename":              statusFilename("low_battery", device),
+			"refresh_rate":          fmt.Sprintf("%d", device.RefreshRate),
+			"update_firmware":       false,
+			"firmware_url":          "",
+			"reset_firmware":        false,
+			"maximum_compatibility": device.MaximumCompatibility,
+			"touchbar_mode":         device.TouchbarMode,
+			"temperature_profile":   device.TemperatureProfile,
 		}
 
 		if logging.IsDebugEnabled() {
@@ -431,8 +462,8 @@ func DisplayHandler(c *gin.Context) {
 		}
 		
 		response = gin.H{
-			"image_url":  "/images/timeout_error.png",
-			"filename":   "timeout_error",
+			"image_url":  statusImageURL("timeout_error.png", device),
+			"filename":   statusFilename("timeout_error", device),
 			"refresh_rate": fmt.Sprintf("%d", timeoutRefreshRate),
 		}
 		pluginErr = fmt.Errorf("plugin processing timeout")
@@ -470,8 +501,8 @@ func DisplayHandler(c *gin.Context) {
 		}
 		
 		response = gin.H{
-			"image_url": "/images/generic_error.png",
-			"filename": "generic_error",
+			"image_url": baseURL + statusImageURL("generic_error.png", device),
+			"filename": statusFilename("generic_error", device),
 			"refresh_rate": fmt.Sprintf("%d", errorRefreshRate),
 		}
 	} else {
@@ -498,17 +529,19 @@ func DisplayHandler(c *gin.Context) {
 		
 		// If sleep screen is enabled, override the image URL
 		if device.SleepShowScreen {
-			response["image_url"] = "/images/sleep.png"
-			response["filename"] = "sleep"
+			response["image_url"] = statusImageURL("sleep.png", device)
+			response["filename"] = statusFilename("sleep", device)
 			backgroundData.sleepScreenServed = true
 		}
 		
 	}
 
-	// Always add firmware update info to response
 	response["update_firmware"] = firmwareUpdate.UpdateFirmware
 	response["firmware_url"] = firmwareUpdate.FirmwareURL
 	response["reset_firmware"] = firmwareUpdate.ResetFirmware
+	response["maximum_compatibility"] = device.MaximumCompatibility
+	response["touchbar_mode"] = device.TouchbarMode
+	response["temperature_profile"] = device.TemperatureProfile
 
 	// Convert relative image URLs to absolute URLs (final step before response)
 	if response != nil {
@@ -604,7 +637,7 @@ func LogsHandler(c *gin.Context) {
 		level = levelStr
 	}
 
-	logging.Debug("[/api/logs] Log level determined", "device_id", deviceID, "level", level)
+	logging.Debug("[/api/logs] Log level determined", "device_id", deviceID, "log_level", level)
 
 	// Convert log data back to JSON string for storage
 	logDataBytes, err := json.Marshal(logData)
@@ -622,9 +655,33 @@ func LogsHandler(c *gin.Context) {
 		return
 	}
 
-	logging.Debug("[/api/logs] Successfully stored log entry", "log_id", deviceLog.ID, "device_id", deviceID, "level", level)
+	logging.Debug("[/api/logs] Successfully stored log entry", "log_id", deviceLog.ID, "device_id", deviceID, "log_level", level)
 
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+func statusFilename(name string, device *database.Device) string {
+	if device.DeviceModel != nil && device.DeviceModel.ScreenWidth > 800 {
+		return name + "_x"
+	}
+	return name
+}
+
+func statusImageURL(filename string, device *database.Device) string {
+	if device.DeviceModel != nil && device.DeviceModel.ScreenWidth > 800 {
+		name := strings.TrimSuffix(filename, ".png")
+		return "/images/" + name + "_x.png"
+	}
+	return "/images/" + filename
+}
+// getSetupImageURL returns the setup/empty-state image URL appropriate for a device model.
+// The TRMNL X (1872x1404) and original TRMNL (800x480) use the same external setup image
+// since the firmware handles display scaling. Override via SETUP_IMAGE_URL env var.
+func getSetupImageURL() string {
+	if customURL := os.Getenv("SETUP_IMAGE_URL"); customURL != "" {
+		return customURL
+	}
+	return "https://usetrmnl.com/images/setup/setup-logo.bmp"
 }
 
 // getImageURLForDevice generates an image URL for the device based on its active playlist
@@ -785,27 +842,40 @@ func checkFirmwareUpdate(c *gin.Context, device *database.Device, userTimezone s
 		return defaultResponse
 	}
 
+	// 3. Determine firmware family from device model
+	var firmwareFamily string
+	if device.DeviceModel != nil {
+		family, updatable := database.GetFirmwareFamily(device.DeviceModel.ModelName)
+		if !updatable {
+			logging.Debug("[FIRMWARE UPDATE] Device model not firmware-updatable", "model", device.DeviceModel.ModelName)
+			return defaultResponse
+		}
+		firmwareFamily = family
+	} else {
+		firmwareFamily = "trmnl"
+	}
+
 	db := database.GetDB()
 	firmwareService := database.NewFirmwareService(db)
 
-	// 3. Determine target firmware version
+	// 4. Determine target firmware version
 	var targetVersion string
 	if device.TargetFirmwareVersion != "" && device.TargetFirmwareVersion != "latest" {
 		targetVersion = device.TargetFirmwareVersion
 	} else {
-		latestFirmware, err := firmwareService.GetLatestFirmwareVersion()
+		latestFirmware, err := firmwareService.GetLatestFirmwareVersionForFamily(firmwareFamily)
 		if err != nil {
 			return defaultResponse
 		}
 		targetVersion = latestFirmware.Version
 	}
 
-	// 4. Compare with device's current version
+	// 5. Compare with device's current version
 	if device.FirmwareVersion == targetVersion {
 		return defaultResponse
 	}
 
-	// 5. Get the target firmware to check availability
+	// 6. Get the target firmware to check availability
 	var targetFirmware *database.FirmwareVersion
 	var err error
 
@@ -816,13 +886,13 @@ func checkFirmwareUpdate(c *gin.Context, device *database.Device, userTimezone s
 			return defaultResponse
 		}
 	} else {
-		targetFirmware, err = firmwareService.GetLatestFirmwareVersion()
+		targetFirmware, err = firmwareService.GetLatestFirmwareVersionForFamily(firmwareFamily)
 		if err != nil {
 			return defaultResponse
 		}
 	}
 
-	// 6. Check if firmware is available based on current mode
+	// 7. Check if firmware is available based on current mode
 	firmwareMode := os.Getenv("FIRMWARE_MODE")
 	if firmwareMode == "" {
 		firmwareMode = "proxy"
@@ -838,11 +908,9 @@ func checkFirmwareUpdate(c *gin.Context, device *database.Device, userTimezone s
 		}
 	}
 
-	// 7. Generate firmware URL using request-based host
+	// 8. Generate firmware URL
 	baseURL := utils.BaseURLFromRequest(c.Request)
-	firmwareURL := fmt.Sprintf("%s/files/firmware/firmware_%s.bin", baseURL, targetFirmware.Version)
-
-	logging.Debug("[FIRMWARE UPDATE] Using request-based URL", "url", firmwareURL)
+	firmwareURL := fmt.Sprintf("%s/files/firmware/%s/firmware_%s.bin", baseURL, firmwareFamily, targetFirmware.Version)
 
 	updateType := "upgrade"
 	if device.FirmwareVersion > targetVersion {
@@ -851,6 +919,7 @@ func checkFirmwareUpdate(c *gin.Context, device *database.Device, userTimezone s
 
 	logging.Info("[FIRMWARE UPDATE] Device will be updated",
 		"mac_address", device.MacAddress,
+		"family", firmwareFamily,
 		"current_version", device.FirmwareVersion,
 		"target_version", targetVersion,
 		"update_type", updateType)
@@ -1133,7 +1202,7 @@ func CurrentScreenHandler(c *gin.Context) {
 		filename := time.Now().UTC().Format("2006-01-02T15:04:05")
 
 		if status == 202 {
-			imageURL = "https://usetrmnl.com/images/setup/setup-logo.bmp"
+			imageURL = getSetupImageURL()
 			filename = "empty_state"
 		}
 

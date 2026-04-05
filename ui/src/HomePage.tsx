@@ -272,6 +272,7 @@ export default function HomePage() {
           ? {
               ...d,
               battery_voltage: data.battery_voltage ?? d.battery_voltage,
+              battery_percent: data.battery_percent ?? d.battery_percent,
               rssi: data.rssi ?? d.rssi,
               firmware_version: data.firmware_version ?? d.firmware_version,
               last_seen: data.last_seen ?? d.last_seen,

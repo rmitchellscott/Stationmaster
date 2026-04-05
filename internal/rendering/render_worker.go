@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"image"
 	_ "image/png" // Register PNG decoder
@@ -92,11 +93,21 @@ func (w *RenderWorker) ProcessRenderQueue(ctx context.Context) error {
 		return fmt.Errorf("failed to find job IDs: %w", err)
 	}
 
+	// Also fetch pending preview jobs (not tied to plugin instances)
+	var previewJobIDs []JobID
+	w.db.WithContext(ctx).Raw(`
+		SELECT id FROM render_queues
+		WHERE status = ? AND scheduled_for <= ? AND is_preview = true
+		ORDER BY priority DESC, scheduled_for ASC
+		LIMIT 5
+	`, "pending", time.Now().UTC()).Scan(&previewJobIDs)
+
+	jobIDs = append(jobIDs, previewJobIDs...)
+
 	if len(jobIDs) == 0 {
 		return nil
 	}
 
-	// Extract IDs for the main query
 	ids := make([]uuid.UUID, len(jobIDs))
 	for i, jobID := range jobIDs {
 		ids[i] = jobID.ID
@@ -139,6 +150,11 @@ func (w *RenderWorker) processRenderJob(ctx context.Context, job database.Render
 	}).Error
 	if err != nil {
 		return fmt.Errorf("failed to update job status: %w", err)
+	}
+
+	logging.Info("[RENDER_WORKER] processRenderJob check", "job_id", job.ID, "is_preview", job.IsPreview, "has_preview_data", len(job.PreviewData) > 0)
+	if job.IsPreview {
+		return w.processPreviewJob(ctx, job)
 	}
 
 	// Load plugin instance with associations
@@ -601,13 +617,14 @@ func (w *RenderWorker) scheduleNextRenderWithOptions(ctx context.Context, plugin
 		nextRender = time.Now().UTC().Add(time.Duration(pluginInstance.RefreshInterval) * time.Second)
 	}
 
+	piID := pluginInstance.ID
 	renderJob := database.RenderQueue{
 		ID:               uuid.New(),
-		PluginInstanceID: pluginInstance.ID,
+		PluginInstanceID: &piID,
 		Priority:         0,
 		ScheduledFor:     nextRender,
 		Status:           "pending",
-		IndependentRender: false, // Regular recurring jobs should continue rescheduling
+		IndependentRender: false,
 	}
 
 	err = w.db.WithContext(ctx).Create(&renderJob).Error
@@ -700,6 +717,126 @@ func (w *RenderWorker) findNextScheduledTime(now time.Time, location *time.Locat
 
 
 // markJobFailed marks a render job as failed with an error message
+// PreviewRenderData contains the inline render specification for preview jobs
+type PreviewRenderData struct {
+	SharedMarkup      string                 `json:"shared_markup"`
+	LayoutTemplate    string                 `json:"layout_template"`
+	Layout            string                 `json:"layout"`
+	TemplateData      map[string]interface{} `json:"template_data"`
+	DeviceModelName   string                 `json:"device_model_name"`
+	BitDepth          int                    `json:"bit_depth"`
+	ScreenWidth       int                    `json:"screen_width"`
+	ScreenHeight      int                    `json:"screen_height"`
+	ScreenOrientation string                 `json:"screen_orientation"`
+	RemoveBleedMargin bool                   `json:"remove_bleed_margin"`
+	EnableDarkMode    bool                   `json:"enable_dark_mode"`
+	PluginName        string                 `json:"plugin_name"`
+}
+
+func (w *RenderWorker) processPreviewJob(ctx context.Context, job database.RenderQueue) error {
+	startTime := time.Now()
+	logging.Info("[RENDER_WORKER] Processing preview job", "job_id", job.ID)
+
+	var preview PreviewRenderData
+	if err := json.Unmarshal(job.PreviewData, &preview); err != nil {
+		w.markJobFailed(ctx, job, fmt.Sprintf("failed to parse preview data: %v", err))
+		return err
+	}
+
+	logging.Info("[RENDER_WORKER] Preview data parsed", "job_id", job.ID, "plugin", preview.PluginName, "width", preview.ScreenWidth, "height", preview.ScreenHeight)
+
+	renderWidth, renderHeight := RenderDimensions(preview.ScreenWidth, preview.ScreenHeight, preview.ScreenOrientation)
+	instanceID := fmt.Sprintf("preview_%s", job.ID.String()[:8])
+
+	renderer := NewUnifiedRenderer()
+	html, err := renderer.RenderToHTML(ctx, PluginRenderOptions{
+		SharedMarkup:      preview.SharedMarkup,
+		LayoutTemplate:    preview.LayoutTemplate,
+		Data:              preview.TemplateData,
+		Width:             renderWidth,
+		Height:            renderHeight,
+		PluginName:        preview.PluginName,
+		InstanceID:        instanceID,
+		Layout:            preview.Layout,
+		DeviceModelName:   preview.DeviceModelName,
+		BitDepth:          preview.BitDepth,
+		ScreenOrientation: preview.ScreenOrientation,
+		RemoveBleedMargin: preview.RemoveBleedMargin,
+		EnableDarkMode:    preview.EnableDarkMode,
+	})
+	if err != nil {
+		w.markJobFailed(ctx, job, fmt.Sprintf("template render failed: %v", err))
+		return err
+	}
+
+	logging.Info("[RENDER_WORKER] Preview HTML generated", "job_id", job.ID, "html_len", len(html))
+
+	browserRenderer, err := NewBrowserlessRenderer()
+	if err != nil {
+		w.markJobFailed(ctx, job, fmt.Sprintf("failed to create browserless renderer: %v", err))
+		return err
+	}
+	defer browserRenderer.Close()
+
+	logging.Info("[RENDER_WORKER] Preview calling browserless", "job_id", job.ID, "width", renderWidth, "height", renderHeight)
+
+	renderResult, err := browserRenderer.RenderHTMLWithResult(ctx, html, renderWidth, renderHeight)
+	if err != nil {
+		w.markJobFailed(ctx, job, fmt.Sprintf("browserless render failed: %v", err))
+		return err
+	}
+
+	logging.Info("[RENDER_WORKER] Preview browserless complete", "job_id", job.ID, "image_size", len(renderResult.ImageData))
+
+	imageData := renderResult.ImageData
+
+	// Quantize to device bit depth (same as real pipeline) but skip rotation for preview
+	img, _, err := image.Decode(bytes.NewReader(imageData))
+	if err != nil {
+		w.markJobFailed(ctx, job, fmt.Sprintf("failed to decode rendered image: %v", err))
+		return err
+	}
+
+	quantized := imageprocessing.QuantizeToGrayscalePalette(img, preview.BitDepth)
+	if quantized == nil {
+		w.markJobFailed(ctx, job, "failed to quantize image")
+		return fmt.Errorf("quantization returned nil")
+	}
+
+	processedData, err := imageprocessing.EncodePalettedPNG(quantized, preview.BitDepth)
+	if err != nil {
+		w.markJobFailed(ctx, job, fmt.Sprintf("failed to encode image: %v", err))
+		return err
+	}
+
+	// Save to disk
+	filename := fmt.Sprintf("preview_%s.png", job.ID.String()[:12])
+	imagePath := filepath.Join(w.renderedDir, filename)
+	if err := os.WriteFile(imagePath, processedData, 0644); err != nil {
+		w.markJobFailed(ctx, job, fmt.Sprintf("failed to save preview image: %v", err))
+		return err
+	}
+
+	duration := time.Since(startTime).Milliseconds()
+	relativePath := filepath.Join("rendered", filename)
+
+	err = w.db.WithContext(ctx).Model(&job).Updates(map[string]interface{}{
+		"status":             "completed",
+		"preview_image_path": relativePath,
+		"render_duration_ms": int(duration),
+	}).Error
+	if err != nil {
+		return fmt.Errorf("failed to mark preview job completed: %w", err)
+	}
+
+	logging.Info("[RENDER_WORKER] Preview render completed",
+		"job_id", job.ID,
+		"duration_ms", duration,
+		"image_size", len(processedData))
+
+	return nil
+}
+
 func (w *RenderWorker) markJobFailed(ctx context.Context, job database.RenderQueue, errorMsg string) {
 	err := w.db.WithContext(ctx).Model(&job).Updates(database.RenderQueue{
 		Status:       "failed",

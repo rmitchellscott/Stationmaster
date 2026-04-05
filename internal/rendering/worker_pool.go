@@ -259,9 +259,11 @@ func (p *RenderWorkerPool) loadPendingJobs(ctx context.Context) error {
 	}
 	
 	var jobIDs []JobID
+	now := time.Now().UTC()
 	err := p.db.WithContext(ctx).Raw(`
 		SELECT id FROM render_queues rq1
 		WHERE status = ? AND scheduled_for <= ?
+		AND plugin_instance_id IS NOT NULL
 		AND id = (
 			SELECT id FROM render_queues rq2
 			WHERE rq2.plugin_instance_id = rq1.plugin_instance_id
@@ -271,11 +273,21 @@ func (p *RenderWorkerPool) loadPendingJobs(ctx context.Context) error {
 		)
 		GROUP BY plugin_instance_id, id
 		LIMIT 20
-	`, "pending", time.Now().UTC(), "pending", time.Now().UTC()).Scan(&jobIDs).Error
+	`, "pending", now, "pending", now).Scan(&jobIDs).Error
 
 	if err != nil {
 		return err
 	}
+
+	// Also pick up preview jobs
+	var previewIDs []JobID
+	p.db.WithContext(ctx).Raw(`
+		SELECT id FROM render_queues
+		WHERE status = ? AND scheduled_for <= ? AND is_preview = true
+		ORDER BY priority DESC, scheduled_for ASC
+		LIMIT 5
+	`, "pending", now).Scan(&previewIDs)
+	jobIDs = append(jobIDs, previewIDs...)
 
 	if len(jobIDs) == 0 {
 		return nil
@@ -300,9 +312,13 @@ func (p *RenderWorkerPool) loadPendingJobs(ctx context.Context) error {
 	
 	submitted := 0
 	for _, dbJob := range dbJobs {
+		var piID uuid.UUID
+		if dbJob.PluginInstanceID != nil {
+			piID = *dbJob.PluginInstanceID
+		}
 		job := RenderJob{
 			ID:               dbJob.ID,
-			PluginInstanceID: dbJob.PluginInstanceID,
+			PluginInstanceID: piID,
 			Priority:         dbJob.Priority,
 			ScheduledFor:     dbJob.ScheduledFor,
 			Attempts:         dbJob.Attempts,
@@ -426,20 +442,24 @@ func (p *RenderWorkerPool) broadcastJobUpdate(ctx context.Context, jobID uuid.UU
 		return
 	}
 	
-	// Prepare event data
+	if job.IsPreview {
+		return
+	}
+
 	eventData := map[string]interface{}{
 		"job_id":           jobID.String(),
-		"plugin_instance_id": job.PluginInstanceID.String(),
 		"status":           status,
 		"message":          message,
 		"timestamp":        time.Now().UTC(),
 	}
-	
+	if job.PluginInstanceID != nil {
+		eventData["plugin_instance_id"] = job.PluginInstanceID.String()
+	}
+
 	if err != nil {
 		eventData["error"] = err.Error()
 	}
-	
-	// Broadcast to the user who owns this plugin
+
 	if job.PluginInstance.UserID != uuid.Nil {
 		event := sse.Event{
 			Type: "render_job_update",

@@ -96,6 +96,7 @@ interface Plugin {
   data_strategy?: string;
   created_at: string;
   updated_at: string;
+  enable_backdrop?: boolean;
   oauth_config?: {
     provider: string;
     auth_url: string;
@@ -195,6 +196,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
   const [editMashupAssignments, setEditMashupAssignments] = useState<Record<string, string>>({});
   const [editOriginalMashupAssignments, setEditOriginalMashupAssignments] = useState<Record<string, string>>({});
   const [editAvailablePlugins, setEditAvailablePlugins] = useState<AvailablePluginInstance[]>([]);
+  const [editMashupBackdrop, setEditMashupBackdrop] = useState(false);
   const [editInstanceName, setEditInstanceName] = useState("");
   const [editInstanceSettings, setEditInstanceSettings] = useState<Record<string, any>>({});
   const [editInstanceRefreshRate, setEditInstanceRefreshRate] = useState<number>(86400);
@@ -231,6 +233,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
   const [availablePluginInstances, setAvailablePluginInstances] = useState<AvailablePluginInstance[]>([]);
   const [mashupAssignments, setMashupAssignments] = useState<Record<string, string>>({});
   const [mashupDescription, setMashupDescription] = useState("");
+  const [mashupBackdrop, setMashupBackdrop] = useState(false);
 
   // Get active subtab from URL query parameters
   const activeTab = (searchParams.get('subtab') as 'instances' | 'private') || 'instances';
@@ -364,6 +367,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
         name: instanceName.trim(),
         description: mashupDescription.trim() || undefined,
         layout: selectedMashupLayout.id,
+        backdrop: mashupBackdrop,
       });
 
       if (!mashupResponse || !mashupResponse.mashup || !mashupResponse.mashup.id) {
@@ -494,6 +498,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
     setAvailablePluginInstances([]);
     setMashupAssignments({});
     setMashupDescription("");
+    setMashupBackdrop(false);
   };
 
   const hasPluginInstanceChanges = () => {
@@ -511,11 +516,15 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
     const hasRefreshRateChanged = editPluginInstance.plugin?.requires_processing && 
       editInstanceRefreshRate !== editPluginInstance.refresh_interval;
     
+    const hasBackdropChanged = editPluginInstance.plugin?.type === 'mashup' &&
+      editMashupBackdrop !== !!editPluginInstance.plugin?.enable_backdrop;
+
     return (
       editInstanceName.trim() !== editPluginInstance.name ||
       JSON.stringify(editInstanceSettings) !== JSON.stringify(originalSettings) ||
       hasRefreshRateChanged ||
-      hasMashupAssignmentChanges()
+      hasMashupAssignmentChanges() ||
+      hasBackdropChanged
     );
   };
 
@@ -598,8 +607,23 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
       });
 
       if (response.ok) {
+        // Handle mashup definition updates (backdrop, name, description)
+        if (editPluginInstance.plugin?.type === 'mashup') {
+          try {
+            await mashupService.updateMashup(editPluginInstance.plugin.id, {
+              name: editInstanceName.trim(),
+              backdrop: editMashupBackdrop,
+            });
+          } catch (defError) {
+            console.error("Failed to update mashup definition:", defError);
+            setEditDialogError("Instance updated but failed to update mashup settings");
+            return;
+          }
+        }
+
         // Handle mashup slot assignments if this is a mashup
-        let shouldForceRefresh = false;
+        let shouldForceRefresh = editPluginInstance.plugin?.type === 'mashup' &&
+          editMashupBackdrop !== !!editPluginInstance.plugin?.enable_backdrop;
         if (editPluginInstance.plugin?.type === 'mashup' && hasMashupAssignmentChanges()) {
           try {
             await mashupService.assignChildren(editPluginInstance.id, editMashupAssignments);
@@ -635,6 +659,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
         setEditMashupAssignments({});
         setEditOriginalMashupAssignments({});
         setEditAvailablePlugins([]);
+        setEditMashupBackdrop(false);
         await fetchPluginInstances();
         onUpdate?.();
       } else {
@@ -817,6 +842,7 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
     const isMashup = instanceToEdit.plugin?.type === 'mashup';
     if (isMashup) {
       loadEditMashupLayout(instanceToEdit.id);
+      setEditMashupBackdrop(!!instanceToEdit.plugin?.enable_backdrop);
     } else {
       setEditMashupLayout(null);
       setEditMashupSlots([]);
@@ -1893,6 +1919,21 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
                     />
                   </div>
 
+                  {/* Backdrop toggle */}
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <Label htmlFor="mashup-backdrop" className="text-sm">Backdrop</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Adds a patterned or gray background behind mashup panels
+                      </p>
+                    </div>
+                    <Switch
+                      id="mashup-backdrop"
+                      checked={mashupBackdrop}
+                      onCheckedChange={setMashupBackdrop}
+                    />
+                  </div>
+
                   {/* Slot assignments */}
                   {mashupSlots.length > 0 && (
                     <div>
@@ -2259,7 +2300,24 @@ export function PluginManagement({ selectedDeviceId, onUpdate }: PluginManagemen
               </div>
             )}
 
-            {/* Mashup slot assignments - read only */}
+            {/* Mashup backdrop toggle */}
+            {editPluginInstance?.plugin?.type === 'mashup' && (
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label htmlFor="edit-mashup-backdrop" className="text-sm">Backdrop</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Adds a patterned or gray background behind mashup panels
+                  </p>
+                </div>
+                <Switch
+                  id="edit-mashup-backdrop"
+                  checked={editMashupBackdrop}
+                  onCheckedChange={setEditMashupBackdrop}
+                />
+              </div>
+            )}
+
+            {/* Mashup slot assignments */}
             {editPluginInstance?.plugin?.type === 'mashup' && editMashupLayout && editMashupSlots.length > 0 && (
               <div>
                 <Label className="text-sm">Plugin Assignments</Label>

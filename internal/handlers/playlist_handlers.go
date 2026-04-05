@@ -367,9 +367,10 @@ func AddPlaylistItemHandler(c *gin.Context) {
 	}
 
 	// Schedule immediate independent render for the plugin instance
+	piID := req.PluginInstanceID
 	renderJob := database.RenderQueue{
 		ID:               uuid.New(),
-		PluginInstanceID: req.PluginInstanceID,
+		PluginInstanceID: &piID,
 		Priority:         999, // High priority for immediate render on playlist addition
 		ScheduledFor:     time.Now().UTC(),
 		Status:           "pending",
@@ -392,9 +393,10 @@ func AddPlaylistItemHandler(c *gin.Context) {
 			logging.Info("[PLAYLIST] Scheduling render jobs for mashup children", "mashup_id", req.PluginInstanceID, "children_count", len(children))
 			
 			for _, child := range children {
+				childID := child.ChildInstanceID
 				childRenderJob := database.RenderQueue{
 					ID:               uuid.New(),
-					PluginInstanceID: child.ChildInstanceID,
+					PluginInstanceID: &childID,
 					Priority:         998, // Slightly lower priority than parent mashup
 					ScheduledFor:     time.Now().UTC(),
 					Status:           "pending",

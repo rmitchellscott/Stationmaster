@@ -108,6 +108,7 @@ interface Device {
   firmware_version?: string;
   target_firmware_version?: string;
   battery_voltage?: number;
+  battery_percent?: number;
   rssi?: number;
   refresh_rate: number;
   allow_firmware_updates?: boolean;
@@ -122,6 +123,10 @@ interface Device {
   sleep_show_screen?: boolean;
   firmware_update_start_time?: string;
   firmware_update_end_time?: string;
+  maximum_compatibility?: boolean;
+  touchbar_mode?: string;
+  temperature_profile?: string;
+  screen_orientation?: string;
   created_at: string;
   updated_at: string;
   device_model?: DeviceModel;
@@ -138,14 +143,32 @@ interface DeviceLog {
 interface FirmwareVersion {
   id: string;
   version: string;
+  model_family: string;
+  chip_family?: string;
+  family_label?: string;
   download_url: string;
   is_latest: boolean;
+  is_stable: boolean;
   is_downloaded: boolean;
   released_at: string;
   download_status?: string;
   file_size?: number;
   release_notes?: string;
 }
+
+const deviceModelToFirmwareFamily: Record<string, string> = {
+  og_plus: "trmnl",
+  og_png: "trmnl",
+  v2: "trmnl_x",
+  og_bwry: "trmnl_4clr",
+  xteink_x4: "xteink_x4",
+  seeed_e1001: "seeed_E1001",
+  seeed_e1002: "seeed_E1002",
+  waveshare_4_26: "trmnl",
+  waveshare_7_5_bw: "trmnl",
+  waveshare_7_5_bwr: "trmnl",
+  waveshare_7_5_bwry: "trmnl",
+};
 
 // Sort types for devices table
 type DeviceSortColumn = 'name' | 'status' | 'firmware' | 'battery' | 'signal' | 'last_seen' | 'created';
@@ -221,6 +244,10 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
     firmware_update_start_time: "00:00",
     firmware_update_end_time: "23:59",
     target_firmware_version: "latest",
+    maximum_compatibility: false,
+    touchbar_mode: "tap",
+    temperature_profile: "default",
+    screen_orientation: "auto",
   };
 
   type DeviceSettingsState = typeof deviceSettingsDefaults;
@@ -229,6 +256,8 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
   const updateSetting = <K extends keyof DeviceSettingsState>(key: K, value: DeviceSettingsState[K]) => {
     setEditSettings(prev => ({ ...prev, [key]: value }));
   };
+
+  // Display settings
 
   // Firmware versions for dropdown
   const [firmwareVersions, setFirmwareVersions] = useState<FirmwareVersion[]>([]);
@@ -249,31 +278,32 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
     return vB.patch - vA.patch;
   }, []);
 
-  // Sort firmware versions by semantic version (descending: newest first)
-  const sortedFirmwareVersions = React.useMemo(() => {
-    return [...firmwareVersions].sort((a, b) =>
-      compareSemanticVersions(a.version, b.version)
-    );
-  }, [firmwareVersions, compareSemanticVersions]);
-
-  // Filter firmware versions based on unstable checkbox
-  const filteredFirmwareVersions = React.useMemo(() => {
-    const stableVersion = sortedFirmwareVersions.find(fw => fw.is_latest);
-    if (!stableVersion) {
-      return sortedFirmwareVersions;
+  // Filter firmware versions to the device's model family, then sort
+  const deviceFirmwareFamily = React.useMemo(() => {
+    const modelName = editDevice?.device_model?.model_name;
+    if (modelName && deviceModelToFirmwareFamily[modelName]) {
+      return deviceModelToFirmwareFamily[modelName];
     }
+    return "trmnl";
+  }, [editDevice]);
 
+  const sortedFirmwareVersions = React.useMemo(() => {
+    return [...firmwareVersions]
+      .filter(fw => fw.model_family === deviceFirmwareFamily)
+      .sort((a, b) => compareSemanticVersions(a.version, b.version));
+  }, [firmwareVersions, deviceFirmwareFamily, compareSemanticVersions]);
+
+  const filteredFirmwareVersions = React.useMemo(() => {
     if (showUnstableVersions) {
       return sortedFirmwareVersions;
     }
-
-    const filtered = sortedFirmwareVersions.filter(fw => {
-      const versionComparison = compareSemanticVersions(fw.version, stableVersion.version);
-      const shouldInclude = fw.is_latest || versionComparison >= 0;
-      return shouldInclude;
-    });
-
-    return filtered;
+    const latestStable = sortedFirmwareVersions.find(fw => fw.is_latest);
+    if (!latestStable) {
+      return sortedFirmwareVersions;
+    }
+    return sortedFirmwareVersions.filter(fw =>
+      compareSemanticVersions(fw.version, latestStable.version) >= 0
+    );
   }, [sortedFirmwareVersions, showUnstableVersions, compareSemanticVersions]);
 
   // Device deletion
@@ -678,6 +708,10 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
         firmware_update_start_time: device.firmware_update_start_time || "00:00",
         firmware_update_end_time: device.firmware_update_end_time || "23:59",
         target_firmware_version: device.target_firmware_version || "latest",
+        maximum_compatibility: device.maximum_compatibility ?? false,
+        touchbar_mode: device.touchbar_mode || "tap",
+        temperature_profile: device.temperature_profile || "default",
+        screen_orientation: device.screen_orientation || "auto",
       };
       setEditSettings(settings);
       setOriginalSettings(settings);
@@ -813,19 +847,23 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
     }
   };
 
-  const getBatteryDisplay = (voltage?: number) => {
-    if (!voltage) {
+  const getBatteryDisplay = (voltage?: number, percent?: number) => {
+    const percentage = percent && percent > 0
+      ? percent
+      : voltage ? calculateBatteryPercentage(voltage) : null;
+
+    if (percentage === null) {
       return {
         icon: <Battery className="h-4 w-4 text-muted-foreground" />,
         text: "N/A",
-        tooltip: "Battery status unknown"
+        tooltip: "Battery status unknown",
+        color: ""
       };
     }
-    
-    const percentage = calculateBatteryPercentage(voltage);
+
     let icon;
     let color;
-    
+
     if (percentage > 75) {
       icon = <BatteryFull className="h-4 w-4" />;
       color = "";
@@ -839,11 +877,12 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
       icon = <BatteryWarning className="h-4 w-4 text-destructive" />;
       color = "text-destructive";
     }
-    
+
+    const tooltipDetail = voltage ? ` (${voltage.toFixed(1)}V)` : "";
     return {
       icon,
       text: `${percentage}%`,
-      tooltip: `Battery Level: ${percentage}% (${voltage.toFixed(1)}V)`,
+      tooltip: `Battery Level: ${percentage}%${tooltipDetail}`,
       color
     };
   };
@@ -1234,7 +1273,7 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
                           <TooltipTrigger asChild>
                             <div className="flex items-center gap-1">
                               {(() => {
-                                const battery = getBatteryDisplay(device.battery_voltage);
+                                const battery = getBatteryDisplay(device.battery_voltage, device.battery_percent);
                                 return (
                                   <>
                                     {battery.icon}
@@ -1247,7 +1286,7 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
                             </div>
                           </TooltipTrigger>
                           <TooltipContent>
-                            {getBatteryDisplay(device.battery_voltage).tooltip}
+                            {getBatteryDisplay(device.battery_voltage, device.battery_percent).tooltip}
                           </TooltipContent>
                         </Tooltip>
                       </TableCell>
@@ -1750,6 +1789,77 @@ export function DeviceManagementContent({ onUpdate }: DeviceManagementContentPro
                         </p>
                       </div>
                     )}
+                  </div>
+                </div>
+
+                {/* Display Settings */}
+                <div>
+                  <Label className="text-sm font-medium">Display</Label>
+                  <div className="mt-2 space-y-3">
+                    <div className="flex items-center space-x-2">
+                      <Switch
+                        id="edit-max-compatibility"
+                        checked={editSettings.maximum_compatibility}
+                        onCheckedChange={(v) => updateSetting("maximum_compatibility", v)}
+                      />
+                      <Label htmlFor="edit-max-compatibility">
+                        Maximum Compatibility
+                      </Label>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Forces full display refresh. Use if you see ghosting or artifacts.
+                    </p>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-screen-orientation">Screen Orientation</Label>
+                      <Select value={editSettings.screen_orientation} onValueChange={(v) => updateSetting("screen_orientation", v)}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="auto">Auto</SelectItem>
+                          <SelectItem value="landscape">Landscape</SelectItem>
+                          <SelectItem value="landscape_inverted">Landscape Upside Down</SelectItem>
+                          <SelectItem value="portrait_cw">Portrait Clockwise</SelectItem>
+                          <SelectItem value="portrait_ccw">Portrait Counter-Clockwise</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {editDevice?.device_model?.model_name === "v2" && (
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-touchbar-mode">Touchbar Mode</Label>
+                        <Select value={editSettings.touchbar_mode} onValueChange={(v) => updateSetting("touchbar_mode", v)}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="tap">Tap</SelectItem>
+                            <SelectItem value="slide">Slide</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <p className="text-sm text-muted-foreground">
+                          Tap: individual touch zones. Slide: swipe gestures.
+                        </p>
+                      </div>
+                    )}
+
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-temperature-profile">Temperature Profile</Label>
+                      <Select value={editSettings.temperature_profile} onValueChange={(v) => updateSetting("temperature_profile", v)}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="default">Default</SelectItem>
+                          <SelectItem value="a">A</SelectItem>
+                          <SelectItem value="b">B</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-sm text-muted-foreground">
+                        Adjusts display waveform. Change only if images appear washed out.
+                      </p>
+                    </div>
                   </div>
                 </div>
 

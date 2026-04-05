@@ -35,16 +35,17 @@ func (b *TRNMLDataBuilder) BuildTRNMLData(ctx plugins.PluginContext, instance *d
 			"friendly_id": ctx.Device.FriendlyID,
 		}
 
-		// Add device model dimensions if available
 		if ctx.Device.DeviceModel != nil {
 			deviceData["width"] = ctx.Device.DeviceModel.ScreenWidth
 			deviceData["height"] = ctx.Device.DeviceModel.ScreenHeight
+			deviceData["bit_depth"] = ctx.Device.DeviceModel.BitDepth
+			deviceData["model"] = ctx.Device.DeviceModel.ModelName
 		}
 
-		// Add battery information if available
-		if ctx.Device.BatteryVoltage > 0 {
-			batteryPercentage := plugins.BatteryVoltageToPercentage(ctx.Device.BatteryVoltage)
-			deviceData["percent_charged"] = batteryPercentage
+		if ctx.Device.BatteryPercent > 0 {
+			deviceData["percent_charged"] = float64(ctx.Device.BatteryPercent)
+		} else if ctx.Device.BatteryVoltage > 0 {
+			deviceData["percent_charged"] = plugins.BatteryVoltageToPercentage(ctx.Device.BatteryVoltage)
 		}
 
 		// Add WiFi information if available  
@@ -56,59 +57,8 @@ func (b *TRNMLDataBuilder) BuildTRNMLData(ctx plugins.PluginContext, instance *d
 		trmnlData["device"] = deviceData
 	}
 
-	// Add user information if available
 	if ctx.User != nil {
-		// Calculate UTC offset in seconds
-		utcOffset := int64(0)
-		locale := "en" // Default locale
-		timezone := "UTC" // Default timezone IANA
-		timezoneFriendly := "UTC" // Default friendly name
-		
-		if ctx.User.Timezone != "" {
-			timezone = ctx.User.Timezone
-			timezoneFriendly = utils.GetTimezoneFriendlyName(ctx.User.Timezone)
-			// Parse timezone and calculate UTC offset
-			loc, err := time.LoadLocation(ctx.User.Timezone)
-			if err == nil {
-				_, offset := time.Now().UTC().In(loc).Zone()
-				utcOffset = int64(offset)
-			}
-		}
-		
-		if ctx.User.Locale != "" {
-			// Convert "en-US" to "en" format if needed
-			if len(ctx.User.Locale) >= 2 {
-				locale = ctx.User.Locale[:2]
-			}
-		}
-
-		// Build user full name
-		firstName := ctx.User.FirstName
-		lastName := ctx.User.LastName
-		fullName := ""
-		if firstName != "" && lastName != "" {
-			fullName = firstName + " " + lastName
-		} else if firstName != "" {
-			fullName = firstName
-		} else if lastName != "" {
-			fullName = lastName
-		} else {
-			// Fallback to username if no names available
-			fullName = ctx.User.Username
-		}
-
-		userData := map[string]interface{}{
-			"id":             ctx.User.ID.String(),
-			"name":           fullName,
-			"first_name":     firstName,
-			"last_name":      lastName,
-			"locale":         locale,
-			"time_zone":      timezoneFriendly,
-			"time_zone_iana": timezone,
-			"utc_offset":     utcOffset,
-		}
-		
-		trmnlData["user"] = userData
+		trmnlData["user"] = buildUserData(ctx.User)
 	}
 
 	// Add plugin settings - this contains plugin metadata, not user form data
@@ -164,6 +114,89 @@ func (b *TRNMLDataBuilder) BuildTRNMLData(ctx plugins.PluginContext, instance *d
 	pluginSettings["custom_fields_values"] = formFieldValues
 	
 	trmnlData["plugin_settings"] = pluginSettings
-	
+
 	return trmnlData
+}
+
+// BuildPreviewData builds TRMNL data for preview renders without a real device/instance
+func (b *TRNMLDataBuilder) BuildPreviewData(
+	user *database.User,
+	deviceWidth, deviceHeight, bitDepth int,
+	modelName, pluginName, dataStrategy string,
+	formFieldValues map[string]interface{},
+) map[string]interface{} {
+	trmnlData := map[string]interface{}{
+		"system": map[string]interface{}{
+			"timestamp_utc": time.Now().UTC().Unix(),
+		},
+		"device": map[string]interface{}{
+			"friendly_id":     "PREVIEW",
+			"width":           deviceWidth,
+			"height":          deviceHeight,
+			"bit_depth":       bitDepth,
+			"model":           modelName,
+			"percent_charged": 100,
+			"wifi_strength":   100,
+		},
+	}
+
+	if user != nil {
+		trmnlData["user"] = buildUserData(user)
+	}
+
+	pluginSettings := map[string]interface{}{
+		"instance_name":       pluginName,
+		"strategy":            dataStrategy,
+		"dark_mode":           "no",
+		"no_screen_padding":   "no",
+		"custom_fields_values": formFieldValues,
+	}
+	trmnlData["plugin_settings"] = pluginSettings
+
+	return trmnlData
+}
+
+func buildUserData(user *database.User) map[string]interface{} {
+	utcOffset := int64(0)
+	locale := "en"
+	timezone := "UTC"
+	timezoneFriendly := "UTC"
+
+	if user.Timezone != "" {
+		timezone = user.Timezone
+		timezoneFriendly = utils.GetTimezoneFriendlyName(user.Timezone)
+		loc, err := time.LoadLocation(user.Timezone)
+		if err == nil {
+			_, offset := time.Now().UTC().In(loc).Zone()
+			utcOffset = int64(offset)
+		}
+	}
+
+	if user.Locale != "" && len(user.Locale) >= 2 {
+		locale = user.Locale[:2]
+	}
+
+	firstName := user.FirstName
+	lastName := user.LastName
+	fullName := ""
+	if firstName != "" && lastName != "" {
+		fullName = firstName + " " + lastName
+	} else if firstName != "" {
+		fullName = firstName
+	} else if lastName != "" {
+		fullName = lastName
+	} else {
+		fullName = user.Username
+	}
+
+	return map[string]interface{}{
+		"id":             user.ID.String(),
+		"name":           fullName,
+		"first_name":     firstName,
+		"last_name":      lastName,
+		"locale":         locale,
+		"time_zone":      timezoneFriendly,
+		"time_zone_iana": timezone,
+		"utc_offset":     utcOffset,
+	}
 }

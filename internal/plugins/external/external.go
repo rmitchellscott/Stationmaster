@@ -12,10 +12,11 @@ import (
 
 	"github.com/rmitchellscott/stationmaster/internal/config"
 	"github.com/rmitchellscott/stationmaster/internal/database"
+	"github.com/rmitchellscott/stationmaster/internal/imageprocessing"
 	"github.com/rmitchellscott/stationmaster/internal/logging"
-	"github.com/rmitchellscott/stationmaster/internal/validation"
 	"github.com/rmitchellscott/stationmaster/internal/plugins"
 	"github.com/rmitchellscott/stationmaster/internal/rendering"
+	"github.com/rmitchellscott/stationmaster/internal/validation"
 )
 
 // ExternalPlugin implements the Plugin interface for externally-sourced plugins
@@ -138,52 +139,70 @@ func (p *ExternalPlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespo
 	// Wrap content with same structure as private plugins get from generateHTMLStructure()
 	// This provides the .environment.trmnl and .screen wrappers needed for proper CSS layout
 	// Note: Don't add extra .view wrapper since external plugin content already has it
+	renderWidth, renderHeight := rendering.RenderDimensions(
+		ctx.Device.DeviceModel.ScreenWidth,
+		ctx.Device.DeviceModel.ScreenHeight,
+		ctx.Device.ScreenOrientation,
+	)
+
+	screenClasses := rendering.BuildScreenClasses(rendering.ScreenClassOptions{
+		ModelName:         ctx.Device.DeviceModel.ModelName,
+		BitDepth:          ctx.Device.DeviceModel.BitDepth,
+		ScreenWidth:       ctx.Device.DeviceModel.ScreenWidth,
+		ScreenHeight:      ctx.Device.DeviceModel.ScreenHeight,
+		ScreenOrientation: ctx.Device.ScreenOrientation,
+	})
 	structuredContent := fmt.Sprintf(`<div id="plugin-%s" class="environment trmnl">
-		<div class="screen">
+		<div class="%s">
 			%s
 		</div>
-	</div>`, p.instance.ID.String(), processedContent)
-	
-	// Wrap with TRMNL assets like private plugins do (same as UnifiedRenderer does)
+	</div>`, p.instance.ID.String(), screenClasses, processedContent)
+
 	assetsManager := rendering.NewHTMLAssetsManager()
 	assetBaseURL := config.GetAssetBaseURL()
 	wrappedHTML := assetsManager.WrapWithTRNMLAssets(
 		structuredContent,
 		p.Name(),
-		ctx.Device.DeviceModel.ScreenWidth,
-		ctx.Device.DeviceModel.ScreenHeight,
-		false, // removeBleedMargin - TODO: Make configurable if needed
-		false, // enableDarkMode - TODO: Make configurable if needed
+		renderWidth,
+		renderHeight,
+		false,
+		false,
 		assetBaseURL,
 	)
-	
-	// Create browserless renderer
+
 	browserRenderer, err := rendering.NewBrowserlessRenderer()
 	if err != nil {
 		return plugins.CreateErrorResponse(fmt.Sprintf("Failed to create renderer: %v", err)),
 			fmt.Errorf("failed to create browserless renderer: %w", err)
 	}
 	defer browserRenderer.Close()
-	
-	// Render wrapped HTML to image using browserless (same as private plugins)
+
 	renderCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	
+
 	renderResult, err := browserRenderer.RenderHTMLWithResult(
 		renderCtx,
 		wrappedHTML,
-		ctx.Device.DeviceModel.ScreenWidth,
-		ctx.Device.DeviceModel.ScreenHeight,
+		renderWidth,
+		renderHeight,
 	)
 	if err != nil {
 		return plugins.CreateErrorResponse(fmt.Sprintf("Failed to render HTML: %v", err)),
 			fmt.Errorf("failed to render HTML to image: %w", err)
 	}
-	
+
 	imageData := renderResult.ImageData
 	flags := renderResult.Flags
-	
-	// Generate filename
+
+	if rotation := rendering.ImageRotation(ctx.Device.DeviceModel.ScreenWidth, ctx.Device.DeviceModel.ScreenHeight, ctx.Device.ScreenOrientation); rotation != "none" {
+		rotated, rotErr := imageprocessing.RotatePNGBytes(imageData, rotation)
+		if rotErr != nil {
+			return plugins.CreateErrorResponse(fmt.Sprintf("Failed to rotate image: %v", rotErr)),
+				fmt.Errorf("failed to rotate image: %w", rotErr)
+		}
+		imageData = rotated
+	}
+
 	filename := fmt.Sprintf("external_plugin_%s_%dx%d.png",
 		time.Now().UTC().Format("20060102_150405"),
 		ctx.Device.DeviceModel.ScreenWidth,

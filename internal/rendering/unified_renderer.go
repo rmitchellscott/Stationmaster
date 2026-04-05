@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	
+
 	"github.com/rmitchellscott/stationmaster/internal/config"
 )
 
@@ -23,6 +23,9 @@ type PluginRenderOptions struct {
 	Layout            string // Layout type for proper mashup CSS structure
 	LayoutWidth       int    // Layout-specific width for positioning
 	LayoutHeight      int    // Layout-specific height for positioning
+	DeviceModelName   string
+	BitDepth          int
+	ScreenOrientation string
 }
 
 // UnifiedRenderer handles template rendering using embedded Ruby renderer with TRMNL asset wrapping
@@ -116,31 +119,62 @@ func (r *UnifiedRenderer) postProcessTemplate(content string, opts PluginRenderO
 
 // generateHTMLStructure wraps processed content with TRMNL-appropriate structure
 func (r *UnifiedRenderer) generateHTMLStructure(content string, opts PluginRenderOptions) string {
-	// Build screen classes based on options
-	screenClasses := []string{"screen"}
-	if opts.RemoveBleedMargin {
-		screenClasses = append(screenClasses, "screen--no-bleed")
-	}
-	if opts.EnableDarkMode {
-		screenClasses = append(screenClasses, "screen--dark-mode")
-	}
+	screenClassStr := BuildScreenClasses(ScreenClassOptions{
+		ModelName:         opts.DeviceModelName,
+		BitDepth:          opts.BitDepth,
+		ScreenWidth:       opts.Width,
+		ScreenHeight:      opts.Height,
+		ScreenOrientation: opts.ScreenOrientation,
+		RemoveBleedMargin: opts.RemoveBleedMargin,
+		EnableDarkMode:    opts.EnableDarkMode,
+	})
 
-	screenClassStr := ""
-	for i, class := range screenClasses {
-		if i > 0 {
-			screenClassStr += " "
+	var inner string
+	if slots := mashupSlots(opts.Layout); slots > 0 {
+		viewClass, mashupClass := layoutToViewClass(opts.Layout)
+		var slotBuilder strings.Builder
+		slotBuilder.WriteString(fmt.Sprintf(`<div class="mashup %s">`, mashupClass))
+		slotBuilder.WriteString(fmt.Sprintf(`<div class="view %s">%s</div>`, viewClass, content))
+		for i := 1; i < slots; i++ {
+			slotBuilder.WriteString(fmt.Sprintf(`<div class="view %s"></div>`, viewClass))
 		}
-		screenClassStr += class
+		slotBuilder.WriteString(`</div>`)
+		inner = slotBuilder.String()
+	} else {
+		inner = fmt.Sprintf(`<div class="view view--full">%s</div>`, content)
 	}
 
-	// Always wrap content with TRMNL structure including screen classes
 	wrappedContent := fmt.Sprintf(`<div id="plugin-%s" class="environment trmnl">
 		<div class="%s">
-			<div class="view view--full">%s</div>
+			%s
 		</div>
-	</div>`, opts.InstanceID, screenClassStr, content)
+	</div>`, opts.InstanceID, screenClassStr, inner)
 
 	return wrappedContent
+}
+
+func layoutToViewClass(layout string) (string, string) {
+	switch layout {
+	case "half_vertical":
+		return "view--half_vertical", "mashup--1Lx1R"
+	case "half_horizontal":
+		return "view--half_horizontal", "mashup--1Tx1B"
+	case "quadrant":
+		return "view--quadrant", "mashup--2x2"
+	default:
+		return "view--full", ""
+	}
+}
+
+func mashupSlots(layout string) int {
+	switch layout {
+	case "half_vertical", "half_horizontal":
+		return 2
+	case "quadrant":
+		return 4
+	default:
+		return 0
+	}
 }
 
 // ValidateTemplate validates a liquid template using embedded renderer

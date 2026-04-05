@@ -187,8 +187,7 @@ func (s *TRMNLZipService) ExtractTRMNLZip(file multipart.File, header *multipart
 			foundFiles["shared.liquid"] = true
 			logging.Info("[TRMNL IMPORT] Found shared.liquid template", "size", len(content))
 		default:
-			logging.Error("[TRMNL IMPORT] Unexpected file in ZIP", "file", f.Name)
-			return nil, fmt.Errorf("unexpected file in ZIP: %s", f.Name)
+			logging.Info("[TRMNL IMPORT] Skipping unrecognized file", "file", f.Name)
 		}
 	}
 

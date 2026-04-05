@@ -349,8 +349,8 @@ func (ds *DeviceService) GetAllDeviceModels() ([]DeviceModel, error) {
 // mapDeviceModelName maps device-reported model names to database model names
 func mapDeviceModelName(deviceModel string) string {
 	modelMap := map[string]string{
-		"og": "og_plus", // Original TRMNL model maps to og_plus
-		// Add more mappings as needed
+		"og": "og_plus",
+		"x":  "v2",
 	}
 
 	if mappedModel, exists := modelMap[deviceModel]; exists {
@@ -371,20 +371,18 @@ func (ds *DeviceService) UpdateLastPlaylistItemID(deviceID uuid.UUID, playlistIt
 }
 
 // UpdateDeviceStatus updates device status information from TRMNL requests
-func (ds *DeviceService) UpdateDeviceStatus(macAddress string, firmwareVersion string, batteryVoltage float64, rssi int, modelName string) error {
+func (ds *DeviceService) UpdateDeviceStatus(macAddress string, firmwareVersion string, batteryVoltage float64, batteryPercent int, rssi int, modelName string) error {
 	now := time.Now().UTC()
 
-
-	// Use explicit transaction to ensure commit
 	return ds.db.Transaction(func(tx *gorm.DB) error {
-		// Always update these core fields
 		updateFields := map[string]interface{}{
 			"firmware_version": firmwareVersion,
 			"battery_voltage":  batteryVoltage,
+			"battery_percent":  batteryPercent,
 			"rssi":             rssi,
 			"last_seen":        &now,
 		}
-		selectFields := []string{"firmware_version", "battery_voltage", "rssi", "last_seen"}
+		selectFields := []string{"firmware_version", "battery_voltage", "battery_percent", "rssi", "last_seen"}
 
 		// Handle device model separately
 		if modelName != "" {

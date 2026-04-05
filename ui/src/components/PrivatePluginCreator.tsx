@@ -101,25 +101,25 @@ const layoutTabs: LayoutTab[] = [
     id: 'full',
     label: 'Full Screen',
     icon: <SquareIcon className="h-4 w-4" />,
-    description: 'Full 800x480 display'
+    description: 'Full display'
   },
   {
     id: 'half_horizontal',
     label: 'Half Horizontal',
     icon: <RowsIcon className="h-4 w-4" />,
-    description: 'Top or bottom half (800x240)'
+    description: 'Top or bottom half'
   },
   {
     id: 'half_vertical',
     label: 'Half Vertical',
     icon: <ColumnsIcon className="h-4 w-4" />,
-    description: 'Left or right half (400x480)'
+    description: 'Left or right half'
   },
   {
     id: 'quadrant',
     label: 'Quadrant',
     icon: <Grid2x2Icon className="h-4 w-4" />,
-    description: 'Quarter screen (400x240)'
+    description: 'Quarter screen'
   },
   {
     id: 'shared',
@@ -857,6 +857,7 @@ export function PrivatePluginCreator({
         plugin={formData}
         isOpen={showPreview}
         onClose={() => setShowPreview(false)}
+        defaultLayout={activeLayoutTab}
       />
 
       {/* Help Dialog */}

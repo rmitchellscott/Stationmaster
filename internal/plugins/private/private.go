@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/rmitchellscott/stationmaster/internal/database"
+	"github.com/rmitchellscott/stationmaster/internal/imageprocessing"
 	"github.com/rmitchellscott/stationmaster/internal/logging"
 	"github.com/rmitchellscott/stationmaster/internal/plugins"
 	"github.com/rmitchellscott/stationmaster/internal/rendering"
@@ -255,26 +256,35 @@ func (p *PrivatePlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespon
 		return plugins.CreateErrorResponse(fmt.Sprintf("Failed to initialize private plugin renderer: %v", err)),
 			fmt.Errorf("failed to initialize private plugin renderer: %w", err)
 	}
+	renderWidth, renderHeight := rendering.RenderDimensions(
+		ctx.Device.DeviceModel.ScreenWidth,
+		ctx.Device.DeviceModel.ScreenHeight,
+		ctx.Device.ScreenOrientation,
+	)
+
 	renderOptions := RenderOptions{
 		SharedMarkup:      sharedMarkup,
 		LayoutTemplate:    *p.definition.MarkupFull,
 		Data:              templateData,
-		Width:             ctx.Device.DeviceModel.ScreenWidth,
-		Height:            ctx.Device.DeviceModel.ScreenHeight,
+		Width:             renderWidth,
+		Height:            renderHeight,
 		PluginName:        p.definition.Name,
 		InstanceID:        instanceID,
 		InstanceName:      p.Name(),
 		RemoveBleedMargin: removeBleedMargin,
 		EnableDarkMode:    enableDarkMode,
+		DeviceModelName:   ctx.Device.DeviceModel.ModelName,
+		BitDepth:          ctx.Device.DeviceModel.BitDepth,
+		ScreenOrientation: ctx.Device.ScreenOrientation,
 	}
-	
+
 	// Use Ruby server-side rendering (required)
 	html, err := htmlRenderer.RenderToServerSideHTML(context.Background(), renderOptions)
 	if err != nil {
 		return plugins.CreateErrorResponse(fmt.Sprintf("Ruby template rendering failed: %v", err)),
 			fmt.Errorf("failed to render HTML template with Ruby: %w", err)
 	}
-	
+
 	// Create browserless renderer
 	browserRenderer, err := rendering.NewBrowserlessRenderer()
 	if err != nil {
@@ -282,16 +292,16 @@ func (p *PrivatePlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespon
 			fmt.Errorf("failed to create browserless renderer: %w", err)
 	}
 	defer browserRenderer.Close()
-	
+
 	// Always render HTML to image using browserless
 	renderCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	
+
 	renderResult, err := browserRenderer.RenderHTMLWithResult(
 		renderCtx,
 		html,
-		ctx.Device.DeviceModel.ScreenWidth,
-		ctx.Device.DeviceModel.ScreenHeight,
+		renderWidth,
+		renderHeight,
 	)
 	if err != nil {
 		return plugins.CreateErrorResponse(fmt.Sprintf("Failed to render HTML: %v", err)),
@@ -300,8 +310,16 @@ func (p *PrivatePlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespon
 	
 	imageData := renderResult.ImageData
 	flags := renderResult.Flags
-	
-	
+
+	if rotation := rendering.ImageRotation(ctx.Device.DeviceModel.ScreenWidth, ctx.Device.DeviceModel.ScreenHeight, ctx.Device.ScreenOrientation); rotation != "none" {
+		rotated, rotErr := imageprocessing.RotatePNGBytes(imageData, rotation)
+		if rotErr != nil {
+			return plugins.CreateErrorResponse(fmt.Sprintf("Failed to rotate image: %v", rotErr)),
+				fmt.Errorf("failed to rotate image: %w", rotErr)
+		}
+		imageData = rotated
+	}
+
 	// Generate filename
 	filename := fmt.Sprintf("private_plugin_%s_%dx%d.png",
 		time.Now().UTC().Format("20060102_150405"),

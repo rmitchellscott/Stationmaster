@@ -199,6 +199,7 @@ interface Device {
   is_claimed: boolean;
   firmware_version?: string;
   battery_voltage?: number;
+  battery_percent?: number;
   rssi?: number;
   refresh_rate: number;
   last_seen?: string;
@@ -3727,7 +3728,7 @@ export function AdminPage() {
               <p className="flex items-center gap-2">
                 <strong>Battery:</strong>
                 {(() => {
-                  const battery = getBatteryDisplay(viewDevice.battery_voltage);
+                  const battery = getBatteryDisplay(viewDevice.battery_voltage, viewDevice.battery_percent);
                   return (
                     <span className="flex items-center gap-1">
                       {battery.icon}

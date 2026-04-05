@@ -237,6 +237,7 @@ type Device struct {
 	FirmwareVersion         string     `gorm:"size:50" json:"firmware_version,omitempty"`
 	TargetFirmwareVersion   string     `gorm:"size:50" json:"target_firmware_version,omitempty"`
 	BatteryVoltage          float64    `json:"battery_voltage,omitempty"`
+	BatteryPercent          int        `json:"battery_percent,omitempty"`
 	RSSI                    int        `json:"rssi,omitempty"`
 	RefreshRate             int        `gorm:"default:1800" json:"refresh_rate"` // seconds
 	AllowFirmwareUpdates    bool       `gorm:"default:false" json:"allow_firmware_updates"`
@@ -250,8 +251,12 @@ type Device struct {
 	SleepStartTime          string     `gorm:"size:5" json:"sleep_start_time,omitempty"`                 // Start time in HH:MM format
 	SleepEndTime            string     `gorm:"size:5" json:"sleep_end_time,omitempty"`                   // End time in HH:MM format
 	SleepShowScreen         bool       `gorm:"default:true" json:"sleep_show_screen"`                    // Whether to show sleep image or last content
-	FirmwareUpdateStartTime string     `gorm:"size:5;default:'00:00'" json:"firmware_update_start_time"` // Start time for firmware updates in HH:MM format
-	FirmwareUpdateEndTime   string     `gorm:"size:5;default:'23:59'" json:"firmware_update_end_time"`   // End time for firmware updates in HH:MM format
+	FirmwareUpdateStartTime string     `gorm:"size:5;default:'00:00'" json:"firmware_update_start_time"`
+	FirmwareUpdateEndTime   string     `gorm:"size:5;default:'23:59'" json:"firmware_update_end_time"`
+	MaximumCompatibility    bool       `gorm:"default:false" json:"maximum_compatibility"`
+	TouchbarMode            string     `gorm:"size:10;default:'tap'" json:"touchbar_mode"`
+	TemperatureProfile      string     `gorm:"size:10;default:'default'" json:"temperature_profile"`
+	ScreenOrientation       string     `gorm:"size:20;default:'auto'" json:"screen_orientation"`
 	CreatedAt               time.Time  `json:"created_at"`
 	UpdatedAt               time.Time  `json:"updated_at"`
 
@@ -412,6 +417,7 @@ type PluginDefinition struct {
 	// Screen options (for private plugins)
 	RemoveBleedMargin *bool          `gorm:"default:false" json:"remove_bleed_margin,omitempty"` // Nullable for backward compatibility
 	EnableDarkMode    *bool          `gorm:"default:false" json:"enable_dark_mode,omitempty"`    // Nullable for backward compatibility
+	EnableBackdrop    *bool          `gorm:"default:false" json:"enable_backdrop,omitempty"`
 	SampleData        datatypes.JSON `json:"sample_data,omitempty"`                              // JSON sample data for preview/testing
 	
 	// Schema versioning for form field changes
@@ -493,13 +499,17 @@ func (dl *DeviceLog) BeforeCreate(tx *gorm.DB) error {
 // FirmwareVersion represents a firmware version available for devices
 type FirmwareVersion struct {
 	ID               uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
-	Version          string    `gorm:"size:50;not null;uniqueIndex" json:"version"`
+	Version          string    `gorm:"size:50;not null;uniqueIndex:idx_version_family" json:"version"`
+	ModelFamily      string    `gorm:"size:50;not null;default:'trmnl';uniqueIndex:idx_version_family" json:"model_family"`
+	ChipFamily       string    `gorm:"size:50" json:"chip_family,omitempty"`
+	FamilyLabel      string    `gorm:"size:200" json:"family_label,omitempty"`
 	ReleaseNotes     string    `gorm:"type:text" json:"release_notes,omitempty"`
 	DownloadURL      string    `gorm:"size:1000;not null" json:"download_url"`
 	FileSize         int64     `json:"file_size,omitempty"`
 	FilePath         string    `gorm:"size:1000" json:"file_path,omitempty"` // Local storage path
 	SHA256           string    `gorm:"size:64" json:"sha256,omitempty"`
 	IsLatest         bool      `gorm:"default:false" json:"is_latest"`
+	IsStable         bool      `gorm:"default:false" json:"is_stable"`
 	IsDownloaded     bool      `gorm:"default:false" json:"is_downloaded"`
 	DownloadStatus   string    `gorm:"size:20;default:'pending'" json:"download_status"` // pending, downloading, downloaded, failed
 	DownloadProgress int       `gorm:"default:0" json:"download_progress"`               // 0-100
@@ -530,9 +540,14 @@ type DeviceModel struct {
 	HasBattery     bool       `gorm:"default:true" json:"has_battery"`
 	HasButtons     int        `gorm:"default:0" json:"has_buttons"`            // Number of buttons
 	Capabilities   string     `gorm:"type:text" json:"capabilities,omitempty"` // JSON array of capabilities
+	ScaleFactor    float64    `gorm:"default:1.0" json:"scale_factor"`
+	Rotation       int        `gorm:"default:0" json:"rotation"`
+	OffsetX        int        `gorm:"default:0" json:"offset_x"`
+	OffsetY        int        `gorm:"default:0" json:"offset_y"`
+	MimeType       string     `gorm:"size:50;default:'image/png'" json:"mime_type"`
 	MinFirmware    string     `gorm:"size:50" json:"min_firmware,omitempty"`
 	IsActive       bool       `gorm:"default:true" json:"is_active"`
-	ApiLastSeenAt  *time.Time `json:"api_last_seen_at,omitempty"` // Track when last seen in API
+	ApiLastSeenAt  *time.Time `json:"api_last_seen_at,omitempty"`
 	CreatedAt      time.Time  `json:"created_at"`
 	UpdatedAt      time.Time  `json:"updated_at"`
 	DeletedAt      *time.Time `gorm:"index" json:"deleted_at,omitempty"` // Soft delete
@@ -578,17 +593,20 @@ func (rc *RenderedContent) BeforeCreate(tx *gorm.DB) error {
 // RenderQueue represents pending render jobs for plugins
 type RenderQueue struct {
 	ID           uuid.UUID  `gorm:"type:uuid;primaryKey" json:"id"`
-	
-	PluginInstanceID uuid.UUID `gorm:"type:uuid;not null;index" json:"plugin_instance_id"`
-	
+
+	PluginInstanceID *uuid.UUID `gorm:"type:uuid;index" json:"plugin_instance_id,omitempty"`
+
 	Priority         int        `gorm:"default:0;index" json:"priority"` // Higher number = higher priority
 	ScheduledFor     time.Time  `gorm:"not null;index" json:"scheduled_for"`
 	Status           string     `gorm:"size:50;default:pending;index" json:"status"` // pending, processing, completed, failed
 	IndependentRender bool       `gorm:"default:false" json:"independent_render"` // true = don't reschedule after completion
+	IsPreview        bool       `gorm:"default:false" json:"is_preview"`
+	PreviewData      datatypes.JSON  `gorm:"type:jsonb" json:"preview_data,omitempty"`
+	PreviewImagePath string     `gorm:"size:1000" json:"preview_image_path,omitempty"`
 	Attempts         int        `gorm:"default:0" json:"attempts"`
 	LastAttempt      *time.Time `json:"last_attempt,omitempty"`
 	ErrorMessage     string     `gorm:"type:text" json:"error_message,omitempty"`
-	RenderDurationMs int        `gorm:"default:0" json:"render_duration_ms"` // Render duration in milliseconds
+	RenderDurationMs int        `gorm:"default:0" json:"render_duration_ms"`
 	CreatedAt        time.Time  `json:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at"`
 

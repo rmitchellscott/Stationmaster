@@ -285,5 +285,6 @@ docker build -t stationmaster .
 - Consider using file-based secrets for sensitive configuration
 
 ## License
+Copyright (C) 2025 Mitchell Scott
 
-MIT
+Licensed under the GNU Affero General Public License v3.0.

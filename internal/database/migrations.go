@@ -1080,6 +1080,24 @@ func RunMigrations(logPrefix string) error {
 				return nil
 			},
 		},
+		{
+			ID: "20260812_firmware_canonical_families",
+			Migrate: func(tx *gorm.DB) error {
+				// Safe to discard: the next discovery pass rebuilds these under canonical keys.
+				result := tx.Exec(`DELETE FROM firmware_versions
+					WHERE model_family LIKE '%/%'
+					   OR model_family IN ('trmnl_og', 'trmnl_bwry', 'trmnl_gen2')
+					   OR version = 'littlefs'`)
+				if result.Error != nil {
+					return fmt.Errorf("failed to remove non-canonical firmware families: %w", result.Error)
+				}
+				logging.Info("[MIGRATION] Removed firmware versions recorded under non-canonical families", "count", result.RowsAffected)
+				return nil
+			},
+			Rollback: func(tx *gorm.DB) error {
+				return nil
+			},
+		},
 	}
 
 	// Create migrator with our migrations

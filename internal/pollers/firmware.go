@@ -58,6 +58,7 @@ type discoveredVersion struct {
 	ReleasedAt  time.Time
 	FileSize    int64
 	IsStable    bool
+	IsLatest    bool
 	ChipFamily  string
 	Label       string
 }
@@ -115,17 +116,38 @@ func (p *FirmwarePoller) DiscoverFirmware(ctx context.Context) error {
 		return fmt.Errorf("failed to discover firmware versions: %w", err)
 	}
 
-	created := 0
-	for _, v := range versions {
-		if err := p.upsertFirmwareVersion(ctx, v); err != nil {
-			logging.Error("[FIRMWARE DISCOVERY] Error upserting version", "family", v.Family, "version", v.Version, "error", err)
-			continue
-		}
-		created++
-	}
+	created := p.upsertAll(ctx, versions, "[FIRMWARE DISCOVERY]")
 
 	logging.Info("[FIRMWARE DISCOVERY] Firmware discovery completed", "versions", created)
 	return nil
+}
+
+// Recomputed per family, not per row: the manifest promotes existing versions to stable.
+func (p *FirmwarePoller) upsertAll(ctx context.Context, versions []discoveredVersion, logPrefix string) int {
+	upserted := 0
+	latestByFamily := map[string]string{}
+
+	for _, v := range versions {
+		if err := p.upsertFirmwareVersion(ctx, v); err != nil {
+			logging.Error(logPrefix+" Error upserting version", "family", v.Family, "version", v.Version, "error", err)
+			continue
+		}
+		if _, seen := latestByFamily[v.Family]; !seen {
+			latestByFamily[v.Family] = ""
+		}
+		if v.IsLatest {
+			latestByFamily[v.Family] = v.Version
+		}
+		upserted++
+	}
+
+	for family, latest := range latestByFamily {
+		if err := p.updateLatestForFamily(family, latest); err != nil {
+			logging.Error(logPrefix+" Error updating latest version", "family", family, "error", err)
+		}
+	}
+
+	return upserted
 }
 
 func (p *FirmwarePoller) StartPendingDownloads(ctx context.Context) error {
@@ -170,11 +192,7 @@ func (p *FirmwarePoller) poll(ctx context.Context) error {
 		return fmt.Errorf("failed to discover firmware versions: %w", err)
 	}
 
-	for _, v := range versions {
-		if err := p.upsertFirmwareVersion(ctx, v); err != nil {
-			logging.Error("[FIRMWARE POLLER] Error upserting version", "family", v.Family, "version", v.Version, "error", err)
-		}
-	}
+	p.upsertAll(ctx, versions, "[FIRMWARE POLLER]")
 
 	if p.firmwareMode == "download" && config.Get("FIRMWARE_AUTO_DOWNLOAD", "true") == "true" {
 		p.StartPendingDownloads(ctx)
@@ -219,14 +237,8 @@ func (p *FirmwarePoller) discoverAllVersions(ctx context.Context) ([]discoveredV
 
 	// Merge: S3 versions enriched with manifest metadata
 	var results []discoveredVersion
-	latestByFamily := map[string]string{} // track latest version per family from S3
 
 	for _, sv := range s3Versions {
-		// Determine if latest in S3 (by date — s3Versions are already sorted newest first per family)
-		if _, exists := latestByFamily[sv.Family]; !exists {
-			latestByFamily[sv.Family] = sv.Version
-		}
-
 		stable := false
 		if familyStable, ok := stableSet[sv.Family]; ok {
 			stable = familyStable[sv.Version]
@@ -242,6 +254,7 @@ func (p *FirmwarePoller) discoverAllVersions(ctx context.Context) ([]discoveredV
 			ReleasedAt:  sv.ReleasedAt,
 			FileSize:    sv.FileSize,
 			IsStable:    stable,
+			IsLatest:    latestStable[sv.Family] == sv.Version,
 			ChipFamily:  meta.ChipFamily,
 			Label:       meta.Label,
 		})
@@ -257,6 +270,7 @@ type s3Version struct {
 	DownloadURL string
 	ReleasedAt  time.Time
 	FileSize    int64
+	FlashImage  bool
 }
 
 func (p *FirmwarePoller) fetchS3Versions(ctx context.Context) ([]s3Version, error) {
@@ -282,43 +296,91 @@ func (p *FirmwarePoller) fetchS3Versions(ctx context.Context) ([]s3Version, erro
 	}
 
 	var versions []s3Version
+	indexByFamilyVersion := map[string]int{}
+
 	for _, entry := range listing.Contents {
-		if !strings.HasSuffix(entry.Key, ".bin") || entry.Size == 0 {
+		if entry.Size == 0 {
 			continue
 		}
 
-		family, rawVersion := parseS3Key(entry.Key)
-		if rawVersion == "" {
+		family, rawVersion, flashImage, ok := parseS3Key(entry.Key)
+		if !ok {
 			continue
 		}
 
-		versions = append(versions, s3Version{
+		version := s3Version{
 			Family:      family,
 			Version:     cleanVersion(rawVersion),
 			RawVersion:  rawVersion,
 			DownloadURL: fmt.Sprintf("%s/%s", p.s3BucketURL, entry.Key),
 			ReleasedAt:  entry.LastModified,
 			FileSize:    entry.Size,
-		})
+			FlashImage:  flashImage,
+		}
+
+		dedupeKey := family + "/" + version.Version
+		if idx, seen := indexByFamilyVersion[dedupeKey]; seen {
+			if !flashImage && versions[idx].FlashImage {
+				versions[idx] = version
+			}
+			continue
+		}
+
+		indexByFamilyVersion[dedupeKey] = len(versions)
+		versions = append(versions, version)
 	}
 
 	return versions, nil
 }
 
-// parseS3Key extracts family and version from S3 key.
-// "FW1.7.8.bin" -> ("trmnl", "FW1.7.8")
-// "trmnl_x/FW1.7.7.bin" -> ("trmnl_x", "FW1.7.7")
-func parseS3Key(key string) (string, string) {
-	key = strings.TrimSuffix(key, ".bin")
-	if idx := strings.LastIndex(key, "/"); idx >= 0 {
-		family := key[:idx]
-		version := key[idx+1:]
-		if version == "" {
-			return "", ""
-		}
-		return family, version
+// S3 renamed these directories; releases.json still uses the old keys.
+var s3FamilyAliases = map[string]string{
+	"trmnl_og":   "trmnl",
+	"trmnl_bwry": "trmnl_4clr",
+}
+
+// "trmnl_og/FW1.8.12.bin"       -> ("trmnl", "FW1.8.12", false, true)
+// "trmnl_og/flash/FW1.8.12.bin" -> ("trmnl", "FW1.8.12", true, true)
+func parseS3Key(key string) (family string, version string, flashImage bool, ok bool) {
+	if !strings.HasSuffix(key, ".bin") {
+		return "", "", false, false
 	}
-	return "trmnl", key
+	key = strings.TrimSuffix(key, ".bin")
+
+	idx := strings.LastIndex(key, "/")
+	if idx < 0 {
+		// Legacy layout: OG over-the-air binaries lived at the bucket root.
+		if !strings.HasPrefix(key, "FW") {
+			return "", "", false, false
+		}
+		return "trmnl", key, false, true
+	}
+
+	prefix := key[:idx]
+	version = key[idx+1:]
+	if version == "" {
+		return "", "", false, false
+	}
+
+	if strings.HasSuffix(prefix, "/dev") {
+		return "", "", false, false
+	}
+
+	flashImage = strings.HasSuffix(prefix, "/flash")
+	if flashImage {
+		prefix = strings.TrimSuffix(prefix, "/flash")
+	}
+
+	prefix = strings.TrimPrefix(prefix, "byod/")
+	if prefix == "" || strings.Contains(prefix, "/") {
+		return "", "", false, false
+	}
+
+	if alias, renamed := s3FamilyAliases[prefix]; renamed {
+		prefix = alias
+	}
+
+	return prefix, version, flashImage, true
 }
 
 func (p *FirmwarePoller) fetchManifest(ctx context.Context) (map[string]FirmwareManifestEntry, error) {
@@ -372,6 +434,10 @@ func (p *FirmwarePoller) upsertFirmwareVersion(ctx context.Context, v discovered
 			existing.FileSize = v.FileSize
 			changed = true
 		}
+		if existing.DownloadURL != v.DownloadURL && v.DownloadURL != "" {
+			existing.DownloadURL = v.DownloadURL
+			changed = true
+		}
 		if changed {
 			return p.db.Save(&existing).Error
 		}
@@ -402,11 +468,11 @@ func (p *FirmwarePoller) upsertFirmwareVersion(ctx context.Context, v discovered
 
 	logging.Info("[FIRMWARE POLLER] Added firmware version", "family", v.Family, "version", v.Version, "stable", v.IsStable)
 
-	// Update is_latest: the most recently released stable version per family
-	return p.updateLatestForFamily(v.Family)
+	return nil
 }
 
-func (p *FirmwarePoller) updateLatestForFamily(family string) error {
+// Dates cannot order versions: flash-image republishes carry the re-upload date.
+func (p *FirmwarePoller) updateLatestForFamily(family string, manifestLatest string) error {
 	tx := p.db.Begin()
 
 	// Clear latest for this family
@@ -415,11 +481,17 @@ func (p *FirmwarePoller) updateLatestForFamily(family string) error {
 		return err
 	}
 
-	// Find most recent stable version for this family
 	var latest database.FirmwareVersion
-	err := tx.Where("model_family = ? AND is_stable = ?", family, true).Order("released_at DESC").First(&latest).Error
+	var err error
+	if manifestLatest != "" {
+		err = tx.Where("model_family = ? AND version = ?", family, manifestLatest).First(&latest).Error
+	} else {
+		err = gorm.ErrRecordNotFound
+	}
 	if err == gorm.ErrRecordNotFound {
-		// No stable versions — use most recent overall
+		err = tx.Where("model_family = ? AND is_stable = ?", family, true).Order("released_at DESC").First(&latest).Error
+	}
+	if err == gorm.ErrRecordNotFound {
 		err = tx.Where("model_family = ?", family).Order("released_at DESC").First(&latest).Error
 	}
 	if err != nil {

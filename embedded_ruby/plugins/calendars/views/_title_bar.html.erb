@@ -1,0 +1,14 @@
+<%# the controller adds plugin_name/instance_name to the locals hash under string %>
+<%# keys, which never surface as template locals, so both read back blank. it also %>
+<%# sets them as controller instance variables, and those do reach the view. %>
+<% icon_name = local_assigns[:plugin_name].presence || @plugin_name %>
+<% title_instance = local_assigns[:instance_name].presence || @instance_name %>
+
+<div class="title_bar">
+  <% if icon_name.present? %>
+    <%# not every plugin has an icon upstream, and a 404 renders as a broken-image glyph %>
+    <img class="image" onerror="this.remove()" src="<%= Rails.application.credentials.base_url %>/images/plugins/<%= icon_name %>--render.svg" />
+  <% end %>
+  <span class="title">Upcoming Events</span>
+  <span class="instance"><%= title_instance %></span>
+</div>

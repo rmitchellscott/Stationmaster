@@ -1,0 +1,39 @@
+<%# the graph is 589x175 in this slot, so the figures sit beside it rather than above %>
+<div class="view view--half_horizontal">
+  <div class="layout">
+    <div class="flex flex--center-y gap--large">
+      <div class="flex flex--col gap--small">
+        <div class="item">
+          <div class="meta"></div>
+          <div class="content">
+            <span class="value value--large"><%= contributions[:total] %></span>
+            <span class="label">Contributions</span>
+          </div>
+        </div>
+        <div class="item">
+          <div class="meta"></div>
+          <div class="content">
+            <span class="value"><%= stats[:current_streak] %></span>
+            <span class="label">Current streak</span>
+          </div>
+        </div>
+      </div>
+
+      <div id="github_commit_graph">
+        <% contributions[:commits].each do |week_of_commits| %>
+          <% week_of_commits['contributionDays'].each do |day| %>
+            <span class="day <%= git_commit_grayscale(day['contributionCount']) %>"></span>
+          <% end %>
+        <% end %>
+      </div>
+    </div>
+  </div>
+
+  <div class="title_bar">
+    <img class="image" onerror="this.remove()" src="<%= Rails.application.credentials.base_url %>/images/plugins/github--render.svg" />
+    <span class="title">GitHub</span>
+    <span class="instance"><%= instance_name %></span>
+  </div>
+</div>
+
+<%= render 'plugins/github_commit_graph/common' %>

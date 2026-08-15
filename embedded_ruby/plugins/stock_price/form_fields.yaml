@@ -1,0 +1,28 @@
+- keyname: symbol
+  field_type: textarea  
+  name: Stock Symbols
+  description: Enter ticker symbols separated by commas (e.g., AAPL,GOOGL,MSFT). Supports up to 12 symbols.
+  placeholder: "AAPL,GOOGL,MSFT,TSLA"
+  rows: 3
+
+- keyname: currency
+  field_type: select
+  name: Currency
+  description: Choose the currency for displaying stock prices
+  options:
+    - US Dollar (USD): USD
+    - Euro (EUR): EUR  
+    - Canadian Dollar (CAD): CAD
+    - Swiss Franc (CHF): CHF
+    - British Pound (GBP): GBP
+    - South Korean Won (KRW): KRW
+    - Chinese Yuan (CNY): CNY
+    - Japanese Yen (JPY): JPY
+    - Indian Rupee (INR): INR
+  default: USD
+
+- keyname: extended_hours
+  field_type: checkbox
+  name: Extended Hours Trading
+  description: Include extended hours trading data (pre-market and after-hours)
+  default: false

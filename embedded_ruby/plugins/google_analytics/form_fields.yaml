@@ -1,0 +1,24 @@
+- keyname: property_id
+  field_type: text
+  name: GA4 Property ID
+  description: Your Google Analytics 4 Property ID in format 123456789
+  placeholder: 123456789
+  optional: false
+
+- keyname: lookback_period
+  field_type: number
+  name: Lookback Period (Days)
+  description: Number of days to look back for analytics data
+  placeholder: 7
+  default: 7
+  optional: false
+
+- keyname: lookback_until
+  field_type: select
+  name: Data Range End
+  description: Choose when to end the data collection period
+  options:
+    - Today: today
+    - Yesterday: yesterday
+  default: today
+  optional: true

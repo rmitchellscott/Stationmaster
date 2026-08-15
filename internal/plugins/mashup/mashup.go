@@ -8,16 +8,15 @@ import (
 	"image"
 	"image/color"
 	"image/png"
-	"io"
-	"net/http"
-	"os"
 	"strings"
 	"time"
 
+	"github.com/rmitchellscott/stationmaster/internal/auth"
 	"github.com/rmitchellscott/stationmaster/internal/config"
 	"github.com/rmitchellscott/stationmaster/internal/database"
 	"github.com/rmitchellscott/stationmaster/internal/imageprocessing"
 	"github.com/rmitchellscott/stationmaster/internal/logging"
+	"github.com/rmitchellscott/stationmaster/internal/pluginruntime"
 	"github.com/rmitchellscott/stationmaster/internal/plugins"
 	"github.com/rmitchellscott/stationmaster/internal/plugins/private"
 	"github.com/rmitchellscott/stationmaster/internal/rendering"
@@ -727,26 +726,9 @@ func (p *MashupPlugin) buildMashupHTML(layout string, renderedSlots map[string]s
 	)
 }
 
-// fetchExternalPluginSlotHTML fetches rendered HTML from Ruby service for external plugin slots in mashup
 func (p *MashupPlugin) fetchExternalPluginSlotHTML(childInfo ChildData, slotInfo database.MashupSlotInfo, ctx plugins.PluginContext) (string, error) {
-	// Get service URL (same as external plugin)
-	serviceURL := os.Getenv("EXTERNAL_PLUGIN_SERVICES")
-	if serviceURL == "" {
-		serviceURL = "http://stationmaster-plugins:3000"
-	}
-	
-	// Get plugin identifier from definition
 	pluginIdentifier := childInfo.Instance.PluginDefinition.Identifier
-	
-	// Build URL for plugin execution
-	url := fmt.Sprintf("%s/api/plugins/%s/execute", serviceURL, pluginIdentifier)
-	
-	// Create HTTP client with timeout
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-	}
-	
-	// Parse settings from child instance
+
 	var formFieldValues map[string]interface{}
 	if childInfo.Instance.Settings != nil {
 		if err := json.Unmarshal(childInfo.Instance.Settings, &formFieldValues); err != nil {
@@ -755,58 +737,32 @@ func (p *MashupPlugin) fetchExternalPluginSlotHTML(childInfo ChildData, slotInfo
 	} else {
 		formFieldValues = make(map[string]interface{})
 	}
-	
-	// Determine layout based on slot template type
+
 	layout := p.getLayoutForSlot(slotInfo.Position, &childInfo.Instance.PluginDefinition)
-	
-	// Create TRMNL data structure using shared builder
+
 	trmnlBuilder := rendering.NewTRNMLDataBuilder()
 	trmnlData := trmnlBuilder.BuildTRNMLData(ctx, childInfo.Instance, formFieldValues)
-	
-	// Prepare POST request with settings and layout info
-	requestBody := map[string]interface{}{
-		"settings": formFieldValues,
-		"layout":   layout,
-		"trmnl":    trmnlData,
+
+	runCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if ctx.User != nil {
+		if tokens := auth.AccessTokensForUser(runCtx, ctx.User.ID.String()); len(tokens) > 0 {
+			trmnlData["oauth_tokens"] = tokens
+		}
 	}
-	
-	jsonData, err := json.Marshal(requestBody)
+
+	html, err := pluginruntime.New().Execute(runCtx, pluginIdentifier, layout, formFieldValues, trmnlData)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal request body: %w", err)
+		return "", err
 	}
-	
-	// Create POST request
-	req, err := http.NewRequest("POST", url, strings.NewReader(string(jsonData)))
-	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	
-	// Execute request
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("HTTP request failed: %w", err)
-	}
-	defer resp.Body.Close()
-	
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("plugin service returned status %d", resp.StatusCode)
-	}
-	
-	// Read response as plain text (HTML)
-	var buf strings.Builder
-	_, err = io.Copy(&buf, resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("failed to read response body: %w", err)
-	}
-	
-	html := buf.String()
-	logging.Debug("[MASHUP] Fetched rendered HTML for external plugin slot", 
-		"plugin", pluginIdentifier, 
+
+	logging.Debug("[MASHUP] Fetched rendered HTML for external plugin slot",
+		"plugin", pluginIdentifier,
 		"slot", slotInfo.Position,
 		"layout", layout,
 		"html_length", len(html))
-	
+
 	return html, nil
 }
 

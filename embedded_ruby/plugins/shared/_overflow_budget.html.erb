@@ -1,0 +1,42 @@
+<script>
+  // The overflow engine's data-overflow-max-height="auto" budget is computed from
+  // getBoundingClientRect, which reads through the framework's transform: scale().
+  // On a scaled panel the engine therefore writes a max-height --pixel-ratio times
+  // too large and trims nothing, so the last item runs off the bottom. Every value
+  // read here is pre-transform, so the budget is right at any pixel ratio.
+  // Runs before the engine, which schedules itself on window load.
+  (function () {
+    function budgetFor(el) {
+      var screenEl = el.closest('.screen');
+      if (!screenEl) return null;
+
+      var available = parseFloat(getComputedStyle(screenEl).height);
+
+      // offsetTop walks to the nearest positioned ancestor, so accumulate to .screen
+      var node = el;
+      while (node && node !== screenEl) {
+        available -= node.offsetTop;
+        node = node.offsetParent;
+      }
+
+      var view = el.closest('.view');
+      var bar = view && view.querySelector('.title_bar');
+      if (bar) available -= bar.offsetHeight;
+
+      return Math.floor(available);
+    }
+
+    function apply() {
+      document.querySelectorAll('[data-overflow-max-height="auto"]').forEach(function (el) {
+        var budget = budgetFor(el);
+        if (budget && budget > 0) el.setAttribute('data-overflow-max-height', String(budget));
+      });
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', apply, { once: true });
+    } else {
+      apply();
+    }
+  })();
+</script>

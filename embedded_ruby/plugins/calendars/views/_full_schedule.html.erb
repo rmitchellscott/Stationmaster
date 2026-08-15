@@ -1,0 +1,73 @@
+<% days_to_show = 3 %>
+
+<%# .item/.content are not used for the rows: .content is a shrink-to-fit flex box %>
+<%# that right-aligns its children, so a full-width row with the end time pushed %>
+<%# to the far edge cannot be built from them. tone and type still come from the %>
+<%# framework classes, which is what carries 1-bit / 2-bit / 4-bit. %>
+<style media="screen">
+  .schedule-day {
+    text-align: center;
+    padding: 2px 0;
+  }
+
+  /* the band label sits on its own fill, which at 1-bit is stipple rather than a */
+  /* tint, so it inverts there instead */
+  .screen--1bit .schedule-day {
+    background-color: var(--black);
+    background-image: none;
+  }
+
+  .screen--1bit .schedule-day .label {
+    color: var(--white);
+  }
+
+  .schedule-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 3px 0;
+  }
+
+  .schedule-row .schedule-main {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+  }
+
+  .schedule-row .description {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+</style>
+
+<div class="view view--full">
+  <div class="layout layout--col layout--top">
+    <div class="list" data-list-limit="true" data-list-hidden-count="true">
+      <% formulate_and_group_events_by_day(events, today_in_tz, days_to_show).to_h.each_pair do |day, day_events| %>
+        <div class="schedule-day bg--gray-7">
+          <span class="label label--small"><%= day %></span>
+        </div>
+        <% day_events.each do |event| %>
+          <div class="schedule-row">
+            <span class="label label--small label--inverted"><%= event[:all_day] ? '#' : event[:start] %></span>
+            <span class="schedule-main">
+              <span class="title title--small"><%= event[:summary] %></span>
+              <% if include_description %>
+                <span class="description"><%= event[:description] %></span>
+              <% end %>
+            </span>
+            <% unless event[:all_day] %>
+              <span class="label label--small label--inverted"><%= event[:end] %></span>
+            <% end %>
+          </div>
+        <% end %>
+      <% end %>
+    </div>
+  </div>
+
+  <%= render partial: "plugins/calendars/title_bar", locals: local_assigns %>
+</div>

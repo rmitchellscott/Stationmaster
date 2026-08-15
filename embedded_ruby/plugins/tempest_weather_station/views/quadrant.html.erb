@@ -1,0 +1,19 @@
+<div class="view view--quadrant">
+  <div class="layout layout--col layout--center">
+    <div class="item">
+      <div class="meta"></div>
+      <div class="content">
+        <span class="value value--large" data-fit-value="true"><%= temperature&.round %>°</span>
+        <span class="label"><%= conditions %></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="title_bar">
+    <img class="image" onerror="this.remove()" src="<%= Rails.application.credentials.base_url %>/images/plugins/tempest_weather_station--render.svg" />
+    <span class="title">Tempest</span>
+    <span class="instance"><%= instance_name %></span>
+  </div>
+</div>
+
+<%= render 'plugins/tempest_weather_station/common' %>

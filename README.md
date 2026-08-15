@@ -189,7 +189,17 @@ npm run dev
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `EXTERNAL_PLUGIN_SERVICES` | - | URL for TRMNL open source plugin service |
+| `GITHUB_API_TOKEN` | - | Token for the github_commit_graph plugin |
+| `MARKETDATA_API_TOKEN` | - | Token for the stock_price plugin |
+| `CURRENCY_API_KEY` | - | Key for currency conversion |
+| `GOOGLE_CLIENT_ID` | - | OAuth client for the Google Calendar and Analytics plugins |
+| `GOOGLE_CLIENT_SECRET` | - | OAuth secret for the Google plugins |
+| `TODOIST_CLIENT_ID` | - | OAuth client for the Todoist plugin |
+| `TODOIST_CLIENT_SECRET` | - | OAuth secret for the Todoist plugin |
+
+The TRMNL open source plugins run in the Ruby process embedded in this container, so no
+separate plugin service or URL is needed. A plugin whose credential above is unset is
+skipped during discovery and will not appear in the plugin list.
 
 ### Logging & Debugging
 

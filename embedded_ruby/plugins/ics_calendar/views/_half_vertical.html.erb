@@ -1,0 +1,149 @@
+<% if event_layout == 'week' %>
+  <% random_suffix = SecureRandom.hex(2) %>
+
+  <%= render "plugins/calendars/common" %>
+
+  <%# week-only styling, will break month view so not inside common %>
+  <style media="screen">
+    #calendar-half-vertical-week-<%= random_suffix %> {
+      -webkit-font-smoothing: none !important;
+    }
+
+    #calendar-half-vertical-week-<%= random_suffix %>, .fc {
+      --fc-event-bg-color: transparent;
+      --fc-event-border-color: var(--gray-3);
+      --fc-event-text-color: var(--black);
+      --fc-today-bg-color: transparent;
+    }
+
+    .fc-timegrid-cols table[role="presentation"] {
+      height: 100%;
+    }
+
+    /* Remove all borders */
+    .fc-theme-standard .fc-scrollgrid,
+    .fc-theme-standard td,
+    .fc-theme-standard th,
+    .fc-theme-standard .fc-scrollgrid-section > td,
+    .fc-theme-standard .fc-scrollgrid-section > th,
+    .fc-theme-standard .fc-scrollgrid-section-liquid > td,
+    .fc-theme-standard .fc-scrollgrid-section-liquid > th,
+    .fc-theme-standard .fc-list,
+    .fc-theme-standard .fc-list-day-cushion {
+      border: none !important;
+    }
+
+    .fc .fc-timegrid-slot {
+      border-bottom: none !important;
+    }
+
+  </style>
+
+  <div id="calendar-half-vertical-week-<%= random_suffix %>" style="height: 100%; width: 100%"></div>
+  <script src='https://usetrmnl.com/fullcalendar/index.global.min.js'></script>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      var calendarEl = document.getElementById('calendar-half-vertical-week-<%= random_suffix %>');
+      // FullCalendar measures with getBoundingClientRect, which reads through the
+      // framework's scale transform, so its own row expansion lays out for the
+      // physical panel. Computed height is pre-transform and is the honest one.
+      var screenEl = calendarEl.closest('.screen');
+      var screenCS = screenEl ? getComputedStyle(screenEl) : null;
+      var logicalHeight = screenCS ? parseFloat(screenCS.height) : 480;
+
+      // .screen is a flex container, so a percentage width on this flex item
+      // collapses to zero. An explicit logical width sidesteps the flex sizing.
+      if (screenCS) calendarEl.style.width = parseFloat(screenCS.width) + 'px';
+      var startHour = parseInt('<%= scroll_time %>'.split(':')[0], 10);
+      var endHour = parseInt('<%= scroll_time_end %>'.split(':')[0], 10);
+      var slotCount = Math.max((endHour - startHour) * 2, 1);
+
+      function fitSlotsTo(chromeHeight) {
+        calendarEl.style.setProperty(
+          '--fc-slot-height',
+          Math.max(Math.floor((logicalHeight - chromeHeight) / slotCount), 8) + 'px'
+        );
+      }
+
+      fitSlotsTo(80);
+      var calendar = new FullCalendar.Calendar(calendarEl, {
+        now: '<%= today_in_tz.to_date %>',
+        timeZone: new Date('<%= events.reject { |e| e[:all_day] }.first&.dig(:start_full) %>').getTimezoneOffset(),
+        headerToolbar: false,
+        height: logicalHeight,
+        initialView: 'timeGridFourDay', // the 3-day view defined below; a full week does not fit a half-width slot
+        scrollTime: '<%= "#{scroll_time.split(':')[0]}:00" %>', // round down to the full hour
+        slotMinTime: '<%= "#{scroll_time.split(':')[0]}:00" %>', // round down to the full hour
+        slotMaxTime: '<%= scroll_time_end %>', // works with expandRows (true) and contentHeight (100%) to show a full heigh grid with larger/smaller slots
+        firstDay: <%= today_in_tz.to_datetime.wday %>,
+        eventClassNames: 'bg--gray-6',
+        dayCellClassNames: function(arg) {
+          return [0, 6].includes(arg.date.getDay()) ? ['bg--gray-7'] : [];
+        },
+        views: {
+          timeGridFourDay: {
+            type: 'timeGrid',
+            duration: { days: 3 }
+          }
+        },
+        eventTimeFormat: {
+          hour: 'numeric', // required for 0-24 number to appear at all
+          hour12: <%= time_format == 'am/pm' %> // if true: 1-12; if false: 0-23
+        },
+        events: <%== events.map {|e| { allDay: e[:all_day], title: e[:summary], description: e[:description], start: e[:start_full], end: e[:end_full] } }.to_json %>,
+        displayEventTime: <%= include_event_time %>,
+        locale: '<%= locale %>',
+        schedulerLicenseKey: '<%= Rails.application.credentials.plugins.full_calendar.license_key %>'
+      });
+      calendar.render();
+
+      // the header and all-day row are measurable only once rendered, and are
+      // taller on a larger panel, so the estimate above is corrected here
+      var header = calendarEl.querySelector('.fc-scrollgrid-section-header');
+      var allDay = calendarEl.querySelector('.fc-scrollgrid-section:not(.fc-scrollgrid-section-header):not(.fc-scrollgrid-section-liquid)');
+      fitSlotsTo((header ? header.offsetHeight : 0) + (allDay ? allDay.offsetHeight : 0));
+    });
+  </script>
+<% else %>
+  <% zoom_mode ||= false %>
+
+  <% days_to_show = event_layout == 'today_only' ? 1 : 3 %>
+  <% date_heading_size = zoom_mode ? 'large' : 'medium' %>
+  <% heading_size = zoom_mode ? 'medium' : 'small' %>
+  <% event_time_style = zoom_mode ? 'inverted' : 'underline' %>
+
+  <div class="view view--half_vertical">
+    <div class="layout layout--col layout--top">
+      <div class="columns">
+        <div class="column" data-list-limit="true" data-list-max-height="340" data-list-hidden-count="true">
+          <div class="list">
+            <% formulate_and_group_events_by_day(events, today_in_tz, days_to_show).to_h.each_pair do |day, events| %>
+              <% idx = 0 %>
+              <span class="label label--<%= date_heading_size %>"><%= day %></span>
+              <% events.each do |event| %>
+                <% if event[:all_day] %>
+                  <%= render partial: 'plugins/calendars/all_day_event', locals: { event: event, include_description:, heading_size: } %>
+                <% else %>
+                  <div class="item">
+                    <div class="meta">
+                      <span class="index"><%= idx += 1 %></span>
+                    </div>
+                    <div class="content">
+                      <span class="title title--<%= heading_size %>"><%= event[:summary] %></span>
+                      <% if include_description %><span class="description"><%= event[:description] %></span><% end %>
+                      <div class="flex gap--xsmall">
+                        <span class="label label--small label--<%= event_time_style %>"><%= "#{event[:start]}" %> - <%= event[:end] %></span>
+                      </div>
+                    </div>
+                  </div>
+                <% end %>
+              <% end %>
+            <% end %>
+          </div>
+        </div>
+      </div>
+    </div>
+    <%= render partial: "plugins/calendars/title_bar", locals: local_assigns %>
+  </div>
+<% end %>

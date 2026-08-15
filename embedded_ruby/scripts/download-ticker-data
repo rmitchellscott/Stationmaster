@@ -1,0 +1,57 @@
+#!/bin/sh
+set -e
+
+echo "Downloading SEC company tickers data..."
+
+# Create the db/data directory
+mkdir -p db/data
+
+# Download the SEC company tickers JSON
+SEC_URL="https://www.sec.gov/files/company_tickers.json"
+TEMP_FILE="/tmp/company_tickers.json"
+OUTPUT_FILE="db/data/ticker-name.json"
+
+# Download with curl (SEC requires User-Agent header)
+if ! curl -s -f -H "User-Agent: StationMaster-Plugins/1.0 (contact@example.com)" -o "$TEMP_FILE" "$SEC_URL"; then
+    echo "Warning: Failed to download SEC data from $SEC_URL"
+    echo "Creating empty ticker data file - plugin will show symbols instead of company names"
+    echo "{}" > "$OUTPUT_FILE"
+    echo "Created empty ticker data at $OUTPUT_FILE"
+    exit 0
+fi
+
+echo "Transforming SEC data format..."
+
+# Transform the JSON format using Ruby
+ruby -e "
+require 'json'
+
+begin
+  # Read the SEC JSON file
+  sec_data = JSON.parse(File.read('$TEMP_FILE'))
+  
+  # Transform from SEC format to plugin format
+  ticker_names = {}
+  
+  sec_data.each do |key, company|
+    ticker = company['ticker']
+    title = company['title']
+    ticker_names[ticker] = title if ticker && title
+  end
+  
+  # Write the transformed JSON
+  File.write('$OUTPUT_FILE', JSON.pretty_generate(ticker_names))
+  
+  puts \"Successfully transformed #{ticker_names.size} ticker symbols\"
+rescue => e
+  puts \"Error transforming data: #{e.message}\"
+  exit 1
+end
+"
+
+# Clean up temporary file
+rm -f "$TEMP_FILE"
+
+echo "Ticker data saved to $OUTPUT_FILE"
+echo "Sample entries:"
+head -10 "$OUTPUT_FILE"

@@ -1,0 +1,43 @@
+<% grouped = formulate_and_group_events_by_day(events, today_in_tz, 1).to_h %>
+<% day, day_events = grouped.first %>
+<% day_events ||= [] %>
+<%# one day across two columns rather than one tall column, so a busy day fills %>
+<%# the screen instead of leaving two thirds of it blank %>
+<% per_column = [(day_events.size / 2.0).ceil, 1].max %>
+<% columns = day_events.each_slice(per_column).to_a %>
+<% idx = 0 %>
+
+<div class="view view--full">
+  <div class="layout layout--col layout--top">
+    <div class="columns">
+      <% columns.each_with_index do |column_events, column_index| %>
+        <div class="column">
+          <div class="list">
+            <%# the repeat in the second column is muted so the day reads as one heading %>
+            <span class="label label--large <%= 'label--gray-out' if column_index.positive? %>"><%= day %></span>
+            <% column_events.each do |event| %>
+              <div class="item">
+                <div class="meta">
+                  <span class="index"><%= event[:all_day] ? '#' : (idx += 1) %></span>
+                </div>
+                <div class="content">
+                  <span class="title title--large"><%= event[:summary] %></span>
+                  <% if include_description %>
+                    <span class="description"><%= event[:description] %></span>
+                  <% end %>
+                  <% unless event[:all_day] %>
+                    <div class="flex gap--small">
+                      <span class="label label--small label--inverted"><%= event[:start] %> - <%= event[:end] %></span>
+                    </div>
+                  <% end %>
+                </div>
+              </div>
+            <% end %>
+          </div>
+        </div>
+      <% end %>
+    </div>
+  </div>
+
+  <%= render partial: "plugins/calendars/title_bar", locals: local_assigns %>
+</div>

@@ -1,0 +1,8 @@
+- keyname: story_type
+  field_type: select
+  name: Story Type
+  description: Choose between Top Stories and Show HN posts
+  options:
+    - Top Stories: top_stories
+    - Show HN: show_hn
+  default: top_stories

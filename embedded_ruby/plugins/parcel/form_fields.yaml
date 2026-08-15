@@ -1,0 +1,36 @@
+- keyname: api_key
+  field_type: password
+  name: API Key
+  description: Your Parcel app API key from parcelapp.net
+  placeholder: Enter your Parcel API key
+  required: true
+
+- keyname: filter_mode
+  field_type: select
+  name: Filter Mode
+  description: Choose which deliveries to show
+  options:
+    - Recent: recent
+    - Active Only: active
+  default: recent
+  optional: true
+
+- keyname: style
+  field_type: select
+  name: Display Style
+  description: Choose how delivery information is displayed
+  options:
+    - Detailed: detailed
+    - Compact: compact
+  default: detailed
+  optional: true
+
+- keyname: empty_state
+  field_type: select
+  name: When No Deliveries
+  description: What to show when there are no active deliveries
+  options:
+    - Show Empty Message: show
+    - Skip Display: skip
+  default: show
+  optional: true

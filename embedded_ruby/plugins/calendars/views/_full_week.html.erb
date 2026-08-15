@@ -1,0 +1,106 @@
+<%= render "plugins/calendars/common" %>
+
+<%# week-only styling, will break month view so not inside common %>
+<style media="screen">
+  #calendar-full-week {
+    -webkit-font-smoothing: none !important;
+  }
+
+  #calendar-full-week,
+  .fc {
+    --fc-event-bg-color: transparent;
+    --fc-event-border-color: var(--gray-3);
+    --fc-event-text-color: var(--black);
+    --fc-today-bg-color: transparent;
+  }
+
+  .fc-timegrid-cols table[role="presentation"] {
+    height: 100%;
+  }
+
+  /* Remove all borders */
+  .fc-theme-standard .fc-scrollgrid,
+  .fc-theme-standard td,
+  .fc-theme-standard th,
+  .fc-theme-standard .fc-scrollgrid-section > td,
+  .fc-theme-standard .fc-scrollgrid-section > th,
+  .fc-theme-standard .fc-scrollgrid-section-liquid > td,
+  .fc-theme-standard .fc-scrollgrid-section-liquid > th,
+  .fc-theme-standard .fc-list,
+  .fc-theme-standard .fc-list-day-cushion {
+    border: none !important;
+  }
+
+  .fc .fc-timegrid-slot {
+    border-bottom: none !important;
+  }
+</style>
+
+<div id="calendar-full-week" style="height: 100%; width: 100%"></div>
+
+<script src='https://usetrmnl.com/fullcalendar/index.global.min.js'></script>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    var calendarEl = document.getElementById('calendar-full-week');
+    // the framework scales .screen, and FullCalendar's own measurement reads the
+    // scaled height, so it lays out for 1404px inside a 780px box and the day gets
+    // clipped part way down. computed height is pre-transform, so it is the honest one.
+    var screenEl = calendarEl.closest('.screen');
+    var logicalHeight = screenEl ? parseFloat(getComputedStyle(screenEl).height) : 480;
+
+    // sizing each slot up front, rather than letting expandRows do it, is what keeps
+    // the whole day on screen: expandRows measures the scaled box and overshoots.
+    var startHour = parseInt('<%= scroll_time %>'.split(':')[0], 10);
+    var endHour = parseInt('<%= scroll_time_end %>'.split(':')[0], 10);
+    var slotCount = Math.max((endHour - startHour) * 2, 1);
+    function fitSlotsTo(chromeHeight) {
+      calendarEl.style.setProperty(
+        '--fc-slot-height',
+        Math.max(Math.floor((logicalHeight - chromeHeight) / slotCount), 8) + 'px'
+      );
+    }
+
+    fitSlotsTo(80);
+    var calendar = new FullCalendar.Calendar(calendarEl, {
+      height: logicalHeight,
+      now: '<%= today_in_tz.to_date %>',
+      timeZone: new Date('<%= today_in_tz %>').getTimezoneOffset(),
+      headerToolbar: false,
+      initialView: 'timeGridFourDay', // 'dayGridWeek' shows a week but does not show events as blocks with diff heights per time length
+      scrollTime: '<%= scroll_time %>', // without this, view begins at 12am (creating white space)
+      slotMinTime: '<%= scroll_time %>', // required in-addition to scrollTime, otherwise calendar lib will ignore scrollTime if events would be hidden
+      slotMaxTime: '<%= scroll_time_end %>', // works with expandRows (true) and contentHeight (100%) to show a full heigh grid with larger/smaller slots
+      eventClassNames: 'bg--gray-6',
+      dayCellClassNames: function(arg) {
+        return [0, 6].includes(arg.date.getDay()) ? ['bg--gray-7'] : [];
+      },
+      views: {
+        timeGridFourDay: {
+          type: 'timeGrid',
+          duration: { days: 7 }
+        }
+      },
+      slotLabelFormat: {
+        hour: 'numeric', // required for 0-24 number to appear at all
+        meridiem: 'short', // 'pm' vs ' PM' (long); relevant if hour12=true
+        hour12: <%= time_format == 'am/pm' %>, // if true: 1-12; if false: 0-23
+        // omitZeroMinute: true, // may look nicer as 'true' if 24 hour time is enabled
+      },
+      locale: '<%= locale %>',
+      slotDuration: '00:30:00', // could potentially leverage this to show full 24h view (change slot duration to 1h)
+      events: <%== events.map {|e| { allDay: e[:all_day], title: e[:summary], description: e[:description], start: e[:start_full], end: e[:end_full] } }.to_json %>,
+      displayEventTime: false,
+      schedulerLicenseKey: '<%= Rails.application.credentials.plugins.full_calendar.license_key %>'
+    });
+    calendar.render();
+
+    // the header and all-day row are only measurable once rendered, and they are
+    // taller on a larger panel, so the first estimate above is corrected here.
+    // offsetHeight is layout px, unaffected by the framework's transform.
+    var header = calendarEl.querySelector('.fc-scrollgrid-section-header');
+    var allDay = calendarEl.querySelector('.fc-scrollgrid-section:not(.fc-scrollgrid-section-header):not(.fc-scrollgrid-section-liquid)');
+    fitSlotsTo((header ? header.offsetHeight : 0) + (allDay ? allDay.offsetHeight : 0));
+  });
+
+</script>

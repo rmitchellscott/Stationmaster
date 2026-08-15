@@ -1,0 +1,118 @@
+<%= render "plugins/calendars/common" %>
+
+<style media="screen">
+#calendar-full-month {
+  -webkit-font-smoothing: none !important;
+}
+
+#calendar-full-month, .fc {
+  --fc-event-bg-color: transparent;
+  --fc-event-border-color: transparent;
+  --fc-event-text-color: var(--black);
+  --fc-today-bg-color: transparent;
+}
+
+/* timed events are a marker plus text; all-day events are a filled bar, which is */
+/* how TRMNL separates the two in month view */
+.fc-daygrid-dot-event {
+  border-left: 3px solid var(--black);
+  padding-left: 4px;
+}
+
+.fc-daygrid-block-event {
+  background-color: var(--tn-bg-color, transparent);
+  padding: 0 4px;
+}
+
+/* no grey at 1-bit, so the bar inverts rather than dithering behind its own text */
+.screen--1bit .fc-daygrid-block-event {
+  --fc-event-text-color: var(--white);
+  background-color: var(--black);
+  background-image: none;
+  color: var(--white);
+}
+
+/* today's date sits in a filled chip in both of TRMNL's month renders */
+.fc .fc-day-today .fc-daygrid-day-number {
+  background-color: var(--black);
+  color: var(--white);
+  padding: 0 3px;
+}
+
+.fc-daygrid-event .fc-event-time {
+  display: block;
+  color: var(--gray-4);
+}
+
+.fc .fc-daygrid-day-number {
+  color: var(--gray-4);
+}
+
+/* gray text survives 2-bit and 4-bit but shatters at 1-bit: a small glyph is mostly */
+/* antialiased edge, and thresholding drops the edge to white and keeps only specks. */
+/* the tonal hierarchy is traded for legibility at that depth. */
+.screen--1bit .fc-daygrid-event .fc-event-time,
+.screen--1bit .fc .fc-daygrid-day-number {
+  color: var(--black);
+}
+
+/* ties with the rule above on specificity, so it has to come after it to win */
+.screen--1bit .fc .fc-day-today .fc-daygrid-day-number {
+  color: var(--white);
+}
+/* wraps event titles on new line if necessary */
+.fc-daygrid-event {
+  white-space: normal !important;
+}
+
+/* defaults 2em, which wastes a lot of space if no events exist for entire row of dates */
+.fc .fc-daygrid-body-unbalanced .fc-daygrid-day-events {
+  min-height: 1em;
+}
+
+/* puts event time + title on separate line breaks */
+.fc-event {
+  display: block;
+}
+
+/* the accent bar and the gray tone already separate time from title */
+.fc-event-time {
+  text-decoration: none;
+}
+</style>
+
+<div id="calendar-full-month" style="height: 100%; width: 100%"></div>
+
+<script src='https://usetrmnl.com/fullcalendar/index.global.min.js'></script>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    var calendarEl = document.getElementById('calendar-full-month');
+    var calendar = new FullCalendar.Calendar(calendarEl, {
+      now: '<%= today_in_tz.to_date %>',
+      timeZone: new Date('<%= events.reject { |e| e[:all_day] }.first&.dig(:start_full) %>').getTimezoneOffset(),
+      headerToolbar: false,
+      contentHeight: '100%', // 'auto' sizes to content, which leaves a taller panel like the X mostly empty; .fc-scroller already hides the scrollbar this used to avoid
+      initialView: '<%= event_layout == 'rolling_month' ? 'rollingMonth' : 'dayGridMonth' %>',
+      initialDate: new Date('<%= today_in_tz.to_date %>'),
+      firstDay: <%= first_day %>,
+      dayCellClassNames: function(arg) {
+        return [0, 6].includes(arg.date.getDay()) ? ['bg--gray-7'] : [];
+      },
+      eventClassNames: function(arg) {
+        return arg.event.allDay ? ['bg--gray-6'] : [];
+      },
+      views: {
+        rollingMonth: {
+          type: "dayGridMonth",
+          duration: { weeks: 4 }
+        }
+      },
+      events: <%== events.map {|e| { allDay: e[:all_day], title: e[:summary], description: e[:description], start: e[:start_full], end: e[:end_full] } }.to_json %>,
+      displayEventTime: <%= include_event_time %>,
+      locale: '<%= locale %>',
+      schedulerLicenseKey: '<%= Rails.application.credentials.plugins.full_calendar.license_key %>'
+    });
+    calendar.render();
+  });
+</script>

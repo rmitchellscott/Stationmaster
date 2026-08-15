@@ -1,0 +1,16 @@
+- keyname: access_token
+  field_type: password
+  name: Access Token
+  description: Your Lunch Money API access token
+  placeholder: Enter your Lunch Money access token
+  required: true
+
+- keyname: item_type
+  field_type: select
+  name: Item Type
+  description: Choose what data to display
+  options:
+    - Budgets: budgets
+    - Accounts: accounts
+  default: budgets
+  optional: true

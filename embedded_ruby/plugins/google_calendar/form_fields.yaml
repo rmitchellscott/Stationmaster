@@ -1,0 +1,126 @@
+- keyname: calendar
+  field_type: select
+  name: Calendar
+  description: Select which calendars to display events from
+  placeholder: Loading calendars...
+  dynamic: true
+  dynamic_source: list_calendar
+  multiple: true
+  depends_on: oauth_connected
+  optional: false
+
+- keyname: event_layout
+  field_type: select
+  name: Event Layout
+  description: Choose how events are displayed
+  placeholder: Select layout
+  default: default
+  optional: true
+  options:
+    - Default: default
+    - Week View: week
+    - Month View: month
+    - Rolling Month: rolling_month
+    - Today Only: today_only
+    - Schedule: schedule
+
+- keyname: include_past_events
+  field_type: checkbox
+  name: Include Past Events
+  description: Show events that have already occurred today
+  default: false
+  optional: true
+
+- keyname: include_description
+  field_type: checkbox
+  name: Include Description
+  description: Display event descriptions
+  default: false
+  optional: true
+
+- keyname: include_event_time
+  field_type: checkbox
+  name: Include Event Time
+  description: Show event start and end times
+  default: true
+  optional: true
+
+- keyname: first_day
+  field_type: select
+  name: First Day of Week
+  description: Which day should the week start on
+  placeholder: Select day
+  default: Sun
+  optional: true
+  options:
+    - Sunday: Sun
+    - Monday: Mon
+    - Tuesday: Tue
+    - Wednesday: Wed
+    - Thursday: Thu
+    - Friday: Fri
+    - Saturday: Sat
+
+- keyname: fixed_week
+  field_type: checkbox
+  name: Fixed Week View
+  description: Keep week view fixed to current week
+  default: false
+  optional: true
+
+- keyname: time_format
+  field_type: select
+  name: Time Format
+  description: How to display times
+  placeholder: Select format
+  default: "%-l:%M%P"
+  optional: true
+  options:
+    - "12-hour (3:30pm)": "%-l:%M%P"
+    - "12-hour with space (3:30 pm)": "%-l:%M %P"
+    - "24-hour (15:30)": "%H:%M"
+    - "24-hour with seconds (15:30:45)": "%H:%M:%S"
+
+- keyname: date_format
+  field_type: select
+  name: Date Format
+  description: How to display dates
+  placeholder: Select format
+  default: "%b %-d"
+  optional: true
+  options:
+    - "Jan 5": "%b %-d"
+    - "January 5": "%B %-d"
+    - "01/05": "%m/%d"
+    - "5 Jan": "%-d %b"
+    - "5 January": "%-d %B"
+
+- keyname: ignore_phrases_exact_match
+  field_type: textarea
+  name: Ignore Exact Phrases
+  description: Hide events with these exact titles (one per line)
+  placeholder: "Meeting canceled\nOut of office"
+  optional: true
+
+- keyname: scroll_time
+  field_type: string
+  name: Scroll Start Time
+  description: Time to scroll to in schedule view (24-hour format)
+  placeholder: "08:00"
+  default: "08:00"
+  optional: true
+
+- keyname: scroll_time_end
+  field_type: string
+  name: Scroll End Time
+  description: Time to end scrolling in schedule view (24-hour format)
+  placeholder: "18:00"
+  default: "18:00"
+  optional: true
+
+- keyname: zoom_mode
+  field_type: checkbox
+  name: Zoom Mode
+  description: Enable zoom mode for better visibility
+  default: false
+  optional: true

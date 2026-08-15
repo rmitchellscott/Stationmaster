@@ -1,0 +1,100 @@
+- keyname: todoist_project_id
+  field_type: select
+  name: Todoist Project
+  description: Select Todoist Project
+  dynamic: true
+  dynamic_source: projects
+  depends_on: oauth_connected
+  optional: false
+- keyname: sort_grouping
+  name: Group By
+  description: How to group tasks
+  field_type: select
+  options:
+    - None: none
+    - Date: date
+    - Date Added: date_added
+    - Deadline: deadline
+    - Priority: priority
+    - Label: labels
+  default: none
+  optional: true
+- keyname: sort_sorting
+  name: Sort By
+  description: How to sort tasks
+  field_type: select
+  options:
+    - Manual: manual
+    - Name: name
+    - Date: date
+    - Date Added: date_added
+    - Deadline: deadline
+    - Priority: priority
+  default: date
+  optional: true
+- keyname: sort_direction
+  name: Sort Direction
+  description: Sort order
+  field_type: select
+  options:
+    - Ascending: ascending
+    - Descending: descending
+  default: ascending
+  optional: true
+- keyname: filter_completed_tasks
+  name: Show Completed Tasks
+  description: Include completed tasks
+  field_type: select
+  options:
+    - "Yes": "yes"
+    - "No": "no"
+  default: "no"
+  optional: true
+- keyname: filter_date
+  name: Date Filter
+  description: Filter tasks by date
+  field_type: select
+  options:
+    - All: all
+    - Today: today
+    - This Week: this_week
+    - Next 7 Days: next_7_days
+    - This Month: this_month
+    - Next 30 Days: next_30_days
+    - No Date: no_date
+  default: all
+  optional: true
+- keyname: filter_deadline
+  name: Deadline Filter
+  description: Filter tasks by deadline
+  field_type: select
+  options:
+    - All: all
+    - Today: today
+    - This Week: this_week
+    - Next 7 Days: next_7_days
+    - This Month: this_month
+    - Next 30 Days: next_30_days
+    - No Deadline: no_deadline
+  default: all
+  optional: true
+- keyname: filter_priority
+  name: Priority Filter
+  description: Filter by task priority
+  field_type: select
+  options:
+    - Priority 1: p1
+    - Priority 2: p2
+    - Priority 3: p3
+    - Priority 4: p4
+  multiple: true
+  optional: true
+- keyname: filter_labels
+  name: Label Filter
+  description: Filter tasks by labels
+  field_type: select
+  dynamic: true
+  dynamic_source: labels
+  depends_on: oauth_connected
+  multiple: true
+  optional: true

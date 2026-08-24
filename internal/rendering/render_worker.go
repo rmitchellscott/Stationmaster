@@ -252,15 +252,17 @@ func (w *RenderWorker) processRenderJob(ctx context.Context, job database.Render
 	}
 
 
+	bookkeepingCtx := context.WithoutCancel(ctx)
+
 	// Mark job as completed
-	err = w.db.WithContext(ctx).Model(&job).Update("status", "completed").Error
+	err = w.db.WithContext(bookkeepingCtx).Model(&job).Update("status", "completed").Error
 	if err != nil {
 		logging.Error("[RENDER_WORKER] Failed to mark job as completed", "error", err)
 	}
 	
 
 	// Clean up any other pending jobs for this plugin instance to prevent duplicates
-	err = w.db.WithContext(ctx).Model(&database.RenderQueue{}).
+	err = w.db.WithContext(bookkeepingCtx).Model(&database.RenderQueue{}).
 		Where("plugin_instance_id = ? AND status = ? AND id != ?", pluginInstance.ID, "pending", job.ID).
 		Update("status", "cancelled").Error
 	if err != nil {
@@ -268,7 +270,7 @@ func (w *RenderWorker) processRenderJob(ctx context.Context, job database.Render
 	}
 
 	// Schedule next render based on explicit flag
-	w.scheduleNextRenderWithOptions(ctx, pluginInstance, job.IndependentRender)
+	w.scheduleNextRenderWithOptions(bookkeepingCtx, pluginInstance, job.IndependentRender)
 
 	return nil
 }
@@ -838,7 +840,7 @@ func (w *RenderWorker) processPreviewJob(ctx context.Context, job database.Rende
 }
 
 func (w *RenderWorker) markJobFailed(ctx context.Context, job database.RenderQueue, errorMsg string) {
-	err := w.db.WithContext(ctx).Model(&job).Updates(database.RenderQueue{
+	err := w.db.WithContext(context.WithoutCancel(ctx)).Model(&job).Updates(database.RenderQueue{
 		Status:       "failed",
 		ErrorMessage: errorMsg,
 	}).Error
@@ -849,7 +851,7 @@ func (w *RenderWorker) markJobFailed(ctx context.Context, job database.RenderQue
 
 // markJobCancelled marks a render job as cancelled with a reason message
 func (w *RenderWorker) markJobCancelled(ctx context.Context, job database.RenderQueue, reason string) {
-	err := w.db.WithContext(ctx).Model(&job).Updates(database.RenderQueue{
+	err := w.db.WithContext(context.WithoutCancel(ctx)).Model(&job).Updates(database.RenderQueue{
 		Status:       "cancelled",
 		ErrorMessage: reason,
 	}).Error

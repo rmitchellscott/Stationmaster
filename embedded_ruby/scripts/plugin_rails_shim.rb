@@ -1,10 +1,23 @@
-# The plugins were written against Rails and reach for four things from it: credentials,
-# a logger, ActiveSupport date arithmetic, and I18n. The last two are real gems that load
-# on their own, so only credentials and the logger need standing in for.
 require 'logger'
 require 'active_support/all'
 require 'i18n'
 require 'ostruct'
+
+def plugin_env(key, default = nil)
+  value = ENV[key]
+  return value unless value.nil? || value.empty?
+
+  path = ENV["#{key}_FILE"]
+  if path && !path.empty?
+    begin
+      return File.read(path).strip
+    rescue SystemCallError => e
+      warn "[plugins] could not read #{key}_FILE at #{path}: #{e.message}"
+    end
+  end
+
+  default
+end
 
 module Rails
   class << self
@@ -24,26 +37,19 @@ module Rails
   end
 
   class Credentials
-    # Same variable and default as config.GetAssetBaseURL on the Go side. It has to be
-    # an address browserless can resolve, not localhost: the URLs built from it are
-    # fetched by browserless when it renders the HTML, not by this process.
-    def base_url = ENV.fetch('ASSET_BASE_URL', 'http://stationmaster:8000')
+    def base_url = plugin_env('ASSET_BASE_URL', 'http://stationmaster:8000')
     def plugins = @plugins ||= PluginCredentials.new
-    def method_missing(name, *) = ENV[name.to_s.upcase]
+    def method_missing(name, *) = plugin_env(name.to_s.upcase)
     def respond_to_missing?(*) = true
   end
 
-  # The environment variable names do not follow from the credential names, so this
-  # mirrors config/initializers/oauth_credentials.rb from the Rails service key by key.
-  # An unknown key returns nil rather than raising, because templates interpolate these
-  # directly and a nil renders empty where a raise would lose the whole plugin.
   class PluginCredentials
-    def github_commit_graph_token = ENV['GITHUB_API_TOKEN']
-    def marketdata_app = ENV['MARKETDATA_API_TOKEN']
-    def currency_api = ENV['CURRENCY_API_KEY']
+    def github_commit_graph_token = plugin_env('GITHUB_API_TOKEN')
+    def marketdata_app = plugin_env('MARKETDATA_API_TOKEN')
+    def currency_api = plugin_env('CURRENCY_API_KEY')
     def google = oauth_pair('GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET')
     def todoist = oauth_pair('TODOIST_CLIENT_ID', 'TODOIST_CLIENT_SECRET')
-    def full_calendar = OpenStruct.new(license_key: ENV['FULL_CALENDAR_LICENSE_KEY'].to_s)
+    def full_calendar = OpenStruct.new(license_key: plugin_env('FULL_CALENDAR_LICENSE_KEY').to_s)
 
     def [](key) = respond_to?(key.to_sym) ? public_send(key.to_sym) : nil
     def to_h = {}
@@ -53,9 +59,11 @@ module Rails
     private
 
     def oauth_pair(id_var, secret_var)
-      return nil unless ENV[id_var] && ENV[secret_var]
+      client_id = plugin_env(id_var)
+      client_secret = plugin_env(secret_var)
+      return nil unless client_id && client_secret
 
-      { client_id: ENV[id_var], client_secret: ENV[secret_var] }
+      { client_id: client_id, client_secret: client_secret }
     end
   end
 end

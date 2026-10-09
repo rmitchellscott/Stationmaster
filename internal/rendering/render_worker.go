@@ -261,6 +261,16 @@ func (w *RenderWorker) processRenderJob(ctx context.Context, job database.Render
 	}
 	
 
+	// The scheduled job carries the plugin's refresh cycle, so an independent render
+	// that cancels it below must reschedule in its place or the plugin stops refreshing
+	var cancelledScheduledJobs int64
+	err = w.db.WithContext(bookkeepingCtx).Model(&database.RenderQueue{}).
+		Where("plugin_instance_id = ? AND status = ? AND id != ? AND independent_render = ?", pluginInstance.ID, "pending", job.ID, false).
+		Count(&cancelledScheduledJobs).Error
+	if err != nil {
+		logging.Error("[RENDER_WORKER] Failed to count scheduled pending jobs", "error", err)
+	}
+
 	// Clean up any other pending jobs for this plugin instance to prevent duplicates
 	err = w.db.WithContext(bookkeepingCtx).Model(&database.RenderQueue{}).
 		Where("plugin_instance_id = ? AND status = ? AND id != ?", pluginInstance.ID, "pending", job.ID).
@@ -269,8 +279,8 @@ func (w *RenderWorker) processRenderJob(ctx context.Context, job database.Render
 		logging.Error("[RENDER_WORKER] Failed to clean up duplicate pending jobs", "error", err)
 	}
 
-	// Schedule next render based on explicit flag
-	w.scheduleNextRenderWithOptions(bookkeepingCtx, pluginInstance, job.IndependentRender)
+	skipReschedule := job.IndependentRender && cancelledScheduledJobs == 0
+	w.scheduleNextRenderWithOptions(bookkeepingCtx, pluginInstance, skipReschedule)
 
 	return nil
 }

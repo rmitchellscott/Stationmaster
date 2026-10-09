@@ -15,6 +15,11 @@ import (
 	"github.com/rmitchellscott/stationmaster/internal/sse"
 )
 
+const (
+	stalledJobTimeout = 30 * time.Minute
+	maxRenderAttempts = 3
+)
+
 // RenderJob represents a job to be processed by the worker pool
 type RenderJob struct {
 	ID               uuid.UUID
@@ -488,6 +493,14 @@ func (p *RenderWorkerPool) cleanupRoutine(ctx context.Context) {
 		case <-p.quitChan:
 			return
 		case <-p.cleanupTicker.C:
+			if err := p.queueManager.ReapStalledJobs(ctx, stalledJobTimeout); err != nil {
+				logging.Error("[WORKER_POOL] Failed to reap stalled jobs", "error", err)
+			}
+
+			if err := p.queueManager.RetryFailedJobs(ctx, maxRenderAttempts); err != nil {
+				logging.Error("[WORKER_POOL] Failed to retry failed jobs", "error", err)
+			}
+
 			// Clean up old render jobs
 			if err := p.queueManager.CleanupOldJobs(ctx, 24*time.Hour); err != nil {
 				logging.Error("[WORKER_POOL] Failed to cleanup old jobs", "error", err)

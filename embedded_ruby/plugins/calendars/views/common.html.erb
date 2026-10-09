@@ -1,0 +1,227 @@
+<style media="screen">
+  .fc-v-event .fc-event-title {
+    font-size: 16px;
+    line-height: 12px;
+    overflow: visible;
+  }
+
+  .fc-daygrid-dot-event .fc-event-title {
+    font-weight: 400;
+  }
+
+  /* hides 'dot' (list item) that prefixes Month view event title */
+  .fc-daygrid-event-dot {
+    display: none;
+  }
+
+  .fc-col-header-cell {
+    font-family: 'NicoClean';
+    font-size: 16px;
+    line-height: 24px;
+    font-weight: 400;
+  }
+
+  /* the fill comes from a bg--gray-* class applied via eventClassNames. those */
+  /* classes carry the framework's per-bit-depth tiles, so one class covers */
+  /* 1-bit, 2-bit and 4-bit. single-digit tone names only -- the gray-10..75 */
+  /* aliases point at 1-bit tiles that were never vendored. */
+  /* --tn-bg-color is read here rather than left to the framework's own rule: */
+  /* that rule sits in @layer tn--utilities, and a layer loses to unlayered CSS */
+  /* whatever the specificity, so FullCalendar's background-color would win and */
+  /* blank the fill on 4-bit screens. taking only the colour keeps the image on */
+  /* the framework side, where its url() still resolves against the stylesheet. */
+  .fc .fc-v-event {
+    background-color: var(--tn-bg-color, transparent);
+    border: 1px solid var(--fc-event-border-color);
+    border-left: 4px solid var(--black);
+    display: block;
+  }
+  .fc-v-event .fc-event-time {
+    font-family: 'NicoPups', sans-serif;
+    display: block;
+  }
+
+  .fc-v-event .fc-event-main {
+    color: var(--fc-event-text-color);
+    padding: 1px 2px;
+  }
+
+  /* the framework scales .screen with transform: scale(--pixel-ratio), and */
+  /* FullCalendar measures with getBoundingClientRect, so on a scaled panel it reads */
+  /* the physical width, sizes its tables to that, and they overflow the logical */
+  /* container once the transform applies again -- on the X only the left ~57% of the */
+  /* grid was visible. pinning every table to the container keeps header and body in */
+  /* step at any pixel ratio. */
+  table.fc-col-header,
+  .fc-daygrid-body,
+  .fc-daygrid-body > table,
+  .fc-scrollgrid-sync-table,
+  .fc-timegrid-body,
+  .fc-timegrid-body > table,
+  .fc-timegrid-cols > table {
+    width: 100% !important;
+  }
+
+  .fc-timegrid-divider {
+    background: none !important;
+  }
+
+  .fc-scrollgrid-section-header thead::before,
+  .fc-timegrid-divider::before {
+    content: " ";
+    position: absolute;
+    image-rendering: pixelated;
+    image-rendering: -moz-crisp-edges;
+    image-rendering: crisp-edges;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 1px;
+    background: repeat url(https://usetrmnl.com/images/borders/2.png);
+  }
+
+  .fc-timegrid-slot-label.fc-timegrid-slot-minor::before,
+  .fc-timegrid-slot-lane.fc-timegrid-slot-minor::before {
+    content: " ";
+    position: absolute;
+    image-rendering: pixelated;
+    image-rendering: -moz-crisp-edges;
+    image-rendering: crisp-edges;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 1px;
+    background: repeat url(https://usetrmnl.com/images/borders/5.png);
+  }
+
+  /* dashed vertical grid lines between dates (solid defaults don't appear / are white) */
+  .fc-timegrid-col::after,
+  .fc-daygrid-day::after {
+    content: " ";
+    position: absolute;
+    image-rendering: pixelated;
+    image-rendering: -moz-crisp-edges;
+    image-rendering: crisp-edges;
+    bottom: 0;
+    left: -1px;
+    width: 1px;
+    height: 100%;
+    background: repeat url(https://usetrmnl.com/images/borders/5.png);
+  }
+
+  .fc-theme-standard td, .fc-theme-standard th {
+    border: 1px dashed;
+  }
+
+  .fc-timegrid-axis::after {
+    content: none;
+  }
+
+  /* the week view lays these out in a flex row (see _full_week) which needs an */
+  /* explicit basis, so this stays a fixed width and week is OG-only for now. month */
+  /* ignores it: those are table cells sized by the 100% table above. */
+  .fc-day {
+    width: 104px;
+  }
+
+  /* in month view, next month's dates default 0.3 opacity which renders them invisible */
+  .fc .fc-day-other .fc-daygrid-day-top {
+    opacity: 1.0;
+  }
+
+  .fc .fc-col-header-cell {
+    border: none !important;
+  }
+
+  /* styles month view to outline current day */
+  .fc .fc-daygrid-day.fc-day-today {
+    background-color: transparent;
+    border: 2px solid black;
+    border-left: 3px solid black;
+    border-right: 3px solid black;
+  }
+
+  /* styles week view to outline current day */
+  th.fc-day-today .fc-scrollgrid-sync-inner {
+    border: 2px solid black;
+  }
+
+  /* the week view sets --fc-slot-height from the screen's logical height, because */
+  /* FullCalendar's own row expansion measures through the framework transform and */
+  /* lays out for the physical height, running the day off the bottom of the panel */
+  .fc .fc-timegrid-slot {
+    height: var(--fc-slot-height, 14px) !important;
+  }
+
+  .fc-direction-ltr .fc-timegrid-col-events {
+    margin: 0px 2px 0px 2px;
+  }
+
+  .fc table,
+  .fc-daygrid-event {
+    font-size: 16px;
+    line-height: 12px;
+    font-family: 'NicoPups', sans-serif;
+  }
+
+  td.fc-timegrid-col.fc-timegrid-axis,
+  td.fc-timegrid-axis.fc-scrollgrid-shrink {
+    width: 46px;
+  }
+
+  .fc .fc-scrollgrid-section table {
+    height: auto;
+  }
+
+  .fc-direction-ltr .fc-timegrid-col-events {
+    margin: 0px 2px 0px 2px;
+  }
+  .fc .fc-timegrid-axis-cushion, .fc .fc-timegrid-slot-label-cushion {
+    padding: 0px 0px;
+    margin-right: 4px;
+  }
+
+  /* removes scrollbar, which can happen due to contentHeight: 100% */
+  /* some tips suggest using contentHeight: 'auto', but this disallows auto expanding rows */
+  .fc-scroller {
+   overflow-y: hidden !important;
+  }
+
+  /* the tiled border images above fake a gray line by stippling black on white, */
+  /* which a 2-bit screen can draw outright. gray-30 and gray-55 are #555555 and */
+  /* #AAAAAA, the two middle levels of the 4-level palette, so they quantize flat. */
+  /* solid colors rather than the framework's --border-*-image variables: a url() */
+  /* carried in a custom property resolves against the document, and these render */
+  /* with no <base> tag, so a root-relative asset path would silently not load. */
+  .screen--2bit .fc-scrollgrid-section-header thead::before,
+  .screen--2bit .fc-timegrid-divider::before {
+    background: var(--gray-30);
+  }
+
+  .screen--2bit .fc-timegrid-slot-label.fc-timegrid-slot-minor::before,
+  .screen--2bit .fc-timegrid-slot-lane.fc-timegrid-slot-minor::before {
+    background: var(--gray-55);
+  }
+
+  .screen--2bit .fc-timegrid-col::after,
+  .screen--2bit .fc-daygrid-day::after {
+    background: var(--gray-55);
+  }
+
+  /* 1-bit has no grey, so a bg--gray-* tint lands as black stipple and pixel text */
+  /* on top of it is unreadable. TRMNL's own 1-bit week view does not tint at all, */
+  /* it inverts: solid black block, white text, and no weekend shading. */
+  .screen--1bit .fc .fc-v-event,
+  .screen--1bit .fc .fc-h-event {
+    --fc-event-text-color: var(--white);
+    background-color: var(--black);
+    background-image: none;
+    border-color: var(--black);
+  }
+
+  .screen--1bit .fc-day-sat,
+  .screen--1bit .fc-day-sun {
+    background-color: transparent;
+    background-image: none;
+  }
+</style>

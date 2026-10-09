@@ -112,6 +112,42 @@ echo "$FRAMEWORK_HTML" | grep -o '/assets/plugin-render/[^"]*\.js' | sort | uniq
     curl -sL "$full_url" -o "$ASSETS_DIR/plugin-render/$base_name"
 done
 
+# Plugin title bars request /images/plugins/<plugin>--render.svg, but nothing links to
+# these from the CSS or JS, so the extractors above never reach them. ics_calendar has
+# no upstream icon of its own and borrows the CalDAV one. Plugins missing upstream are
+# left without an icon; the title bar drops the img when the request fails.
+echo "Downloading plugin render icons..."
+mkdir -p "$ASSETS_DIR/images/plugins"
+# the local name is the filename a view requests, which is not always the plugin
+# identifier -- hacker_news asks for hacker-news--render.svg
+PLUGIN_ICONS=(
+    "ics_calendar:caldav"
+    "google_calendar:google_calendar"
+    "lunar_calendar:lunar_calendar"
+    "days_left_until:days_left_until"
+    "todoist:todoist"
+    "shopify:shopify"
+    "stock_price:stock_price"
+    "tempest_weather_station:tempest_weather_station"
+    "weather:weather"
+    "github:github"
+    "hacker-news:hacker-news"
+    "google-analytics:google-analytics"
+    "youtube:youtube"
+)
+
+for pair in "${PLUGIN_ICONS[@]}"; do
+    local_name="${pair%%:*}"
+    upstream_name="${pair##*:}"
+    icon_url="https://trmnl.com/images/plugins/${upstream_name}--render.svg"
+    # -f so a 404 body is never written into the .svg
+    if curl -sfL "$icon_url" -o "$ASSETS_DIR/images/plugins/${local_name}--render.svg"; then
+        echo "Downloading $icon_url -> images/plugins/${local_name}--render.svg"
+    else
+        echo "Warning: no upstream icon at $icon_url"
+    fi
+done
+
 # Download Google Fonts Inter
 echo "Downloading Google Fonts Inter..."
 # First get the CSS which contains the font URLs

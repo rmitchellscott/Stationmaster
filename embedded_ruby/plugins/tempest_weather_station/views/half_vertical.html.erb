@@ -1,0 +1,40 @@
+<div class="view view--half_vertical">
+  <div class="layout layout--col gap--space-between">
+    <div class="row row--center">
+      <img class="weather-image" style="filter: brightness(0.5) saturate(0%);" src="<%= weather_image %>" />
+    </div>
+
+    <div class="item">
+      <div class="meta"></div>
+      <div class="content">
+        <span class="value value--xlarge" data-fit-value="true"><%= temperature&.round %>°</span>
+        <span class="label"><%= conditions %></span>
+      </div>
+    </div>
+
+    <div class="grid grid--cols-2">
+        <div class="item">
+          <div class="meta"></div>
+          <div class="content">
+            <span class="value value--small"><%= feels_like&.round %>°</span>
+            <span class="label">Feels like</span>
+          </div>
+        </div>
+        <div class="item">
+          <div class="meta"></div>
+          <div class="content">
+            <span class="value value--small"><%= humidity %>%</span>
+            <span class="label">Humidity</span>
+          </div>
+        </div>
+    </div>
+  </div>
+
+  <div class="title_bar">
+    <img class="image" onerror="this.remove()" src="<%= Rails.application.credentials.base_url %>/images/plugins/tempest_weather_station--render.svg" />
+    <span class="title">Tempest</span>
+    <span class="instance"><%= instance_name %></span>
+  </div>
+</div>
+
+<%= render 'plugins/tempest_weather_station/common' %>

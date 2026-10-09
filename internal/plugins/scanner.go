@@ -1,15 +1,14 @@
 package plugins
 
 import (
+	"time"
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
-	"os"
-	"time"
 
 	"github.com/rmitchellscott/stationmaster/internal/database"
 	"github.com/rmitchellscott/stationmaster/internal/logging"
+	"github.com/rmitchellscott/stationmaster/internal/pluginruntime"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
@@ -28,48 +27,28 @@ type ExternalPluginData struct {
 
 // PluginScannerService handles discovery and registration of external plugins
 type PluginScannerService struct {
-	db         *gorm.DB
-	serviceURL string
-	client     *http.Client
+	db      *gorm.DB
+	runtime *pluginruntime.Runtime
 }
 
 // NewPluginScannerService creates a new plugin scanner service
 func NewPluginScannerService(db *gorm.DB) *PluginScannerService {
-	serviceURL := os.Getenv("EXTERNAL_PLUGIN_SERVICES")
-	if serviceURL == "" {
-		serviceURL = "http://stationmaster-plugins:3000"
-	}
-
 	return &PluginScannerService{
-		db:         db,
-		serviceURL: serviceURL,
-		client: &http.Client{
-			Timeout: 30 * time.Second,
-		},
+		db:      db,
+		runtime: pluginruntime.New(),
 	}
 }
 
 // ScanAndRegisterPlugins discovers plugins from external services and registers them in the database
 func (s *PluginScannerService) ScanAndRegisterPlugins(ctx context.Context) error {
-	logging.InfoWithComponent(logging.ComponentPlugins, "Starting external plugin discovery", "service_url", s.serviceURL)
+	logging.InfoWithComponent(logging.ComponentPlugins, "Starting plugin discovery")
 
-	// Check if service is available first
-	if !s.IsServiceAvailable(ctx) {
-		// Mark all external plugins as unavailable if service is down
-		err := s.markAllExternalPluginsUnavailable()
-		if err != nil {
-			logging.WarnWithComponent(logging.ComponentPlugins, "Failed to mark external plugins as unavailable", "error", err)
-		}
-		return fmt.Errorf("external plugin service is unavailable")
+	if err := s.runtime.WaitReady(ctx, 60*time.Second); err != nil {
+		return fmt.Errorf("plugin runtime not ready: %w", err)
 	}
 
-	// Fetch plugin metadata from external service
 	plugins, err := s.fetchPluginMetadata(ctx)
 	if err != nil {
-		// Mark all external plugins as unavailable if fetch fails
-		if markErr := s.markAllExternalPluginsUnavailable(); markErr != nil {
-			logging.WarnWithComponent(logging.ComponentPlugins, "Failed to mark external plugins as unavailable", "error", markErr)
-		}
 		return fmt.Errorf("failed to fetch plugin metadata: %w", err)
 	}
 
@@ -120,38 +99,23 @@ type ExternalServiceResponse struct {
 	} `json:"data"`
 }
 
-// fetchPluginMetadata retrieves plugin metadata from the external service
+// fetchPluginMetadata asks the embedded runtime to enumerate the plugin tree. The
+// payload is the shape the Rails service used to return over HTTP, so registerPlugin
+// below is unchanged.
 func (s *PluginScannerService) fetchPluginMetadata(ctx context.Context) (map[string]*ExternalPluginData, error) {
-	url := fmt.Sprintf("%s/api/plugins", s.serviceURL)
-	
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	raw, err := s.runtime.DiscoverMetadata(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, err
 	}
 
-	resp, err := s.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("service returned status %d", resp.StatusCode)
+	plugins := make(map[string]*ExternalPluginData)
+	if err := json.Unmarshal(raw, &plugins); err != nil {
+		return nil, fmt.Errorf("failed to decode plugin metadata: %w", err)
 	}
 
-	var response ExternalServiceResponse
-	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
-		return nil, fmt.Errorf("failed to parse JSON response: %w", err)
-	}
-
-	if !response.Success {
-		return nil, fmt.Errorf("service returned success=false")
-	}
-
-	return response.Data.Plugins, nil
+	return plugins, nil
 }
 
-// registerPlugin registers or updates a plugin definition in the database
 func (s *PluginScannerService) registerPlugin(identifier string, data *ExternalPluginData, status string) error {
 	// Check if plugin already exists
 	var existing database.PluginDefinition
@@ -217,44 +181,6 @@ func (s *PluginScannerService) registerPlugin(identifier string, data *ExternalP
 	return nil
 }
 
-// IsServiceAvailable checks if the external plugin service is reachable
-func (s *PluginScannerService) IsServiceAvailable(ctx context.Context) bool {
-	url := fmt.Sprintf("%s/api/health", s.serviceURL)
-	
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return false
-	}
-
-	resp, err := s.client.Do(req)
-	if err != nil {
-		return false
-	}
-	defer resp.Body.Close()
-
-	return resp.StatusCode == http.StatusOK
-}
-
-// StartPeriodicScanning starts a background goroutine that periodically scans for plugins
-func (s *PluginScannerService) StartPeriodicScanning(interval time.Duration) {
-	go func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ticker.C:
-				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-				if err := s.ScanAndRegisterPlugins(ctx); err != nil {
-					logging.WarnWithComponent(logging.ComponentPlugins, 
-						"Periodic plugin scan failed", "error", err)
-				}
-				cancel()
-			}
-		}
-	}()
-}
-
 // getExistingExternalPlugins returns all external plugin definitions from the database
 func (s *PluginScannerService) getExistingExternalPlugins() ([]database.PluginDefinition, error) {
 	var plugins []database.PluginDefinition
@@ -263,17 +189,6 @@ func (s *PluginScannerService) getExistingExternalPlugins() ([]database.PluginDe
 		return nil, fmt.Errorf("failed to get existing external plugins: %w", err)
 	}
 	return plugins, nil
-}
-
-// markAllExternalPluginsUnavailable marks all external plugins as unavailable
-func (s *PluginScannerService) markAllExternalPluginsUnavailable() error {
-	err := s.db.Model(&database.PluginDefinition{}).
-		Where("plugin_type = ?", "external").
-		Update("status", "unavailable").Error
-	if err != nil {
-		return fmt.Errorf("failed to mark external plugins as unavailable: %w", err)
-	}
-	return nil
 }
 
 // markPluginUnavailable marks a specific external plugin as unavailable

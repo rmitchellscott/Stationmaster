@@ -1,0 +1,53 @@
+# Labels the plugin views request through t('renders.…'). Without these every call
+# renders the literal string "Translation missing: en.renders.…" onto the device.
+# tempest_weather_station shares the weather namespace rather than having its own.
+# The lunar phase names are the `name:` values already carried beside each keyname
+# in lunar_calendar.rb, so the two must stay in step.
+en:
+  renders:
+    days_left_year:
+      days_left: Days left
+      days_passed: Days passed
+
+    lunar_calendar:
+      title: Lunar Calendar
+      current_phase: Current Phase
+      illumination: Illumination
+      age: Age
+      next_phase: Next Phase
+      next_phase_short: Next
+      next_full_moon: Next Full Moon
+      next_new_moon: Next New Moon
+      moon_phases:
+        new_moon: New Moon
+        waxing_crescent: Waxing Crescent
+        first_quarter: First Quarter
+        waxing_gibbous: Waxing Gibbous
+        full_moon: Full Moon
+        waning_gibbous: Waning Gibbous
+        third_quarter: Third Quarter
+        waning_crescent: Waning Crescent
+
+    weather:
+      title: Weather
+      right_now: Right Now
+      temperature: Temperature
+      feels_like: Feels Like
+      humidity: Humidity
+      uv: UV Index
+      high: High
+      low: Low
+      today: Today
+      tomorrow: Tomorrow
+
+    parcel:
+      today: Today
+      tomorrow: Tomorrow
+      delivery_by: Delivery by
+      empty: No deliveries
+      status:
+        out_for_delivery: Out for delivery
+      errors:
+        api: Carrier API error
+        http: Could not reach the carrier
+        internal: Something went wrong

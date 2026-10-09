@@ -1,0 +1,7 @@
+- keyname: duration
+  field_type: number
+  name: Duration (Days)
+  description: Number of days to look back for YouTube analytics data
+  placeholder: 7
+  default: 7
+  optional: false

@@ -4,16 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
-	"os"
-	"strings"
 	"time"
 
+	"github.com/rmitchellscott/stationmaster/internal/auth"
 	"github.com/rmitchellscott/stationmaster/internal/config"
 	"github.com/rmitchellscott/stationmaster/internal/database"
 	"github.com/rmitchellscott/stationmaster/internal/imageprocessing"
 	"github.com/rmitchellscott/stationmaster/internal/logging"
+	"github.com/rmitchellscott/stationmaster/internal/pluginruntime"
 	"github.com/rmitchellscott/stationmaster/internal/plugins"
 	"github.com/rmitchellscott/stationmaster/internal/rendering"
 	"github.com/rmitchellscott/stationmaster/internal/validation"
@@ -23,20 +21,13 @@ import (
 type ExternalPlugin struct {
 	definition *database.PluginDefinition
 	instance   *database.PluginInstance
-	serviceURL string
 }
 
 // NewExternalPlugin creates a new external plugin instance
 func NewExternalPlugin(definition *database.PluginDefinition, instance *database.PluginInstance) plugins.Plugin {
-	serviceURL := os.Getenv("EXTERNAL_PLUGIN_SERVICES")
-	if serviceURL == "" {
-		serviceURL = "http://stationmaster-plugins:3000"
-	}
-	
 	return &ExternalPlugin{
 		definition: definition,
 		instance:   instance,
-		serviceURL: serviceURL,
 	}
 }
 
@@ -219,68 +210,31 @@ func (p *ExternalPlugin) Process(ctx plugins.PluginContext) (plugins.PluginRespo
 }
 
 
-// fetchRenderedHTML fetches fully rendered HTML from the external plugin service
+// fetchRenderedHTML runs the plugin in the embedded Ruby process and returns its HTML.
 func (p *ExternalPlugin) fetchRenderedHTML(settings map[string]interface{}, layout string, ctx plugins.PluginContext) (string, error) {
-	// Build URL for plugin execution - use plugin identifier as name
-	url := fmt.Sprintf("%s/api/plugins/%s/execute", p.serviceURL, p.definition.Identifier)
-	
-	// Create HTTP client with timeout
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-	}
-	
-	// Create TRMNL data structure using shared builder
 	trmnlBuilder := rendering.NewTRNMLDataBuilder()
 	trmnlData := trmnlBuilder.BuildTRNMLData(ctx, p.instance, settings)
-	
+
 	// Inject OAuth tokens for external service integration
 	if ctx.User != nil {
-		oauthTokens, err := p.getOAuthTokensForUser(ctx.User.ID.String())
-		if err == nil && len(oauthTokens) > 0 {
-			trmnlData["oauth_tokens"] = oauthTokens
+		tokenCtx, tokenCancel := context.WithTimeout(context.Background(), 15*time.Second)
+		tokens := auth.AccessTokensForUser(tokenCtx, ctx.User.ID.String())
+		tokenCancel()
+		if len(tokens) > 0 {
+			trmnlData["oauth_tokens"] = tokens
 		}
 	}
-	
-	// Prepare POST request with settings and layout info
-	requestBody := map[string]interface{}{
-		"settings": settings,
-		"layout":   layout,
-		"trmnl":    trmnlData,
-	}
-	
-	jsonData, err := json.Marshal(requestBody)
+
+	runCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	runtime := pluginruntime.New()
+	html, err := runtime.Execute(runCtx, p.definition.Identifier, layout, settings, trmnlData)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal request body: %w", err)
+		return "", err
 	}
-	
-	// Create POST request
-	req, err := http.NewRequest("POST", url, strings.NewReader(string(jsonData)))
-	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	
-	// Execute request
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("HTTP request failed: %w", err)
-	}
-	defer resp.Body.Close()
-	
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("plugin service returned status %d", resp.StatusCode)
-	}
-	
-	// Read response as plain text (HTML)
-	var buf strings.Builder
-	_, err = io.Copy(&buf, resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("failed to read response body: %w", err)
-	}
-	
-	html := buf.String()
-	logging.Debug("[EXTERNAL_PLUGIN] Fetched rendered HTML", "plugin", p.definition.Identifier, "html_length", len(html))
-	
+
+	logging.Debug("[EXTERNAL_PLUGIN] Rendered HTML", "plugin", p.definition.Identifier, "html_length", len(html))
 	return html, nil
 }
 
@@ -293,61 +247,6 @@ func (p *ExternalPlugin) Validate(settings map[string]interface{}) error {
 // GetInstance returns the plugin instance
 func (p *ExternalPlugin) GetInstance() *database.PluginInstance {
 	return p.instance
-}
-
-// getOAuthTokensForUser retrieves OAuth refresh tokens for the user to inject into plugin execution
-func (p *ExternalPlugin) getOAuthTokensForUser(userID string) (map[string]map[string]string, error) {
-	// Import auth package to access OAuth token functions
-	// We need to get OAuth tokens that might be relevant to this plugin
-
-	logging.Debug("[EXTERNAL_PLUGIN] Getting OAuth tokens for user", "user_id", userID)
-	tokens := make(map[string]map[string]string)
-
-	// Try to get Google OAuth token (for Google Analytics, YouTube Analytics)
-	if googleToken, err := getOAuthTokenFromAuth(userID, "google"); err == nil && googleToken != nil {
-		logging.Debug("[EXTERNAL_PLUGIN] Found Google token", "access_len", len(googleToken.AccessToken), "refresh_len", len(googleToken.RefreshToken))
-		tokens["google"] = map[string]string{
-			"access_token":  googleToken.AccessToken,
-			"refresh_token": googleToken.RefreshToken,
-		}
-	} else {
-		logging.Debug("[EXTERNAL_PLUGIN] No Google token found", "error", err)
-	}
-
-	// Try to get Todoist OAuth token
-	if todoistToken, err := getOAuthTokenFromAuth(userID, "todoist"); err == nil && todoistToken != nil {
-		logging.Debug("[EXTERNAL_PLUGIN] Found Todoist token", "access_len", len(todoistToken.AccessToken), "refresh_len", len(todoistToken.RefreshToken))
-		tokens["todoist"] = map[string]string{
-			"access_token":  todoistToken.AccessToken,
-			"refresh_token": todoistToken.RefreshToken,
-		}
-	} else {
-		logging.Debug("[EXTERNAL_PLUGIN] No Todoist token found", "error", err)
-	}
-
-	// Add other providers as needed
-
-	logging.Debug("[EXTERNAL_PLUGIN] Returning tokens", "token_count", len(tokens), "providers", func() []string {
-		keys := make([]string, 0, len(tokens))
-		for k := range tokens {
-			keys = append(keys, k)
-		}
-		return keys
-	}())
-
-	return tokens, nil
-}
-
-// getOAuthTokenFromAuth is a helper function to get OAuth tokens from the auth package
-func getOAuthTokenFromAuth(userID, provider string) (*database.UserOAuthToken, error) {
-	// This function needs to access the auth package to retrieve tokens
-	// We'll implement this by directly querying the database to avoid circular imports
-	var token database.UserOAuthToken
-	err := database.DB.Where("user_id = ? AND provider = ?", userID, provider).First(&token).Error
-	if err != nil {
-		return nil, err
-	}
-	return &token, nil
 }
 
 // Register the external plugin factory when this package is imported

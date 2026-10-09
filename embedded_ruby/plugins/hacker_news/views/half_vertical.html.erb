@@ -1,0 +1,31 @@
+<%# every story is emitted and the framework's overflow engine trims to fit, so a %>
+<%# taller panel shows more rows instead of the count that suited an 800x480 OG %>
+<div class="view view--half_vertical">
+  <div class="layout">
+    <%# not nested in .columns: getHeightBudgetForGeneric short-circuits on a %>
+    <%# .columns/.column ancestor and computes from rects, ignoring the budget %>
+    <div class="list" data-overflow="true" data-overflow-max-height="auto" data-overflow-counter="true">
+          <% stories.each_with_index do |post, idx| %>
+            <div class="item">
+              <div class="meta">
+                <span class="index"><%= idx + 1 %></span>
+              </div>
+              <div class="content">
+                <span class="title title--small"><%= post[:title] %></span>
+                <div class="flex gap--small">
+                  <span class="label label--small label--underline"><%= post[:score] %> votes</span>
+                </div>
+              </div>
+          </div>
+        <% end %>
+    </div>
+  </div>
+
+  <div class="title_bar">
+    <img class="image" onerror="this.remove()" src="<%= Rails.application.credentials.base_url %>/images/plugins/hacker-news--render.svg" />
+    <span class="title">Hacker News</span>
+    <span class="instance"><%= category %></span>
+  </div>
+</div>
+
+<%= render 'plugins/shared/overflow_budget' %>

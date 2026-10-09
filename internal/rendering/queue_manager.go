@@ -273,6 +273,28 @@ func (qm *QueueManager) GetQueueStats(ctx context.Context) (map[string]interface
 	return stats, nil
 }
 
+// ReapStalledJobs fails render jobs left in the processing state past the timeout
+func (qm *QueueManager) ReapStalledJobs(ctx context.Context, timeout time.Duration) error {
+	cutoff := time.Now().UTC().Add(-timeout)
+
+	result := qm.db.WithContext(ctx).Model(&database.RenderQueue{}).
+		Where("status = ? AND COALESCE(last_attempt, updated_at) < ?", "processing", cutoff).
+		Updates(map[string]interface{}{
+			"status":        "failed",
+			"error_message": fmt.Sprintf("stalled in processing for over %s", timeout),
+		})
+
+	if result.Error != nil {
+		return fmt.Errorf("failed to reap stalled jobs: %w", result.Error)
+	}
+
+	if result.RowsAffected > 0 {
+		logging.Warn("[QUEUE_MANAGER] Reaped stalled render jobs", "count", result.RowsAffected, "timeout", timeout)
+	}
+
+	return nil
+}
+
 // RetryFailedJobs reschedules failed jobs that haven't exceeded max attempts
 func (qm *QueueManager) RetryFailedJobs(ctx context.Context, maxAttempts int) error {
 	var failedJobs []database.RenderQueue

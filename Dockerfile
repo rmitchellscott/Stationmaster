@@ -52,12 +52,32 @@ RUN apk add --no-cache \
     ruby-dev \
     build-base
 
-# Install required Ruby gems
+# Install required Ruby gems.
+# actionview + activesupport render the external plugins' ERB templates. They are
+# deliberately installed without rails: ActionView resolves the templates, their
+# partial chains and their locals standalone, which is what lets those templates
+# move across unchanged. Adding rails would pull a web stack this process never serves.
 RUN gem install \
     liquid \
     trmnl-liquid \
     trmnl-i18n \
+    actionview \
+    activesupport \
+    httparty \
+    icalendar \
+    icalendar-recurrence \
+    google-apis-calendar_v3 \
+    google-apis-analyticsdata_v1beta \
+    google-apis-youtube_analytics_v2 \
     --no-document
+
+# SEC ticker data for stock_price. Fetched in its own stage because the final image
+# deletes curl after unpacking s6.
+FROM alpine:3.22 AS ticker-data
+RUN apk add --no-cache curl ruby
+WORKDIR /work
+COPY embedded_ruby/scripts/download-ticker-data ./
+RUN chmod +x download-ticker-data && ./download-ticker-data
 
 # Final image
 FROM alpine:3.22
@@ -95,6 +115,14 @@ COPY --from=ruby-setup /usr/lib/ruby/gems /usr/lib/ruby/gems
 # Copy Ruby scripts
 COPY embedded_ruby/scripts/ ./scripts/
 RUN chmod +x ./scripts/start.sh ./scripts/liquid_server.rb
+
+# The external plugins and the locale keys their templates ask for.
+COPY embedded_ruby/plugins/ ./plugins/
+COPY embedded_ruby/locales/ ./locales/
+
+# stock_price reads db/data/ticker-name.json by a path relative to the working
+# directory, so the file has to sit under /app and the s6 run script has to cd here.
+COPY --from=ticker-data /work/db ./db
 
 # Copy s6-overlay service definitions
 COPY embedded_ruby/s6-rc.d/ /etc/s6-overlay/s6-rc.d/

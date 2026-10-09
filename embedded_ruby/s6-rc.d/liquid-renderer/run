@@ -1,4 +1,6 @@
 #!/command/with-contenv sh
 cd /app
 export TZ=UTC
+export PLUGIN_ROOT=/app/plugins
+export PLUGIN_LOCALE_DIR=/app/locales
 exec ruby /app/scripts/liquid_server.rb

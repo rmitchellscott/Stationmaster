@@ -5,6 +5,7 @@ require 'json'
 require 'pathname'
 require 'liquid'
 require 'trmnl/liquid'
+require_relative 'plugin_runtime'
 
 SOCKET_PATH = '/tmp/liquid-renderer.sock'
 MAX_THREADS = 3
@@ -26,21 +27,36 @@ def handle_request(client)
     return if request_data.nil? || request_data.empty?
 
     request = JSON.parse(request_data)
-    template_str = request['template']
-    data = request['data'] || {}
 
-    # Build TRMNL Liquid environment
-    environment = TRMNL::Liquid.build_environment
+    # 'type' is absent on Liquid requests, which predate it, so its absence means render
+    response = case request['type']
+               when 'execute'
+                 {
+                   success: true,
+                   html: PluginRuntime.execute(
+                     request['plugin'],
+                     request['layout'] || 'full',
+                     request['settings'] || {},
+                     request['trmnl'] || {}
+                   )
+                 }
+               when 'discover'
+                 { success: true, plugins: PluginRuntime.discover }
+               when 'dynamic_options'
+                 {
+                   success: true,
+                   options: PluginRuntime.dynamic_options(
+                     request['plugin'],
+                     request['field'],
+                     request['access_token']
+                   )
+                 }
+               else
+                 environment = TRMNL::Liquid.build_environment
+                 template = Liquid::Template.parse(request['template'], environment: environment)
+                 { success: true, html: template.render(request['data'] || {}) }
+               end
 
-    # Parse and render template
-    template = Liquid::Template.parse(template_str, environment: environment)
-    rendered_html = template.render(data)
-
-    # Send success response
-    response = {
-      success: true,
-      html: rendered_html
-    }
     client.write(JSON.generate(response))
 
   rescue => e

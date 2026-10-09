@@ -1,0 +1,21 @@
+<div class="view view--quadrant">
+  <div class="layout layout--col">
+    <div class="list" data-overflow="true" data-overflow-max-height="auto" data-overflow-counter="true">
+      <% todos = todos.first %>
+      <% todos[:items].each_with_index do |item, idx| %>
+        <div class="item">
+          <div class="meta">
+            <span class="index"><%= idx + 1 %></span>
+          </div>
+          <div class="content">
+            <span class="label truncate-none"><%= item %></span>
+          </div>
+        </div>
+      <% end %>
+    </div>
+  </div>
+
+  <%= render 'plugins/todo_list/shared/title_bar', instance_name: instance_name %>
+</div>
+
+<%= render 'plugins/shared/overflow_budget' %>

@@ -137,9 +137,14 @@ func OAuthAuthHandler(c *gin.Context) {
 	secure := !allowInsecure()
 	c.SetSameSite(http.SameSiteLaxMode)
 	c.SetCookie("oauth_state", state, 600, "/", "", secure, true) // 10 minute expiry
+
+	// Generate PKCE code verifier and store it in session cookie
+	verifier := oauth2.GenerateVerifier()
+	c.SetCookie("oauth_pkce_verifier", verifier, 600, "/", "", secure, true)
 	
-	// Build auth URL with additional parameters for better UX
+	// Build auth URL with PKCE challenge and additional parameters for better UX
 	authURL := oauth2Config.AuthCodeURL(state,
+		oauth2.S256ChallengeOption(verifier),
 		oauth2.SetAuthURLParam("access_type", "offline"),    // Get refresh tokens
 		oauth2.SetAuthURLParam("prompt", "consent"),         // Force consent screen for refresh token
 	)
@@ -168,10 +173,19 @@ func OAuthCallbackHandler(c *gin.Context) {
 		return
 	}
 	
-	// Clear state cookie
+	// Get PKCE code verifier from cookie
+	verifier, err := c.Cookie("oauth_pkce_verifier")
+	if err != nil {
+		logging.Warn("[OAUTH] Missing PKCE verifier", "provider", provider, "error", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing PKCE verifier"})
+		return
+	}
+
+	// Clear state and PKCE verifier cookies
 	secure := !allowInsecure()
 	c.SetSameSite(http.SameSiteLaxMode)
 	c.SetCookie("oauth_state", "", -1, "/", "", secure, true)
+	c.SetCookie("oauth_pkce_verifier", "", -1, "/", "", secure, true)
 	
 	// Handle error from provider
 	if errMsg := c.Query("error"); errMsg != "" {
@@ -219,7 +233,7 @@ func OAuthCallbackHandler(c *gin.Context) {
 	
 	// Exchange authorization code for token
 	ctx := context.Background()
-	token, err := oauth2Config.Exchange(ctx, code)
+	token, err := oauth2Config.Exchange(ctx, code, oauth2.VerifierOption(verifier))
 	if err != nil {
 		logging.Error("[OAUTH] Failed to exchange code for token", "provider", provider, "error", err)
 		// Redirect to popup error page

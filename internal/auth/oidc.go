@@ -161,8 +161,13 @@ func OIDCAuthHandler(c *gin.Context) {
 	// Store nonce in session cookie
 	c.SetCookie("oidc_nonce", nonce, 600, "/", "", secure, true)
 
-	// Build auth URL with state and nonce
+	// Generate PKCE code verifier and store it in session cookie
+	verifier := oauth2.GenerateVerifier()
+	c.SetCookie("oidc_pkce_verifier", verifier, 600, "/", "", secure, true)
+
+	// Build auth URL with state, nonce, and PKCE challenge
 	authURL := oauth2Config.AuthCodeURL(state,
+		oauth2.S256ChallengeOption(verifier),
 		oauth2.SetAuthURLParam("nonce", nonce),
 		oauth2.SetAuthURLParam("prompt", "select_account"),
 	)
@@ -212,11 +217,19 @@ func OIDCCallbackHandler(c *gin.Context) {
 		return
 	}
 
-	// Clear state and nonce cookies
+	// Get PKCE code verifier from cookie
+	verifier, err := c.Cookie("oidc_pkce_verifier")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing PKCE verifier"})
+		return
+	}
+
+	// Clear state, nonce, and PKCE verifier cookies
 	secure := !allowInsecure()
 	c.SetSameSite(http.SameSiteLaxMode)
 	c.SetCookie("oidc_state", "", -1, "/", "", secure, true)
 	c.SetCookie("oidc_nonce", "", -1, "/", "", secure, true)
+	c.SetCookie("oidc_pkce_verifier", "", -1, "/", "", secure, true)
 
 	// Handle error from provider
 	if errMsg := c.Query("error"); errMsg != "" {
@@ -235,7 +248,7 @@ func OIDCCallbackHandler(c *gin.Context) {
 	}
 
 	ctx := context.Background()
-	oauth2Token, err := oauth2Config.Exchange(ctx, code)
+	oauth2Token, err := oauth2Config.Exchange(ctx, code, oauth2.VerifierOption(verifier))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to exchange code for token"})
 		return
